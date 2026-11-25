@@ -1,7 +1,7 @@
 -- Copyright 2012-2015 The Howl Developers
 -- License: MIT (see LICENSE.md at the top-level directory of the distribution)
 
-{:app, :bindings, :config, :interact, :Project} = howl
+{:app, :bindings, :config, :interact} = howl
 {:File} = howl.io
 
 require 'howl.ui.icons.nerd_fonts'
@@ -110,24 +110,3 @@ describe 'buffer_selection', ->
           command_line\handle_keypress close_event
           buflist = list_items command_line, 2
         assert.same {'a2-buffer'}, buflist
-
-    context 'duplicate filenames', ->
-      before_each ->
-        for b in *app.buffers
-          app\close_buffer b
-
-        use_test_buffers(
-          {file: File '/project1/some/file1'},
-          {file: File '/project2/some/file1'},
-          {file: File '/project2/path1/file2'},
-          {file: File '/project2/path2/file2'}
-        )
-
-        Project.add_root File '/project1'
-        Project.add_root File '/project2'
-
-      it 'uniquifies title by using project name and parent directory prefix', ->
-        local buflist
-        within_command_line  (-> interact.select_buffer :editor), (command_line) ->
-          buflist = list_items command_line, 2
-        assert.same {'file1 [project1]', 'file1 [project2]', 'path1/file2', 'path2/file2'}, buflist

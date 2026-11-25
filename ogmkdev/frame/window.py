@@ -286,6 +286,7 @@ class Frame(AnalysisMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, G
         scroller.set_vexpand(True)
         self.files_page = scroller
         self.left = Gtk.Notebook()
+        self.left.set_scrollable(True)  # tabs scroll: the panel does not grow with its tab labels
         self.left.append_page(scroller, Gtk.Label(label="Files"))
         return self.left
 

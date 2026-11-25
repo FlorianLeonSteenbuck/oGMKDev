@@ -1,5 +1,5 @@
 {:File} = howl.io
-{:Application, :Buffer, :Project, :Settings, :config, :mode} = howl
+{:Application, :Buffer, :Settings, :config, :mode} = howl
 {:Editor, :highlight} = howl.ui
 {:json} = howl.util
 
