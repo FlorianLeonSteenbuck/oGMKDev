@@ -60,6 +60,8 @@ SCHEMA: Tuple[Setting, ...] = (
     Setting("ogmkdev_exclude", "Ignored folders (not in the tree, not indexed)", "Workspace", "text",
             ".git,node_modules,__pycache__,vendor"),
     Setting("ogmkdev_diagnostics", "Error hinting", "Diagnostics", "choice", "on", ("on", "off")),
+    Setting("ogmkdev_todo_keywords", "TODO keywords in comments with priorities (FIXME:1,TODO:3)", "TODO", "text",
+            "FIXME:1,XXX:2,HACK:2,TODO:3,NOTE:5"),
     Setting("ogmkdev_diagnostic_marks", "Underline problems in the editor (message as tooltip)", "Diagnostics",
             "choice", "on", ("on", "off")),
     Setting("ogmkdev_diagnostic_php_function", "PHP library functions newer than the version", "Diagnostics",

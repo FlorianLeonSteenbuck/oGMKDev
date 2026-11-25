@@ -1,16 +1,15 @@
 -- Copyright 2026 oGMKDev
 -- License: MIT (see LICENSE.md at the top-level directory of the distribution)
 
--- oGMKDev additions to Howl: TODOs in comments with priorities and an overview, and custom
--- text highlighting. Both are configured with the ogmkdev_* settings (EditorConfig or Howl config).
+-- oGMKDev additions to Howl: custom text highlighting (ogmkdev_highlights). TODOs are found by the
+-- GTK frame (ogmkdev/todos.py), not by Howl.
 
 info = {
   author: 'oGMKDev',
-  description: 'TODOs in comments with priorities and an overview, and custom text highlighting',
+  description: 'Custom text highlighting',
   license: 'MIT',
 }
 
-bundle_load 'todo'
 bundle_load 'highlights'
 
 return :info, unload: ->

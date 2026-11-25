@@ -69,3 +69,43 @@ int howl_embed(GtkBox *container, const char *app_root, const char *file)
 GType howl_gobject_type_from_instance(gpointer instance) {
   return G_TYPE_FROM_INSTANCE(instance);
 }
+
+/* Opens a file (line and column are 1-based, 0 for none) in the editor that has the focus. */
+int howl_open(const char *file, int line, int column)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_OPEN");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, file);
+  lua_pushinteger(embedded, line);
+  lua_pushinteger(embedded, column);
+  if (lua_pcall(embedded, 3, 0, 0)) {
+    g_critical("Failed to open %s: %s", file, lua_tostring(embedded, -1));
+    return 1;
+  }
+  return 0;
+}
+
+/* Runs a Howl command (for example "save", "editor-undo") in the editor that has the focus. */
+int howl_command(const char *name)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_COMMAND");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, name);
+  if (lua_pcall(embedded, 1, 0, 0)) {
+    g_critical("Howl command %s failed: %s", name, lua_tostring(embedded, -1));
+    return 1;
+  }
+  return 0;
+}

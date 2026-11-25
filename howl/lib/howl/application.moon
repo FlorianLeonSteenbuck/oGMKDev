@@ -146,6 +146,14 @@ class Application extends PropertyObject
     @_move_content @window, container
     -- further editors of the same process (src/embed.c calls this for every later container)
     _G.HOWL_EMBED_ADD = (more_container, more_file) -> @embed_window more_container, more_file
+    -- opens a file (line and column 0 for none) in the editor that has the focus (src/embed.c)
+    _G.HOWL_EMBED_OPEN = (path, line, column) ->
+      loc = file: File(path)
+      loc.line_nr = line if line and line > 0
+      loc.column = column if column and column > 0
+      @open loc, (@editor)
+    -- runs a Howl command, e.g. "save" (src/embed.c howl_command)
+    _G.HOWL_EMBED_COMMAND = (name) -> howl.timer.asap -> howl.command.run name
     @window
 
   -- one more window with its own editor, its content moved into `container`
