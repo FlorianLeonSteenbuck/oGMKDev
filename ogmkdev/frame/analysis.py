@@ -12,9 +12,9 @@ from typing import List, Optional, Tuple
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from .. import diagnostics, docblocks, editorconfig, index as index_module, languages  # noqa: E402
+from .. import diagnostics, docblocks, editorconfig, index as index_module, indexbuild, languages  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
 from .panels import _scrolled  # noqa: E402
@@ -137,23 +137,68 @@ class AnalysisMixin:
     # ------------------------------------------------------------- index
 
     def _ensure_index(self) -> None:
+        """The index of the workspace is built in the background; until it is ready the index is empty."""
         if getattr(self, "index", None) is None:
-            self.index = index_module.ProjectIndex(self.workspace.folders, cache_path=_cache_path(self.folder),
-                                                   excluded=self.workspace.is_hidden)
-            self.index.refresh()
+            self.index = index_module.ProjectIndex([])
+            self._request_index_build("building the index in the background")
+
+    def _request_index_build(self, reason: str) -> None:
+        if getattr(self, "_index_builder", None) is None:
+            self._index_builder = indexbuild.IndexBuilder(self._deliver_index)
+        self.set_status(reason)
+        self._index_builder.request(self.workspace.folders, _cache_path(self.folder), self.workspace.is_hidden)
+
+    def _deliver_index(self, built, folders, error) -> None:
+        """Called on the builder's worker thread: the result is taken over on the GTK main thread."""
+        GLib.idle_add(self._index_built, built, folders, error)
+
+    def _index_built(self, built, folders, error) -> bool:
+        if built is not None:
+            self.index = built
+            self._watch_folders(folders)
+            self.set_status(f"index ready: {len(built.symbols)} symbols in {len(built.files)} files")
+        else:
+            self.set_status(f"index could not be built: {error}")
+        return False
+
+    def _watch_folders(self, folders) -> None:
+        """Monitors the folders for created, changed, deleted and renamed files; a change starts a rebuild a
+        moment later, which the index cache keeps quick."""
+        monitors = getattr(self, "_monitors", None)
+        if monitors is None:
+            monitors = self._monitors = {}
+        wanted = set(folders)
+        for path in folders:
+            if path not in monitors:
+                try:
+                    monitor = Gio.File.new_for_path(path).monitor_directory(Gio.FileMonitorFlags.NONE, None)
+                except GLib.Error:
+                    continue
+                monitor.connect("changed", self._on_folder_changed)
+                monitors[path] = monitor
+        for path in [path for path in monitors if path not in wanted]:
+            monitors.pop(path).cancel()
+
+    def _on_folder_changed(self, monitor, file, other_file, event) -> None:
+        if getattr(self, "_rebuild_source", None):
+            GLib.source_remove(self._rebuild_source)
+        self._rebuild_source = GLib.timeout_add(700, self._rebuild_after_change)
+
+    def _rebuild_after_change(self) -> bool:
+        self._rebuild_source = None
+        self._request_index_build("files changed: updating the index in the background")
+        return False
 
     def refresh_index(self) -> None:
         self._ensure_index()
-        counts = self.index.refresh()
-        self.set_status(f"index refreshed: {counts}")
+        self._request_index_build("refreshing the index in the background")
 
     def clear_index(self) -> None:
-        self.index = None
         path = _cache_path(self.folder)
         if os.path.isfile(path):
             os.remove(path)
-        self._ensure_index()
-        self.set_status("index cleared and rebuilt")
+        self.index = index_module.ProjectIndex([])
+        self._request_index_build("index cleared, rebuilding in the background")
 
     def _current_class(self) -> Optional[str]:
         path = self.area.current_path()
