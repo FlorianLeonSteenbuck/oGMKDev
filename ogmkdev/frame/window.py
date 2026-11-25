@@ -726,6 +726,14 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         syntax = custom.get("ogmkdev_syntax_highlight", "on").strip().lower() != "off"
         current_line = custom.get("ogmkdev_current_line", "true").strip().lower() not in ("false", "off", "no", "0")
         self.editors.options(path, syntax, current_line)
+        self._apply_change_colours()
+
+    def _apply_change_colours(self) -> None:
+        """The colours of the change stripes in the gutters: the project's ogmkdev_change_color_* settings."""
+        store = SettingsStore(self.folder)
+        folder_path = os.path.join(self.folder, "_")
+        self.editors.change_colours(*(store.value(f"ogmkdev_change_color_{kind}", folder_path)
+                                      for kind in ("added", "modified", "deleted")))
 
     def _settings_changed(self) -> None:
         """The settings were saved: the edge line and the display options of the focused file are applied again

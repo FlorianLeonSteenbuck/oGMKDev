@@ -11,9 +11,9 @@ pango_cairo = Pango.cairo
 
 -- the colours of the change stripes: added, changed and deleted lines (fixed, like the breakpoint dots)
 CHANGE_COLOURS = {
-  added: {0.18, 0.62, 0.26}
-  changed: {0.12, 0.44, 0.92}
-  deleted: {0.97, 0.32, 0.29}
+  added: {0.247, 0.725, 0.314}
+  changed: {0.345, 0.651, 1.0}
+  deleted: {0.973, 0.318, 0.286}
 }
 
 ffi_cast = ffi.cast
@@ -58,6 +58,11 @@ define_class {
 
   -- redraws the marks (breakpoints) after they changed
   refresh: => @area\queue_draw!
+
+  -- sets the colour of one kind of change stripe: 'added', 'changed' or 'deleted', as {red, green, blue} from 0
+  -- to 1; the colours are shared by all gutters
+  set_change_colour: (kind, colour) =>
+    CHANGE_COLOURS[kind] = colour
 
   release: =>
 

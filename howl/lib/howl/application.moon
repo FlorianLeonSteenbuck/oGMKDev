@@ -258,6 +258,18 @@ class Application extends PropertyObject
         state or= (buffer._buffer.lexer and 1 or 0) + (ed.cursor_line_highlighted and 2 or 0)
       state
 
+    -- the colours of the change stripes in the gutters, as #RRGGBB for added, modified and deleted lines (the
+    -- project's ogmkdev_change_color_* settings; src/embed.c howl_change_colours)
+    _G.HOWL_EMBED_CHANGE_COLOURS = (added, modified, deleted) ->
+      kinds = {added: added, changed: modified, deleted: deleted}
+      for ed in *@editors
+        gutter = ed.view and ed.view.gutter
+        continue unless gutter
+        for kind, hex in pairs kinds
+          r, g, b = hex\match '^#(%x%x)(%x%x)(%x%x)$'
+          gutter\set_change_colour kind, {tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255} if r
+        gutter\refresh!
+
     -- the text of the buffer that shows a file, nil when no editor shows it (src/embed.c howl_text)
     _G.HOWL_EMBED_TEXT = (path) ->
       file = File(path)

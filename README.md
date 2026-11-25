@@ -47,9 +47,10 @@ grammar or language server. Every language here is implemented in this repositor
 - EditorConfig applied on open and on save: indent, tab width, line endings, charset, trailing whitespace,
   final newline. A saved file that differs from its EditorConfig is written again, and the editor reloads
   it. Scoping keys: `ogmkdev_language`, `ogmkdev_dialect`.
-- **Change marks**: since the file was last saved, a green stripe in the gutter marks an added line, a blue
-  one a changed line, and a red triangle a removed block (`ogmkdev_change_marks = off` removes them).
-  The Changes tab of the bottom panel (Tools > Show Changes) shows the unified diff of the focused file.
+- **Change marks**: since the file was last saved, a stripe in the gutter marks an added line (green by default),
+  a changed line (blue) or a removed block (a red triangle); `ogmkdev_change_marks = off` removes them. The colours
+  follow `ogmkdev_change_color_added`, `ogmkdev_change_color_modified` and `ogmkdev_change_color_deleted`
+  (`#RRGGBB`). The Changes tab of the bottom panel (Tools > Show Changes) shows the unified diff of the focused file.
 - BareDown (`.bd`) is highlighted by the `baredown` mode of Howl (`howl/bundles/baredown`): the line kinds
   and the inline spans of `ogmkdev/baredown.py`, with the same rules and the theme's colours.
 - Language detection with compound extensions (`page.mustache.html`, `schema.mysql.sql`),

@@ -115,6 +115,19 @@ class EditorTests(FrameTestCase):
         frame._settings_changed()
         self.assertTrue(pump_until(lambda: frame.editors.options(path) == (True, True)))
 
+    def test_the_change_colours_of_the_gutter_follow_the_settings(self):
+        path = write(self.folder, "circle.php", "<?php\nclass Circle {}\n")
+        frame = self.frame([path])
+        self.focus(frame, path)
+        applied = []
+        frame.editors.change_colours = lambda *colours: applied.append(colours) or True  # the gutter takes them
+        frame._settings_changed()
+        self.assertTrue(pump_until(lambda: applied))
+        self.assertEqual(applied[-1], ("#3FB950", "#58A6FF", "#F85149"))  # the defaults
+        SettingsStore(self.folder).apply("project", {"ogmkdev_change_color_added": "#00ff00"})
+        frame._settings_changed()
+        self.assertTrue(pump_until(lambda: applied[-1][0] == "#00ff00"))  # the EditorConfig values are lower case
+
     def test_saving_applies_the_editorconfig_line_handling(self):
         write(self.folder, ".editorconfig",
               "root = true\n[*]\ntrim_trailing_whitespace = true\ninsert_final_newline = true\n")

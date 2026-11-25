@@ -52,6 +52,8 @@ class Editors:
         self._lib.howl_changes.restype = ctypes.c_int
         self._lib.howl_changes.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self._lib.howl_options.restype = ctypes.c_int
+        self._lib.howl_change_colours.restype = ctypes.c_int
+        self._lib.howl_change_colours.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
         self._lib.howl_options.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]
         self._lib.howl_text.restype = ctypes.c_int
         self._lib.howl_text.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
@@ -112,6 +114,10 @@ class Editors:
                                        -1 if syntax is None else int(syntax),
                                        -1 if current_line is None else int(current_line))
         return None if state < 0 else (bool(state & 1), bool(state & 2))
+
+    def change_colours(self, added: str, modified: str, deleted: str) -> bool:
+        """The colours of the change stripes in the gutters, as #RRGGBB for added, modified and deleted lines."""
+        return self._lib.howl_change_colours(added.encode(), modified.encode(), deleted.encode()) == 0
 
     TEXT_LIMIT = 4 * 1024 * 1024
 

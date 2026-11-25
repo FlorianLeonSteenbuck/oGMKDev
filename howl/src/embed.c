@@ -454,3 +454,26 @@ int howl_options(const char *file, int syntax, int current_line)
   lua_pop(embedded, 1);
   return state;
 }
+
+/* Sets the colours of the change stripes in the gutters: "#RRGGBB" for added, modified and deleted lines. See
+   HOWL_EMBED_CHANGE_COLOURS in application.moon. */
+int howl_change_colours(const char *added, const char *modified, const char *deleted)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_CHANGE_COLOURS");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, added);
+  lua_pushstring(embedded, modified);
+  lua_pushstring(embedded, deleted);
+  if (lua_pcall(embedded, 3, 0, 0)) {
+    g_critical("Howl change colours failed: %s", lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  return 0;
+}
