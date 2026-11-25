@@ -2,7 +2,8 @@
 
 Checks and their default severities:
 
-* PHP heredoc and nowdoc errors (``heredoc-*``, error);
+* PHP heredoc and nowdoc errors (``heredoc-*``, error); PHP syntax errors (``php-syntax``, error;
+  ``php-lexical`` for a malformed token);
 * PHP features newer than the file's PHP version, per feature (``php-<feature>``, error),
   library functions and classes (``php-function``, ``php-class``, warning);
 * ECMAScript, JSX, TypeScript and TSX lexical and syntax errors (``js-lexical``, ``js-syntax``,
@@ -28,6 +29,7 @@ from . import baredown, heredoc, markup, php_features, sql, standards
 from .editorconfig import EditorSettings
 from .languages import Detection
 from .parsers import javascript as jsparser
+from .parsers import php as phpparser
 
 # the languages that the JavaScript parser checks: JSX is read in ecmascript, jsx and tsx,
 # TypeScript types in typescript and tsx
@@ -66,6 +68,14 @@ def analyze(text: str, detection: Detection, settings: Optional[EditorSettings] 
         for error in scan.errors:
             line, column = _position(text, error.offset)
             found.append(Diagnostic(line, column, "error", f"heredoc-{error.code}", error.message))
+        if not scan.errors:  # a broken heredoc is reported above; the rest of the file is not read
+            try:
+                phpparser.parse(text)
+            except phpparser.ParseError as error:
+                code = "php-lexical" if error.lexical else "php-syntax"
+                found.append(Diagnostic(error.line, error.column, "error", code, error.message))
+            except RecursionError:
+                pass  # nested deeper than the recursive parser goes: no verdict
         for finding in php_features.findings_above(text, detection.dialect or "8.6"):
             if finding.kind == "feature":
                 code, default = f"php-{finding.feature}", "error"
