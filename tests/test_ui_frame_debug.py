@@ -116,5 +116,62 @@ class FrameXdebugTests(unittest.TestCase):
                 frame.destroy()
 
 
+GDB_FIXTURE = os.path.join(HERE, "fixtures", "gdb_target.c")
+
+
+def _gdb_available() -> bool:
+    return bool(shutil.which("gdb") and shutil.which("gcc"))
+
+
+@unittest.skipUnless(GTK_AVAILABLE and _gdb_available(),
+                     "GTK 4 with a display, libhowl.so, gdb and gcc are required")
+class FrameGdbTests(unittest.TestCase):
+    def test_breakpoint_stop_watch_remove_and_continue_to_the_exit(self):
+        with tempfile.TemporaryDirectory() as project:
+            source = os.path.join(project, "gdb_target.c")
+            shutil.copy(GDB_FIXTURE, source)
+            binary = os.path.join(project, "target")
+            subprocess.run(["gcc", "-g", "-O0", "-o", binary, source], check=True)
+            os.makedirs(os.path.join(project, ".run"))
+            config = runconfig.RunConfiguration(name="Debug target", type=runconfig.GDB_TYPE,
+                                                factory="ogmkdev gdb")
+            config.set_option("PROGRAM", binary)
+            config.set_option("WORKING_DIRECTORY", project)
+            config_path = os.path.join(project, ".run", "debug-target.run.xml")
+            runconfig.save(config, config_path)
+            application = Gtk.Application(application_id="org.ogmkdev.frame.test.gdb",
+                                          flags=Gio.ApplicationFlags.NON_UNIQUE)
+            application.register(None)
+            frame = Frame(application, project, [source], "light", "blend")
+            try:
+                line = _line_of(source, "@bp-square")
+                frame.open_file(source, line, 1)
+                frame.editors.command("breakpoint-toggle")
+                self.assertTrue(_pump_until(lambda: (source, line) in frame.editors.breakpoints()))
+
+                frame.start_debugging(runconfig.load(config_path))
+                self.assertTrue(_pump_until(lambda: frame.status.get_text().startswith("stopped")
+                                            and (frame.editors.status() or {}).get("line") == line),
+                                frame.status.get_text())
+
+                frame.add_watch_expression("v")
+                self.assertTrue(_pump_until(lambda: ("watch", "v", "1") in _rows(frame)),
+                                f"the watch was not evaluated: {_rows(frame)}")
+
+                # remove the breakpoint from the editor and the session, then run to the end
+                frame.editors.command("breakpoint-toggle")
+                self.assertTrue(_pump_until(lambda: (source, line) not in frame.editors.breakpoints()))
+                time.sleep(0.5)  # the session takes the removal on its next command
+                frame.debug_continue()
+                self.assertTrue(_pump_until(lambda: "program exited" in frame.status.get_text()),
+                                frame.status.get_text())
+                self.assertTrue(_pump_until(lambda: "total=14" in frame.console_buffer.get_text(
+                    frame.console_buffer.get_start_iter(), frame.console_buffer.get_end_iter(), True)))
+            finally:
+                if frame._debugger is not None:
+                    frame.stop_debugging()
+                frame.destroy()
+
+
 if __name__ == "__main__":
     unittest.main()

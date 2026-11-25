@@ -1,4 +1,6 @@
 import os
+import shutil
+import subprocess
 import tempfile
 import time
 import unittest
@@ -55,6 +57,40 @@ class LocalHistoryTests(unittest.TestCase):
         self.assertIn("--- old", diff)
         self.assertIn("+++ new", diff)
         self.assertIn("-x\n+y\n", diff)
+
+
+class PatchTests(unittest.TestCase):
+    def test_file_patch_marks_missing_final_newline(self):
+        patch = H.file_patch("one\n", "one\ntwo", "notes.txt")
+        self.assertTrue(patch.startswith("diff --git a/notes.txt b/notes.txt\n--- a/notes.txt\n+++ b/notes.txt\n"))
+        self.assertIn("\\ No newline at end of file", patch)
+
+    def test_file_patch_of_identical_text_is_empty(self):
+        self.assertEqual(H.file_patch("same\n", "same\n", "x.txt"), "")
+
+    def test_patch_names_are_relative_to_the_project(self):
+        self.assertEqual(H.patch_name("/p/src/a.php", "/p"), "src/a.php")
+        self.assertEqual(H.patch_name("/elsewhere/a.php", "/p"), "a.php")
+
+
+@unittest.skipUnless(shutil.which("git"), "git is required")
+class HistoryPatchTests(unittest.TestCase):
+    def test_exported_history_applies_with_git_apply(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as target:
+            store = H.LocalHistory(os.path.join(root, "history"))
+            path = os.path.join(root, "notes.txt")
+            store.snapshot(path, "one\n", "opened")
+            store.snapshot(path, "one\ntwo\n", "save")
+            patch = os.path.join(root, "history.patch")
+            store.extract_patch(store.revisions(path), patch, root)
+            with open(patch, encoding="utf-8") as handle:
+                text = handle.read()
+            self.assertIn("diff --git a/notes.txt b/notes.txt", text)
+            self.assertIn("+two", text)
+            with open(os.path.join(target, "notes.txt"), "w", encoding="utf-8") as handle:
+                handle.write("one\n")
+            result = subprocess.run(["git", "apply", "--check", patch], cwd=target, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,6 @@ done
 find "$ROOT/usr/share/ogmkdev/howl" -name '*.o' -o -name '*.a' | xargs -r rm -f
 install -m 0755 "$HERE/packaging/ogmkdev-launcher" "$ROOT/usr/bin/ogmkdev"
 install -m 0644 "$HERE/packaging/ogmkdev.desktop" "$ROOT/usr/share/applications/ogmkdev.desktop"
-install -m 0644 "$HERE/ogmkdev/ui/logo.svg" "$ROOT/usr/share/icons/hicolor/scalable/apps/ogmkdev.svg"
+install -m 0644 "$HERE/packaging/logo.svg" "$ROOT/usr/share/icons/hicolor/scalable/apps/ogmkdev.svg"
 install -m 0644 "$HERE/LICENSE" "$HERE/README.md" "$HERE/THIRD_PARTY_NOTICES.md" "$ROOT/usr/share/doc/ogmkdev/"
 install -m 0644 "$HERE/howl/LICENSE.md" "$ROOT/usr/share/doc/ogmkdev/HOWL-LICENSE.md"

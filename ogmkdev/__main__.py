@@ -1,5 +1,5 @@
 import sys
 
-from ogmkdev.ui.app import main
+from ogmkdev.frame.__main__ import main
 
 sys.exit(main(sys.argv[1:]))
