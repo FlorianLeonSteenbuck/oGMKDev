@@ -97,19 +97,6 @@ describe 'Application', ->
             application\open :file, editor
           assert.spy(handler).was_called!
 
-      it "loads the configuration of the file's project", ->
-        config.define name: 'app_spec_project_var', description: 'test'
-        with_tmpdir (dir) ->
-          (dir / '.howl')\mkdir!
-          (dir / '.howl/config.json').contents = '{"config": {"app_spec_project_var": "project"}}'
-          Project.add_root dir
-          file = dir / 'file.txt'
-          file.contents = 'x'
-          buffer = application\open :file, editor
-          Project.remove_root dir
-          Project.open[dir] = nil
-          assert.equal 'project', buffer.config.app_spec_project_var
-
     context 'when location.buffer is given', ->
 
       it 'opens the file in the specified editor if given', ->

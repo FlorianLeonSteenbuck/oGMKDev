@@ -24,7 +24,21 @@ Howl window: one editor view per instance, started with the files on the command
 - Goto definition and goto reference fall back to a message instead of the removed project search
   (`lib/howl/commands/edit_commands.moon`).
 
+## Bundle `ogmkdev` (bundles/ogmkdev)
+
+- **TODOs in comments.** Words from `ogmkdev_todo_keywords` (default `FIXME:1,XXX:2,HACK:2,TODO:3,NOTE:5`,
+  the number is the priority, 1 the most urgent) are highlighted when they are inside a comment, using the
+  lexer's comment style. Each priority has its own colour; `ogmkdev_todo_highlight = off` turns the
+  highlight off. The highlight is computed when a file is opened.
+- **TODO overview.** Ctrl+Alt+T lists the TODOs of all open buffers, sorted by priority, file and line;
+  Enter jumps to the line.
+- **Custom highlighting.** `ogmkdev_highlights` in the Howl configuration takes `text=#colour` pairs
+  separated by `;`, e.g. `console.log=#ffb86c;DEPRECATED=#ff5555`. Every occurrence of the text is
+  highlighted in every buffer, when the file is opened. The text is matched literally, not as a regex.
+
 ## Known gaps
 
 - The Language Server Protocol parts of Howl are still there; oGMKDev does not use them.
-- Specs for the removed features are removed or fail (see the commit that introduced this directory).
+- The TODO and custom highlights are computed when a file is opened; they do not follow edits yet.
+- The TODO overview covers the open buffers only, not the files of a folder.
+- Multi-cursor selection is not built yet.
