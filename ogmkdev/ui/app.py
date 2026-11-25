@@ -36,6 +36,7 @@ from .. import diagnostics, editorconfig, highlight, languages, runconfig, templ
 from ..index import ProjectIndex  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
+from ..workspace import Workspace  # noqa: E402
 from .panels import DiagramView, HierarchyView, ResultsView  # noqa: E402
 from .. import __version__  # noqa: E402
 from ..debug import DebuggerError, Exited, GdbMiDebugger, Output, Stopped, XdebugDebugger  # noqa: E402
@@ -72,6 +73,7 @@ ACTIONS = (
     ("Project", "Refresh Index", "view-refresh", "", "refresh_index", False),
     ("Project", "Open Folder...", "folder-open", "<Control><Shift>o", "open_folder", False),
     ("Project", "Project Settings...", "document-properties", "", "open_project_settings", False),
+    ("Project", "Add Folder to Workspace...", "folder-new", "", "add_folder_to_workspace", False),
     ("Settings", "Preferences...", "preferences-system", "", "open_global_settings", False),
     ("Settings", "Error Hinting...", "dialog-warning", "", "open_diagnostic_settings", False),
 )
@@ -210,8 +212,9 @@ class EditorWindow(Gtk.Window):
         self.status = Gtk.Label(xalign=0)  # created first: list signals may fire during setup
         self.status.set_selectable(True)
         self.run_configs: List[runconfig.RunConfiguration] = runconfig.discover(self.project_dir)
-        self.index = ProjectIndex(self.project_dir, cache_path=self._cache_path())
         self.settings_store = SettingsStore(self.project_dir)
+        self.project_folders: List[str] = [self.project_dir]
+        self._apply_workspace()
         self.connect("destroy", self._save_index)
         self.debugger = None
         self.watch_exprs: List[str] = []
@@ -221,13 +224,13 @@ class EditorWindow(Gtk.Window):
         self.notebook = Gtk.Notebook(scrollable=True)
         self.notebook.connect("switch-page", lambda *_: _ui(self._update_status))
 
-        self.tree_store = Gtk.TreeStore(str, str)
+        self.tree_store = Gtk.TreeStore(str, str, str)
         self.tree = Gtk.TreeView(model=self.tree_store)
         self.tree.set_headers_visible(False)
-        self.tree.append_column(Gtk.TreeViewColumn("Files", Gtk.CellRendererText(), text=0))
+        self.tree.append_column(Gtk.TreeViewColumn("Files", Gtk.CellRendererText(), text=0, foreground=2))
         self.tree.connect("row-activated", self._on_tree_activated)
         self.tree.connect("row-expanded", self._on_tree_expanded)
-        self._populate_tree(None, self.project_dir)
+        self._rebuild_tree()
         files_scroll = Gtk.ScrolledWindow()
         files_scroll.add(self.tree)
 
@@ -529,6 +532,9 @@ class EditorWindow(Gtk.Window):
 
     # -------------------------------------------------------- file tree
 
+    def _tree_color(self, kind: str) -> str:
+        return self.palette["string"] if kind == "test" else self.palette["foreground"]
+
     def _populate_tree(self, parent, folder: str) -> None:
         try:
             entries = sorted(os.scandir(folder), key=lambda e: (not e.is_dir(), e.name.lower()))
@@ -537,11 +543,40 @@ class EditorWindow(Gtk.Window):
         for entry in entries:
             if entry.name.startswith(".") and entry.name not in (".editorconfig", ".run"):
                 continue
-            if entry.name == "__pycache__":
+            if entry.name == "__pycache__" or self.workspace.is_excluded(entry.path):
                 continue
-            node = self.tree_store.append(parent, [entry.name, entry.path])
+            color = self._tree_color(self.workspace.kind(entry.path))
+            node = self.tree_store.append(parent, [entry.name, entry.path, color])
             if entry.is_dir(follow_symlinks=False):
-                self.tree_store.append(node, ["", ""])  # placeholder, replaced on expand
+                self.tree_store.append(node, ["", "", color])  # placeholder, replaced on expand
+
+    def _rebuild_tree(self) -> None:
+        """One top-level node per workspace folder; ignored folders are not listed."""
+        self.tree_store.clear()
+        for folder in self.workspace.folders:
+            node = self.tree_store.append(None, [os.path.basename(folder) or folder, folder,
+                                                 self._tree_color("source")])
+            self._populate_tree(node, folder)
+            self.tree.expand_row(self.tree_store.get_path(node), False)
+
+    def _apply_workspace(self) -> None:
+        """Workspace and index from the folders and the effective settings (no tree update)."""
+        props = self.settings_store.effective_for(os.path.join(self.project_dir, "_"))
+        self.workspace = Workspace.from_properties(self.project_folders, props)
+        self.index = ProjectIndex(self.workspace.folders, cache_path=self._cache_path(),
+                                  excluded=self.workspace.is_excluded)
+
+    def add_folder_to_workspace(self) -> None:
+        dialog = Gtk.FileChooserDialog(title="Add Folder to Workspace", parent=self,
+                                       action=Gtk.FileChooserAction.SELECT_FOLDER)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Add", Gtk.ResponseType.OK)
+        folder = dialog.get_filename() if dialog.run() == Gtk.ResponseType.OK else None
+        dialog.destroy()
+        if folder and os.path.abspath(folder) not in self.project_folders:
+            self.project_folders.append(os.path.abspath(folder))
+            self._apply_workspace()
+            self._rebuild_tree()
+            self.status.set_text(f"workspace: {len(self.project_folders)} folder(s)")
 
     def _on_tree_expanded(self, _view, node, _path) -> None:
         first = self.tree_store.iter_children(node)
@@ -994,12 +1029,12 @@ class EditorWindow(Gtk.Window):
     def set_project(self, folder: str) -> None:
         self._save_index()
         self.project_dir = os.path.abspath(folder)  # noqa
-        self.tree_store.clear()
-        self._populate_tree(None, self.project_dir)
         self.run_configs = runconfig.discover(self.project_dir)
         self._load_run_list()
-        self.index = ProjectIndex(self.project_dir, cache_path=self._cache_path())
         self.settings_store = SettingsStore(self.project_dir)
+        self.project_folders = [self.project_dir]
+        self._apply_workspace()
+        self._rebuild_tree()
         self._refresh_settings_all()
         self.status.set_text(f"project {self.project_dir}")
 
@@ -1047,6 +1082,9 @@ class EditorWindow(Gtk.Window):
                     for choice in setting.choices:
                         widget.append_text(choice)
                     widget.set_active(setting.choices.index(value) if value in setting.choices else 0)
+                elif setting.kind == "text":
+                    widget = Gtk.Entry()
+                    widget.set_text(value)
                 elif setting.kind == "int":
                     widget = Gtk.SpinButton.new_with_range(0, 200, 1)
                     widget.set_value(int(value) if value.isdigit() else int(setting.default))
@@ -1076,6 +1114,8 @@ class EditorWindow(Gtk.Window):
             return setting.choices[widget.get_active()]
         if setting.kind == "int":
             return str(int(widget.get_value()))
+        if setting.kind == "text":
+            return widget.get_text().strip()
         return "true" if widget.get_active() else "false"
 
     def apply_settings_values(self, scope: str, values: Dict[str, str]) -> None:
@@ -1085,6 +1125,7 @@ class EditorWindow(Gtk.Window):
         self.status.set_text(f"{'preferences' if scope == 'global' else 'project settings'} saved")
 
     def _refresh_settings_all(self) -> None:
+        self._apply_workspace()
         for page in self.pages:
             path = page.document.path
             properties = self.settings_store.effective_for(path) if path else self.settings_store.global_properties()

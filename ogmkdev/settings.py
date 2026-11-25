@@ -29,7 +29,7 @@ class Setting:
     key: str
     label: str
     group: str
-    kind: str                       # choice | int | bool
+    kind: str                       # choice | int | bool | text
     default: str
     choices: Tuple[str, ...] = ()
     section: str = "*"              # the EditorConfig section the value is written to
@@ -43,7 +43,12 @@ SCHEMA: Tuple[Setting, ...] = (
     Setting("charset", "Charset", "Editor", "choice", "utf-8", ("utf-8", "utf-8-bom", "latin1")),
     Setting("trim_trailing_whitespace", "Trim trailing whitespace", "Editor", "bool", "false"),
     Setting("insert_final_newline", "Final newline", "Editor", "bool", "true"),
+    Setting("ogmkdev_current_line", "Highlight the current line", "Editor", "bool", "true"),
     Setting("ogmkdev_dialect", "PHP version", "Languages", "choice", "8.6", PHP_VERSIONS, section="*.php"),
+    Setting("ogmkdev_source_roots", "Source folders (comma separated)", "Workspace", "text", ""),
+    Setting("ogmkdev_test_roots", "Test folders (comma separated)", "Workspace", "text", "tests,test,spec"),
+    Setting("ogmkdev_exclude", "Ignored folders (not in the tree, not indexed)", "Workspace", "text",
+            ".git,node_modules,__pycache__,vendor"),
     Setting("ogmkdev_diagnostics", "Error hinting", "Diagnostics", "choice", "on", ("on", "off")),
     Setting("ogmkdev_diagnostic_php_function", "PHP library functions newer than the version", "Diagnostics",
             "choice", "warning", SEVERITIES),

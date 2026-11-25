@@ -27,6 +27,9 @@ CONFIG_FILE_NAME = ".editorconfig"
 UNSET = "unset"
 # Template bodies are case-sensitive, so their values keep their case: ogmkdev_template_<trigger>.
 TEMPLATE_KEY_PREFIX = "ogmkdev_template_"
+# Values of these keys keep their case (names of folders, templates, and so on).
+CASE_PRESERVING_PREFIXES = (TEMPLATE_KEY_PREFIX, "ogmkdev_filetemplate_", "ogmkdev_source_roots",
+                            "ogmkdev_test_roots", "ogmkdev_exclude", "ogmkdev_key_")
 NUMERIC_RANGE_LIMIT = 10_000
 
 INDENT_STYLES = frozenset({"tab", "space"})
@@ -221,7 +224,7 @@ def parse(text: str, path: str = CONFIG_FILE_NAME) -> EditorConfigFile:
         key, _, value = line.partition("=")
         key = key.strip().lower()
         value = value.strip()
-        if not key.startswith(TEMPLATE_KEY_PREFIX):
+        if not key.startswith(CASE_PRESERVING_PREFIXES):
             value = value.lower()
         if current is None:
             if key == "root":

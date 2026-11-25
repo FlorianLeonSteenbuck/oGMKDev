@@ -264,8 +264,11 @@ def extract(path: str, source: str) -> List[Symbol]:
 # ----------------------------------------------------------------------- index
 
 class ProjectIndex:
-    def __init__(self, root: str, cache_path: Optional[str] = None) -> None:
-        self.root = os.path.abspath(root)
+    """Index of one or more project folders; ``excluded`` drops paths the workspace ignores."""
+
+    def __init__(self, roots, cache_path: Optional[str] = None, excluded=None) -> None:
+        self.roots: List[str] = [os.path.abspath(r) for r in ([roots] if isinstance(roots, str) else roots)]
+        self.excluded = excluded
         self.cache_path = cache_path
         self.files: Dict[str, FileEntry] = {}
         self._by_name: Dict[str, List[Symbol]] = {}
@@ -277,15 +280,20 @@ class ProjectIndex:
 
     # --- invalidation
 
+    def _walk(self):
+        for root in self.roots:
+            for directory, subdirs, names in os.walk(root):
+                subdirs[:] = [d for d in subdirs if d not in SKIP_DIRS
+                              and not (self.excluded and self.excluded(os.path.join(directory, d)))]
+                for name in names:
+                    yield os.path.join(directory, name)
+
     def _scan(self) -> Dict[str, Tuple[int, int]]:
         found: Dict[str, Tuple[int, int]] = {}
-        for directory, subdirs, names in os.walk(self.root):
-            subdirs[:] = [d for d in subdirs if d not in SKIP_DIRS]
-            for name in names:
-                path = os.path.join(directory, name)
-                if os.path.splitext(name)[1].lower() in INDEXED:
-                    stat = os.stat(path)
-                    found[path] = (stat.st_mtime_ns, stat.st_size)
+        for path in self._walk():
+            if os.path.splitext(path)[1].lower() in INDEXED and not (self.excluded and self.excluded(path)):
+                stat = os.stat(path)
+                found[path] = (stat.st_mtime_ns, stat.st_size)
         return found
 
     def refresh(self) -> Dict[str, int]:
@@ -444,24 +452,22 @@ class ProjectIndex:
         flags = 0 if case_sensitive else re.IGNORECASE
         matcher = re.compile(pattern if regex else re.escape(pattern), flags)
         hits: List[SearchHit] = []
-        for directory, subdirs, names in os.walk(self.root):
-            subdirs[:] = [d for d in subdirs if d not in SKIP_DIRS]
-            for name in sorted(names):
-                if not fnmatch.fnmatch(name, glob):
-                    continue
-                path = os.path.join(directory, name)
-                try:
-                    with open(path, "rb") as handle:
-                        raw = handle.read()
-                except OSError:
-                    continue
-                if b"\0" in raw[:1024]:
-                    continue
-                for number, line in enumerate(raw.decode("utf-8", errors="replace").splitlines(), 1):
-                    for match in matcher.finditer(line):
-                        hits.append(SearchHit(path, number, match.start() + 1, line.strip()))
-                        if len(hits) >= limit:
-                            return hits
+        for path in sorted(self._walk()):
+            if not fnmatch.fnmatch(os.path.basename(path), glob):
+                continue
+            try:
+                with open(path, "rb") as handle:
+                    raw = handle.read()
+            except OSError:
+                continue
+            if b"\0" in raw[:1024]:
+                continue
+            for number, line in enumerate(raw.decode("utf-8", errors="replace").splitlines(), 1):
+                for match in matcher.finditer(line):
+                    hits.append(SearchHit(path, number, match.start() + 1, line.strip()))
+                    if len(hits) >= limit:
+                        return hits
+        return hits
         return hits
 
     def inspect(self) -> List[Inspection]:
@@ -489,12 +495,12 @@ class ProjectIndex:
         data = {path_: {"mtime_ns": e.mtime_ns, "size": e.size, "symbols": [asdict(s) for s in e.symbols]}
                 for path_, e in self.files.items()}
         with open(target, "w", encoding="utf-8") as handle:
-            json.dump({"root": self.root, "files": data}, handle)
+            json.dump({"roots": self.roots, "files": data}, handle)
 
     def load_cache(self, path: str) -> None:
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
-        if data.get("root") != self.root:
+        if data.get("roots") != self.roots:
             return
         self.files = {}
         for file_path, entry in data.get("files", {}).items():
