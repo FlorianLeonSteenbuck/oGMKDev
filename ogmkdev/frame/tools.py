@@ -92,6 +92,9 @@ class ToolsMixin:
             seen[path] = stamp
             with open(path, encoding="utf-8", errors="replace") as handle:
                 self.local_history.snapshot(path, handle.read(), "opened" if previous is None else "save")
+            # a saved file is indexed again, so definitions and the hierarchy follow the change
+            if previous is not None and getattr(self, "index", None) is not None:
+                self.index.invalidate(path)
         if changed or path != self._history_path:
             self._history_path = path
             self.refresh_history()
