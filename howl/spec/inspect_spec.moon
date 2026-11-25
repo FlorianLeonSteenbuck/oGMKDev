@@ -461,6 +461,17 @@ describe 'inspect', ->
       inspect.publish buffer, 'lsp', { {line: 1, message: 'old'} }
       assert.same {}, buffer.markers.all
 
+  describe 'severity_of(inspections)', ->
+    it 'is error when one of the inspections is an error', ->
+      assert.equal 'error', inspect.severity_of {{type: 'hint'}, {type: 'error'}, {type: 'warning'}}
+
+    it 'is warning when the most severe one is a warning', ->
+      assert.equal 'warning', inspect.severity_of {{type: 'hint'}, {type: 'warning'}}
+
+    it 'is hint for hints and anything else', ->
+      assert.equal 'hint', inspect.severity_of {{type: 'hint'}}
+      assert.equal 'hint', inspect.severity_of {{type: 'info'}}
+
   describe 'the cursor-goto-inspection command', ->
     local editor, select_opts
 

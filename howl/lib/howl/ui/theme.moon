@@ -91,6 +91,29 @@ window.test-window {
   background: transparent;
 }
 
+/* Inspection popups are square, with a border in the colour of their most severe problem:
+   red for an error, orange for a warning, grey for a hint */
+popover.inspection-error contents,
+popover.inspection-warning contents,
+popover.inspection-hint contents {
+  border-radius: 0;
+  border-width: 2px;
+  border-style: solid;
+  padding: 4px 6px;
+}
+
+popover.inspection-error contents {
+  border-color: #d64541;
+}
+
+popover.inspection-warning contents {
+  border-color: #e8912d;
+}
+
+popover.inspection-hint contents {
+  border-color: #8c8c8c;
+}
+
 /* Begin theme below */
 ]]
 

@@ -291,10 +291,18 @@ popup_text = (inspections) ->
 
   return howl.ui.markup.howl table.concat items, '\n'
 
+-- the popup takes the colour of its most severe inspection: error, else warning, else hint
+severity_of = (inspections) ->
+  severity = 'hint'
+  for inspection in *inspections
+    return 'error' if inspection.type == 'error'
+    severity = 'warning' if inspection.type == 'warning'
+  severity
+
 show_popup = (editor, inspections, pos) ->
   buf = ActionBuffer!
   buf\append popup_text inspections
-  popup = BufferPopup buf
+  popup = BufferPopup buf, css_class: "inspection-#{severity_of inspections}"
 
   with popup.view
     .cursor.line = 1
@@ -441,4 +449,4 @@ command.register
       app.editor.cursor.pos = chunk.start_pos
       app.editor\highlight start_pos: chunk.start_pos, end_pos: chunk.end_pos + 1
 
-:inspect, :criticize, :publish
+:inspect, :criticize, :publish, :severity_of
