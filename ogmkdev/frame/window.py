@@ -11,7 +11,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from ogmkdev import filetemplates, markup, scaffold  # noqa: E402
+from ogmkdev import filetemplates, markup, newclass, scaffold  # noqa: E402
 from ogmkdev.settings import SettingsStore  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from . import theme  # noqa: E402
@@ -496,6 +496,33 @@ class Frame(AnalysisMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, G
         properties = SettingsStore(self.folder).effective_for(os.path.join(folder, file_name.strip() or "_"))
         try:
             created = filetemplates.create_new_file(folder, file_name, self.folder, properties)
+        except ValueError as problem:
+            self.set_status(str(problem))
+            return
+        self.open_file(created.path, created.line, created.column)
+        self.set_status(created.message)
+
+    def new_class(self) -> None:
+        self.ask_text("New class", "File name (for example CartItem.php):", self._new_class_named)
+
+    def _new_class_named(self, file_name: str) -> None:
+        if filetemplates.extension_of(file_name.strip()) == "php":
+            self.ask_text("New class", "Namespace (empty: from the folder, - for none):",
+                          lambda namespace: self._new_class_imports(file_name, namespace))
+        else:
+            self._new_class_imports(file_name, "")
+
+    def _new_class_imports(self, file_name: str, namespace: str) -> None:
+        self.ask_text("New class", "Imports, comma separated (empty for none):",
+                      lambda imports: self._create_class(file_name, namespace, imports))
+
+    def _create_class(self, file_name: str, namespace: str, imports: str) -> None:
+        """Writes a class file next to the current one (or in the folder), opens it with the cursor in the
+        class body, and never overwrites a file."""
+        current = self.area.current_path()
+        folder = os.path.dirname(current) if current else self.folder
+        try:
+            created = newclass.create_class_file(folder, file_name, self.folder, namespace, imports.split(","))
         except ValueError as problem:
             self.set_status(str(problem))
             return
