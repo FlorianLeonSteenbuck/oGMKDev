@@ -16,7 +16,16 @@ HOWL_STYLES = (
     ("default", "foreground"), ("comment", "comment"), ("keyword", "keyword"), ("string", "string"),
     ("number", "number"), ("operator", "operator"), ("regex", "regexp"), ("variable", "variable"),
     ("key", "attribute"), ("function", "heading"), ("type", "engine"), ("member", "attribute"),
+    # BareDown (howl/bundles/baredown): the block markers and the inline spans
+    ("heading", "heading"), ("marker", "marker"), ("bullet", "bullet"), ("ordered", "ordered"),
+    ("quote", "quote"), ("rule", "rule"), ("fence", "fence"), ("code", "code"), ("link", "link"),
+    ("bold", "foreground"), ("italic", "foreground"),
 )
+# The text properties of a style, in Howl's theme keys (font-weight, font-style, text-decoration)
+HOWL_STYLE_FONTS = {
+    "heading": "font-weight: bold;", "marker": "font-weight: bold;", "bold": "font-weight: bold;",
+    "italic": "font-style: italic;", "quote": "font-style: italic;", "link": "text-decoration: underline;",
+}
 
 
 def frame_css(mode: str, scheme: str) -> str:
@@ -57,7 +66,8 @@ def howl_css(mode: str, scheme: str) -> str:
         " min-width: 0; min-height: 0; margin: 0; padding: 0; opacity: 0; }",
     ]
     for style, key in HOWL_STYLES:
-        rules.append(f"style.{style} {{ color: {colors[key]}; }}")
+        fonts = f" {HOWL_STYLE_FONTS[style]}" if style in HOWL_STYLE_FONTS else ""
+        rules.append(f"style.{style} {{ color: {colors[key]};{fonts} }}")
     return "\n".join(rules) + "\n"
 
 

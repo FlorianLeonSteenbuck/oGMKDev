@@ -104,6 +104,12 @@ class EditorTests(FrameTestCase):
         # the focused buffer reloads the written text, so it is no longer modified
         self.assertTrue(pump_until(lambda: (frame.editors.status() or {}).get("modified") is False, timeout=15))
 
+    def test_a_baredown_file_gets_the_baredown_mode(self):
+        path = write(self.folder, "notes.bd", "= Title\n- item **bold**\n")
+        frame = self.frame([path])
+        self.focus(frame, path)
+        self.assertEqual(frame.editors.status()["mode"], "baredown")
+
 
 if __name__ == "__main__":
     unittest.main()

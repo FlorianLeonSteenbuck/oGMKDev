@@ -47,6 +47,8 @@ grammar or language server. Every language here is implemented in this repositor
 - EditorConfig applied on open and on save: indent, tab width, line endings, charset, trailing whitespace,
   final newline. A saved file that differs from its EditorConfig is written again, and the editor reloads
   it. Scoping keys: `ogmkdev_language`, `ogmkdev_dialect`.
+- BareDown (`.bd`) is highlighted by the `baredown` mode of Howl (`howl/bundles/baredown`): the line kinds
+  and the inline spans of `ogmkdev/baredown.py`, with the same rules and the theme's colours.
 - Language detection with compound extensions (`page.mustache.html`, `schema.mysql.sql`),
   shebang lines and EditorConfig overrides.
 - Diagnostics: the Problems tab lists them with their messages, and Howl shows each message at its line
@@ -354,6 +356,4 @@ System packages: `python3-gi`, `gir1.2-gtk-4.0`, and an icon theme with the stan
 - Dialect-specific SQL keyword sets; PHP and Python syntax colours in the frame.
 - A new untitled editor does not take Howl's current editor: `HOWL_EMBED_FOCUS` runs for it, but the status
   line keeps the previous file, and the commands act on that file. Not solved yet; the test only checks the tab.
-- BareDown files are not highlighted in the frame yet: Howl has no BareDown mode. The GTK 3 window
-  coloured them with the tokenizer of `ogmkdev/highlight.py`.
 - The `.rpm` package is written but has not been built on openSUSE.

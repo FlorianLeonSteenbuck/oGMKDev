@@ -61,5 +61,17 @@ class ThemeTests(unittest.TestCase):
         self.assertIn("background-color: #3C3F41", css)
 
 
+class BareDownStyleTests(unittest.TestCase):
+    """The Howl theme of the frame colours the BareDown styles with their font properties."""
+
+    def test_the_baredown_styles_carry_their_font_properties(self):
+        from ogmkdev.frame.theme import howl_css
+        rules = {line.split(" {")[0]: line for line in howl_css("light", "blend").splitlines()
+                 if line.startswith("style.")}
+        self.assertIn("font-weight: bold;", rules["style.heading"])
+        self.assertIn("font-style: italic;", rules["style.quote"])
+        self.assertIn("text-decoration: underline;", rules["style.link"])
+
+
 if __name__ == "__main__":
     unittest.main()
