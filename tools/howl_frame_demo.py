@@ -34,11 +34,15 @@ howl.howl_embed.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
 def on_activate(application):
     window = Gtk.ApplicationWindow(application=application, title="oGMKDev")
     window.set_default_size(1100, 700)
-    layout = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-    window.set_child(layout)
-    file = sys.argv[1].encode() if len(sys.argv) > 1 else None
-    status = howl.howl_embed(raw_pointer(layout), HOWL_ROOT.encode(), file)
-    print("howl_embed status:", status, flush=True)
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+    window.set_child(row)
+    for path in sys.argv[1:] or [None]:
+        column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        column.set_hexpand(True)
+        row.append(column)
+        file = os.path.abspath(path).encode() if path else None
+        status = howl.howl_embed(raw_pointer(column), HOWL_ROOT.encode(), file)
+        print("howl_embed status:", status, flush=True)
     window.present()
 
 

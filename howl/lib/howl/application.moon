@@ -139,18 +139,30 @@ class Application extends PropertyObject
   -- Howl's editor as a widget of a GTK program that runs its own main loop (src/embed.c):
   -- the window Howl creates for the editor is hidden and its content moves into `container`
   embed: (container, file) =>
-    ffi = require 'ffi'
-    C = ffi.C
     @g_app = Gtk.Application 'org.ogmkdev.howl-embedded', Gtk.Application.NON_UNIQUE
     @g_app\register!
     files = if file and file != '' then {file} else {}
     @_load files, {}
-    window = @window\to_gobject!
-    content = C.gtk_window_get_child window
-    C.gtk_window_set_child window, nil
+    @_move_content @window, container
+    -- further editors of the same process (src/embed.c calls this for every later container)
+    _G.HOWL_EMBED_ADD = (more_container, more_file) -> @embed_window more_container, more_file
+    @window
+
+  -- one more window with its own editor, its content moved into `container`
+  embed_window: (container, file) =>
+    window = @new_window!
+    editor = @new_editor window: window
+    @open_file File(file), editor if file and file != ''
+    @_move_content window, container
+
+  _move_content: (window, container) =>
+    ffi = require 'ffi'
+    C = ffi.C
+    gwindow = window\to_gobject!
+    content = C.gtk_window_get_child gwindow
+    C.gtk_window_set_child gwindow, nil
     C.gtk_box_append ffi.cast('GtkBox *', container), content
-    C.gtk_widget_hide ffi.cast('GtkWidget *', window)
-    content
+    C.gtk_widget_hide ffi.cast('GtkWidget *', gwindow)
 
   new_window: (properties = {}) =>
     props = title: @title

@@ -44,8 +44,9 @@ same process. The window Howl creates for the content is hidden. `howl_embed(con
 starts it; `Application:embed` in `lib/howl/application.moon` does the work on the Lua side.
 `tools/howl_frame_demo.py` shows it in a GTK 4 Python window.
 
-Limits so far: one editor per process (a second call returns 1); the keyboard goes to the editor
-through the window's focus controller.
+Every further call adds another editor (its own window, hidden, content moved into the next container),
+so several editors sit side by side in one GTK window. Limits so far: the keyboard goes to the editor
+through the window's focus controller, and there is no way to close an editor yet.
 
 ## Known gaps
 

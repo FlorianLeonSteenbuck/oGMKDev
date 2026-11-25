@@ -11,12 +11,25 @@ int luaopen_lpeg(lua_State *L);
 
 static lua_State *embedded = NULL;
 
-/* Starts Howl's Lua side in the process and puts the editor into `container`.
-   Returns 0 on success. The Lua state lives as long as the process (the GTK main loop runs it). */
+/* Starts Howl's Lua side in the process and puts the editor into `container`; later calls add
+   further editors to the same Howl. Returns 0 on success. The Lua state lives as long as the process. */
 int howl_embed(GtkBox *container, const char *app_root, const char *file)
 {
-  if (embedded != NULL)
-    return 1;
+  if (embedded != NULL) {
+    /* a further editor in the same process: Howl adds a window and moves its content */
+    lua_getglobal(embedded, "HOWL_EMBED_ADD");
+    if (!lua_isfunction(embedded, -1)) {
+      lua_pop(embedded, 1);
+      return 1;
+    }
+    lua_pushlightuserdata(embedded, container);
+    lua_pushstring(embedded, file ? file : "");
+    if (lua_pcall(embedded, 2, 0, 0)) {
+      g_critical("Failed to add an editor: %s", lua_tostring(embedded, -1));
+      return 1;
+    }
+    return 0;
+  }
 
   lua_State *L = luaL_newstate();
   luaL_openlibs(L);
