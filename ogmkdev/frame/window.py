@@ -4,6 +4,7 @@ find field and status line."""
 from __future__ import annotations
 
 import os
+import time
 from typing import Optional, Sequence
 
 import gi
@@ -29,6 +30,7 @@ HIDDEN_NAMES = {".git", "node_modules", "__pycache__"}
 LOOSE_LABEL = "Loose files"  # the tree entry for open files the tree does not show
 ICON_THEME = "Humanity"
 EDGE_COLUMN_DEFAULT = 120  # the edge line when the file's EditorConfig sets no max_line_length
+AUTOSAVE_SECONDS = 2       # a modified file is saved this long after it was changed (autosave)
 
 # Toolbar: icon, tooltip, target (None for a separator)
 TOOLBAR = (
@@ -72,12 +74,17 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
     _edge_key: Optional[tuple] = None
     _loose_root = None  # the tree entry 'Loose files' (a Gtk.TreeIter) while it exists
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
-                 mode: str = "light", scheme: str = "blend") -> None:
+                 mode: str = "light", scheme: str = "blend", autosave: Optional[bool] = None) -> None:
         self.mode, self.scheme = mode, scheme
         install_frame_css(mode, scheme)
         super().__init__(application=app, title="oGMKDev")
         self.add_css_class("ogmkdev-frame")
         self.folder = os.path.abspath(folder)
+        # Autosave saves a modified file AUTOSAVE_SECONDS after it was changed: the flag, or the setting
+        self.autosave_enabled = autosave if autosave is not None else (
+            SettingsStore(self.folder).value("ogmkdev_autosave") == "on")
+        self._dirty_since: dict = {}
+        self._poll_source = 0
         self.workspace = Workspace.from_properties(
             [self.folder], SettingsStore(self.folder).effective_for(os.path.join(self.folder, "_")))
         self.editors = Editors()
@@ -136,7 +143,8 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         cache = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "ogmkdev", "themes")
         self.editors.theme(theme.theme_name(mode, scheme), theme.write_howl_theme(mode, scheme, cache))
         self.set_status(f"folder {self.folder}")
-        GLib.timeout_add(500, self._poll)
+        self._poll_source = GLib.timeout_add(500, self._poll)
+        self.connect("close-request", self._on_close_request)
 
     # ------------------------------------------------------ tabs setup
 
@@ -564,6 +572,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
             state = "modified" if info["modified"] else "saved"
             self.position.set_text(f"{os.path.basename(info['path'])}   {info['line']}:{info['column']}"
                                    f"   {info['mode']}   {state}")
+        self._autosave_tick(info, path)
         self.track_history(path)
         self._follow_focus(path)
         self._sync_loose()
@@ -572,6 +581,26 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         if click:
             self._follow_click(*click)
         return True
+
+    def _on_close_request(self, _window) -> bool:
+        """The window is closing: its status poll stops (a closed frame must not act on the Howl editors)."""
+        if self._poll_source:
+            GLib.source_remove(self._poll_source)
+            self._poll_source = 0
+        return False
+
+    def _autosave_tick(self, info, path: Optional[str]) -> None:
+        """Saves the focused file once it has been modified for AUTOSAVE_SECONDS (the status is polled)."""
+        if not info or not path:
+            return
+        if not (info["modified"] and self.autosave_enabled and os.path.isfile(path)):
+            self._dirty_since.pop(path, None)
+            return
+        since = self._dirty_since.setdefault(path, time.monotonic())
+        if time.monotonic() - since >= AUTOSAVE_SECONDS:
+            self._dirty_since.pop(path, None)
+            self.editors.command("save")
+            self.set_status(f"autosaved {os.path.basename(path)}")
 
     def _follow_click(self, word: str, column: int, line: str) -> None:
         """Ctrl+click: a file reference (href, src, url(...)) opens its file; anything else goes to the

@@ -12,6 +12,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
 from .. import htmldoc  # noqa: E402
+from .. import languages, organize  # noqa: E402
 from ..history import LocalHistory  # noqa: E402
 from ..workspace import workspace_files  # noqa: E402
 from .panels import _scrolled, _text_view  # noqa: E402
@@ -75,6 +76,29 @@ class ToolsMixin:
         self.history_box.append(buttons)
         self.history_box.append(paned)
         self.left.append_page(self.history_box, Gtk.Label(label="History"))
+
+    def organize_imports(self) -> None:
+        """Edit > Organize Imports: the use statements of the open PHP file are merged, sorted and the unused
+        ones dropped. The file is saved first and rewritten; the Howl buffer then reloads it."""
+        info = self.editors.status()
+        path = info["path"] if info else None
+        if not path or not os.path.isfile(path):
+            self.set_status("open a PHP file first")
+            return
+        if languages.detect_file(path).language != "php":
+            self.set_status("organise imports works on PHP files")
+            return
+        self.editors.command("save")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        organised = organize.organize(text)
+        if organised == text:
+            self.set_status("imports are already organised")
+            return
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(organised)
+        self.editors.command("buffer-reload")
+        self.set_status("imports organised")
 
     def track_history(self, path: Optional[str]) -> None:
         """Keeps a snapshot of the open file each time it changes on disk (saves), and shows its history."""

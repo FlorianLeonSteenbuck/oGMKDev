@@ -18,6 +18,8 @@ def main(argv):
     parser.add_argument("--mode", choices=("light", "dark"), default="light", help="colours (default: light)")
     parser.add_argument("--scheme", choices=("blend", "jetbrains", "eclipse"), default="blend",
                         help="colour scheme (default: blend)")
+    parser.add_argument("--autosave", action="store_true",
+                        help="save modified files on their own (default: the ogmkdev_autosave setting)")
     parser.add_argument("files", nargs="*")
     args = parser.parse_args(argv)
     folder = os.path.abspath(args.folder)
@@ -29,7 +31,8 @@ def main(argv):
 
     def show(application, paths):
         if not frames:
-            frames.append(Frame(application, folder, paths, args.mode, args.scheme))
+            frames.append(Frame(application, folder, paths, args.mode, args.scheme,
+                                autosave=True if args.autosave else None))
         else:
             for path in paths:
                 frames[0].open_file(path)
