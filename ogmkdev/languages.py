@@ -69,6 +69,9 @@ LANGUAGES: Dict[str, Language] = {
         Language("xsd", "XML Schema", ("xsd",), (), None, "xml"),
         Language("xslt", "XSLT", ("xsl", "xslt"), (), None, "xml"),
         Language("svg", "SVG", ("svg",), (), None, "xml"),
+        # single-file components: highlighted as HTML
+        Language("vue", "Vue", ("vue",), (), None, "html"),
+        Language("svelte", "Svelte", ("svelte",), (), None, "html"),
         Language("text", "Plain text", ("txt",), (), None, None),
     )
 }

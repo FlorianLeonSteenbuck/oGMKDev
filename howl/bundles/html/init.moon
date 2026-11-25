@@ -1,6 +1,6 @@
 mode_reg =
   name: 'html'
-  extensions: { 'htm', 'html', 'shtm', 'shtml', 'xhtml' }
+  extensions: { 'htm', 'html', 'shtm', 'shtml', 'svelte', 'vue', 'xhtml' }
   create: -> bundle_load('html_mode')
 
 howl.mode.register mode_reg

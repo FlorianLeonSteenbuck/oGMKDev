@@ -313,6 +313,34 @@ BUILTIN_TEMPLATES: Tuple[Template, ...] = (
     _t("value", "xslt", "value of an expression", '<xsl:value-of select="${select:.}"/>'),
     _t("import", "xslt", "import a stylesheet", '<xsl:import href="${href:common.xsl}"/>'),
     _t("include", "xslt", "include a stylesheet", '<xsl:include href="${href:common.xsl}"/>'),
+    _t("rfcp", "tsx", "React function component with props and a CSS module",
+       "import styles from './${name:Component}.module.css';\n\n"
+       "interface ${name:Component}Props {\n  title?: string;\n}\n\n"
+       "export function ${name:Component}({ title = '${name:Component}' }: ${name:Component}Props) {\n"
+       "  return (\n    <section className={styles.root}>\n      <h2>{title}</h2>\n      $0\n    </section>\n  );\n}"),
+    _t("sfc", "vue", "Vue single-file component with script setup",
+       '<script setup lang="ts">\ndefineProps<{ title?: string }>();\n</script>\n\n<template>\n'
+       '  <section class="${name:component}">\n    <h2>{{ title }}</h2>\n    $0\n  </section>\n</template>\n\n'
+       '<style scoped>\n.${name:component} {\n}\n</style>'),
+    _t("svelte", "svelte", "Svelte component",
+       "<script lang=\"ts\">\n  export let title: string = '${name:Component}';\n</script>\n\n"
+       "<section>\n  <h2>{title}</h2>\n  $0\n</section>\n\n<style>\n  section {\n  }\n</style>"),
+    _t("ng", "typescript", "Angular component",
+       "import { Component } from '@angular/core';\n\n@Component({\n"
+       "  selector: 'app-${selector:component}',\n"
+       "  templateUrl: './${selector:component}.component.html',\n"
+       "  styleUrls: ['./${selector:component}.component.css']\n})\n"
+       "export class ${class:Component}Component {\n  $0\n}"),
+    _t("ngtpl", "html", "Angular component template", "<section>\n  $0\n</section>"),
+    _t("lit", "typescript", "Lit web component",
+       "import { LitElement, css, html } from 'lit';\n"
+       "import { customElement, property } from 'lit/decorators.js';\n\n"
+       "@customElement('${tag:my-element}')\nexport class ${class:MyElement} extends LitElement {\n"
+       "  @property() title = '';\n\n  static styles = css`:host { display: block; }`;\n\n"
+       "  render() {\n    return html`<h2>$0</h2>`;\n  }\n}"),
+    _t("vite", "typescript", "Vite configuration",
+       "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\n"
+       "export default defineConfig({\n  plugins: [react()],\n  server: { port: ${port:5173} }\n});"),
     _t("block", "twig", "block", "{% block ${name:content} %}\n    $0\n{% endblock %}"),
     _t("extends", "twig", "extends a base template", '{% extends "${base:base.html.twig}" %}'),
     _t("include", "twig", "include a template", '{% include "${template:partial.html.twig}" %}'),

@@ -11,7 +11,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from ogmkdev import markup  # noqa: E402
+from ogmkdev import markup, scaffold  # noqa: E402
 from ogmkdev.settings import SettingsStore  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from . import theme  # noqa: E402
@@ -437,6 +437,52 @@ class Frame(AnalysisMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, G
         if line:
             self.editors.open(path, line, column)
         self.set_status(f"opened {path}")
+
+    # ------------------------------------------------------- new components
+
+    def new_react_component(self) -> None:
+        self._new_component_dialog("react")
+
+    def new_vue_component(self) -> None:
+        self._new_component_dialog("vue")
+
+    def new_svelte_component(self) -> None:
+        self._new_component_dialog("svelte")
+
+    def new_angular_component(self) -> None:
+        self._new_component_dialog("angular")
+
+    def new_lit_component(self) -> None:
+        self._new_component_dialog("lit")
+
+    def _new_component_dialog(self, framework: str) -> None:
+        self.ask_text(f"New {framework.capitalize()} component", "Name (for example cart item):",
+                      lambda name: self._create_component(framework, name))
+
+    def _create_component(self, framework: str, name: str) -> None:
+        """Creates the files of a component next to the current file (or in the folder), opens the main file
+        at the cursor of its template, and never overwrites a file."""
+        current = self.area.current_path()
+        folder = os.path.dirname(current) if current else self.folder
+        try:
+            files = scaffold.component_files(framework, name)
+        except ValueError as problem:
+            self.set_status(str(problem))
+            return
+        taken = [file_name for file_name, _text, _cursor in files
+                 if os.path.exists(os.path.join(folder, file_name))]
+        if taken:
+            self.set_status(f"not created, these files exist already: {', '.join(taken)}")
+            return
+        for file_name, text, _cursor in files:
+            with open(os.path.join(folder, file_name), "w", encoding="utf-8") as handle:
+                handle.write(text)
+        main_name, main_text, cursor = files[0]
+        main_path = os.path.join(folder, main_name)
+        line = main_text[:cursor].count("\n") + 1
+        column = cursor - (main_text.rfind("\n", 0, cursor) + 1) + 1
+        self.open_file(main_path, line, column)
+        self.set_status(f"created the {framework} component: {', '.join(name for name, _t, _c in files)}")
 
     def new_editor(self) -> None:
         self.add_editor(None)
