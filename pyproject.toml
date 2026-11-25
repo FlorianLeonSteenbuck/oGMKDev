@@ -6,4 +6,4 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
-gui = []   # PyGObject with GTK 3 and GtkSourceView 3 come from the OS packages (python3-gi, gir1.2-gtksource-3.0)
+gui = []   # PyGObject with GTK 4 comes from the OS packages (python3-gi, gir1.2-gtk-4.0)

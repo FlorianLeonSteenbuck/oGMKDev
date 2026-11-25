@@ -39,28 +39,27 @@ grammar or language server. Every language here is implemented in this repositor
 
 ## The editor
 
-*These features belong to the GTK 3 window (`ogmkdev/ui`), which the frame above replaces. The window
-is removed once its features are in the frame (see Open items).*
-
-- Menu bar (File, Edit, Run, Debug, Help) and icon toolbar, both generated from one action table
-  (`ACTIONS` in `ogmkdev/ui/app.py`).
-- Left panel: project files (lazy tree) and run configurations. Bottom panel: console and watches.
-- Tabs with new, open, save, save as, close, and a `*` marker for unsaved changes.
-- EditorConfig applied on open and save: indent, tab width, line endings, charset, trailing
-  whitespace, final newline. Scoping keys: `ogmkdev_language`, `ogmkdev_dialect`.
+- Menu bar (File, Edit, View, Tools, Settings, Run, Help) and icon toolbar, both generated from the tables
+  `MENUS` (`ogmkdev/frame/menus.py`) and `TOOLBAR` (`ogmkdev/frame/window.py`).
+- Left panel: project files (lazy tree), run configurations, hierarchy, structure, history and Git.
+  Bottom panel: console, variables and watches, problems, search and TODO.
+- Editors in panes; the status line shows the cursor, the mode, and whether the file is modified.
+- EditorConfig applied on open and on save: indent, tab width, line endings, charset, trailing whitespace,
+  final newline. A saved file that differs from its EditorConfig is written again, and the editor reloads
+  it. Scoping keys: `ogmkdev_language`, `ogmkdev_dialect`.
 - Language detection with compound extensions (`page.mustache.html`, `schema.mysql.sql`),
   shebang lines and EditorConfig overrides.
-- Own syntax highlighting (`ogmkdev/highlight.py`) for ECMAScript, BareDown and SQL.
-- Diagnostics in the status line: ECMAScript lexical errors, BareDown unclosed code blocks,
-  PHP heredoc errors, and SQL `ENGINE=` checks (MySQL and MariaDB engine names).
+- Diagnostics: the Problems tab lists them with their messages, and Howl shows each message at its line
+  (`ogmkdev_diagnostic_marks = off` removes the hints).
 - Variable-based code templates with Ctrl+Space: the trigger before the cursor expands to its template,
   built in or from EditorConfig. A word without a template gets Howl's completion.
 - Breakpoints (F9) in the gutter, run configurations, and GDB (GDB/MI) and XDebug (DBGp)
   debugging: continue, step over, step into, step out, stop, watch expressions, current-line marker.
 - Find next, undo and redo.
-- Light and dark mode (View menu or `--dark`), and three color schemes: `blend` (JetBrains
-  structure with Eclipse's purple accent, the default), `jetbrains` and `eclipse`
-  (`--scheme NAME`). All colors are checked for WCAG contrast in the tests.
+- Light and dark mode (View > Dark Theme, switched while the frame runs, or `--mode dark`), and three
+  colour schemes: `blend` (JetBrains structure with Eclipse's purple accent, the default), `jetbrains`
+  and `eclipse` (View > Color scheme, or `--scheme NAME`). All colours are checked for WCAG contrast in
+  the tests.
 
 ## Keys
 
@@ -111,11 +110,11 @@ Paragraphs are lines up to the next blank line. Files use the extensions `.bd` a
 | ECMAScript (JavaScript) | lexer ported from KDevelop's QML/JS lexer; recursive-descent parser for ECMAScript 2022 (`ogmkdev/parsers/javascript.py`) for the syntax diagnostics; KDevelop's ES5 LALR driver kept as the reference (`tools/generate_ecmascript_tables.py`); own highlighting | outline and navigation on top of the parser's tree |
 | BareDown | own tokenizer, parser and HTML renderer | - |
 | SQL (Oracle, Apache Hive, MySQL, MariaDB, MSSQL, PostgreSQL) | lexer rules and keyword list ported from Howl, `ENGINE=` checks, own highlighting | dialect-specific keyword sets |
-| PHP | heredoc and nowdoc scanner, diagnostics; highlighting by GtkSourceView | own parser |
-| Python 2 / 3 / PyPy | dialect detection; highlighting by GtkSourceView | own parser |
+| PHP | heredoc and nowdoc scanner, diagnostics; highlighting by Howl | own parser |
+| Python 2 / 3 / PyPy | dialect detection; highlighting by Howl | own parser |
 | TypeScript, TSX, JSX | own lexer (`ogmkdev/lexers/typescript_lexer.py`); the parser of `ogmkdev/parsers/javascript.py` reads TypeScript when typed (types, interfaces, generics, enums, namespaces, decorators, `import type`, `as`, `satisfies`) and JSX; syntax diagnostics for .ts, .tsx, .jsx and .js | outline on top of the tree |
 | Mustache, Twig | detection of compound extensions, templates; highlighting of the base language | own grammar |
-| Markdown, HTML, JSON, CSS | GtkSourceView | none yet |
+| Markdown, HTML, CSS | Howl | none yet |
 | C++ | KDevelop `plugins/clang` in the source tree | rewrite to Python or bind |
 | Java | excluded | - |
 
@@ -309,7 +308,7 @@ default, `${name}` without a default stays as written, and `$0` is where the cur
 
 | Path | Contents |
 |---|---|
-| `ogmkdev/ui/app.py` | editor window: menus, toolbar, tabs, panels, debugging |
+| `ogmkdev/frame/` | GTK 4 window (`window.py` and its mixins): menus, panes, panels, debugging, index and project tools |
 | `ogmkdev/document.py` | document model (text, settings, language, diagnostics), no GUI |
 | `ogmkdev/highlight.py` | highlighting spans from our own tokenizers, tag styles |
 | `ogmkdev/baredown.py` | BareDown parser, tokenizer, HTML renderer |
@@ -333,19 +332,19 @@ Use the interpreter that has PyGObject: `/usr/bin/python3.12` (the default `pyth
 ```bash
 /usr/bin/python3.12 -m unittest discover -s tests -t .
 xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -t .    # includes GTK tests
-/usr/bin/python3.12 -m ogmkdev path/to/file_or_folder                  # start the editor
+/usr/bin/python3.12 -m ogmkdev --folder path/to/project [FILE ...]      # start the editor
 ```
 
-System packages: `python3-gi`, `gir1.2-gtk-3.0`, `gir1.2-gtksource-3.0`, and an icon theme with
-the standard action icons (Humanity or Adwaita). The integration tests use `gdb`, `gcc`, and
+System packages: `python3-gi`, `gir1.2-gtk-4.0`, and an icon theme with the standard action icons
+(Humanity or Adwaita). The integration tests use `gdb`, `gcc`, and
 `php-cli` with `php-xdebug` when installed; otherwise they are skipped.
 
 ## Open items
 
 - The frame drives GDB (GDB/MI) and XDebug (DBGp) for breakpoints, continue, steps and stop; the
   breakpoints are the gutter's marks, sent before each run or step. The Variables tab shows the locals
-  of the stopped program and the watch expressions. `tests/test_ui_frame_debug.py` runs the XDebug
-  session through the frame; a GDB session was checked by hand under Xvfb.
+  of the stopped program and the watch expressions. `tests/test_ui_frame_debug.py` runs the XDebug and
+  the GDB sessions through the frame.
 - Change marks colour the whole line; gutter stripes and a diff view per pane are not built yet.
 - Python and JavaScript references are not indexed, only their declarations. Methods of Python classes
   are not in the index, so the HTML export has no page entry for them.
@@ -353,5 +352,8 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 - The class diagram scrolls but has no zoom and no edge routing yet.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - Dialect-specific SQL keyword sets; PHP and Python syntax colours in the frame.
-- The GTK 3 window still has its own settings dialog, theme keys and highlighting through GtkSourceView.
+- A new untitled editor does not take Howl's current editor: `HOWL_EMBED_FOCUS` runs for it, but the status
+  line keeps the previous file, and the commands act on that file. Not solved yet; the test only checks the tab.
+- BareDown files are not highlighted in the frame yet: Howl has no BareDown mode. The GTK 3 window
+  coloured them with the tokenizer of `ogmkdev/highlight.py`.
 - The `.rpm` package is written but has not been built on openSUSE.
