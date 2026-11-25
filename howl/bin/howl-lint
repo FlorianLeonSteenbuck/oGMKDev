@@ -1,0 +1,10 @@
+#! /bin/sh
+#
+# Copyright 2016 The Howl Developers
+# License: MIT (see LICENSE.md at the top-level directory of the distribution)
+#
+# Lints the given files or directories. Findings go to stderr; exit 1 if there are any.
+
+. "$(dirname "$0")/_howl_env.sh"
+
+exec "$HOWL" --lint "$@"

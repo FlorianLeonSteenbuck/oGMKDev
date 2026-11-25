@@ -1,0 +1,10 @@
+#! /bin/sh
+#
+# Generates the site screenshots, at 1280x720 rendered at 2x. Howl runs inside a
+# headless sway of its own (see howl-headless), so that the window gets exactly that
+# size and nothing shows on the desktop.
+
+. "$(dirname "$0")/_howl_env.sh"
+
+exec "$ROOT/bin/howl-headless" --size 1280x720 --scale 2 -- \
+  --no-profile --run "$ROOT/lib/scripts/screen-shooter.moon" "$@"

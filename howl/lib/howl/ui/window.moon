@@ -1,0 +1,359 @@
+-- Copyright 2012-2024 The Howl Developers
+-- License: MIT (see LICENSE.md at the top-level directory of the distribution)
+
+ffi = require 'ffi'
+Gtk = require 'ljglibs.gtk'
+{:PropertyObject} = howl.util.moon
+{:Activity, :CommandPanel, :Status} = howl.ui
+{:signal} = howl
+
+append = table.insert
+
+to_gobject = (o) ->
+  status, gobject = pcall -> o\to_gobject!
+  return status and gobject or o
+
+-- popovers are surfaces of their own, which a widget's rendering doesn't
+-- include. Returns the showing ones below widget, with their positions
+-- relative to the window: the popup's position within its parent's surface,
+-- adjusted for where each native's widget sits within its surface.
+showing_popovers = (widget, native, x = 0, y = 0, popovers = {}) ->
+  for child in *widget.children
+    continue unless child.visible
+    child_native = child\get_native!
+    child_x, child_y = x, y
+
+    if ffi.cast('void *', child_native) == ffi.cast('void *', child)
+      popup_x, popup_y = child_native\get_popup_position!
+      child_tx, child_ty = child_native\get_surface_transform!
+      tx, ty = native\get_surface_transform!
+      child_x += popup_x + child_tx - tx
+      child_y += popup_y + child_ty - ty
+      append popovers, popover: child, x: child_x, y: child_y
+      showing_popovers child, child_native, child_x, child_y, popovers
+    else
+      showing_popovers child, native, x, y, popovers
+
+  popovers
+
+placements = {
+  left_of: 'POS_LEFT'
+  right_of: 'POS_RIGHT'
+  above: 'POS_TOP'
+  below: 'POS_BOTTOM'
+}
+
+-- between the views, and between them and the bars below. Themes set the space
+-- around them in CSS, as the margin of `window .container`.
+spacing = 4
+
+class Window extends PropertyObject
+  new: (properties = {}) =>
+    @_handlers = {}
+    @_views = {}
+    @status = Status!
+    @command_panel = CommandPanel self
+    @grid = Gtk.Grid
+      column_homogeneous: true
+      row_homogeneous: true
+      row_spacing: spacing
+      column_spacing: spacing
+      valign: Gtk.ALIGN_FILL
+      vexpand: true
+
+    @grid.can_focus = true
+
+    @activity = Activity!
+
+    @widgets = Gtk.Box Gtk.ORIENTATION_VERTICAL
+    @box = Gtk.Box Gtk.ORIENTATION_VERTICAL, spacing
+    @box\append @grid
+    @box\append @command_panel\to_gobject!
+    @box\append @widgets
+    -- ogmkdev: the bottom status line ("Howl ready.", cursor position) is not shown
+    @box\add_css_class "container"
+
+    @win = properties.window or Gtk.Window!
+    @win\add_css_class 'main-window'
+
+    @win[k] = v for k,v in pairs properties
+
+    @win\connect_for @, 'destroy', self._on_destroy
+
+    @focus_controller = Gtk.EventControllerFocus!
+    @win\add_controller @focus_controller
+    @focus_controller\connect_for @, 'enter', self._on_focus_in
+    @focus_controller\connect_for @, 'leave', self._on_focus_out
+
+    @win.child = @box
+
+    @data = {}
+    super @win
+
+  @property views: get: =>
+    views = {}
+
+    for c in *@grid.children
+      props = @grid\query_child c
+      data = {
+        x: props.column + 1
+        y: props.row + 1
+        width: props.width
+        height: props.height
+        gobject: c,
+      }
+      v = @_view_from_gobject c
+      if v != c
+        data.view = v
+
+      append views, data
+
+    table.sort views, (a, b) ->
+      return a.y < b.y if a.y != b.y
+      a.x < b.x
+
+    views
+
+  @property focus_child: get: =>
+    fc = @grid.focus_child
+    @data.focus_child = nil if fc
+    fc or @data.focus_child
+
+  @property current_view: get: =>
+    focused = @focus_child
+    return nil unless focused
+    @get_view focused
+
+  @property fullscreen:
+    get: => @win.fullscreened
+
+    set: (state) =>
+      if state and not @fullscreen
+        @win\fullscreen!
+      elseif not state and @fullscreen
+        @win\unfullscreen!
+
+  @property maximized:
+    get: => @win.maximized
+
+    set: (state) =>
+      if state and not @maximized
+        @win\maximize!
+      elseif not state and @maximized
+        @win\unmaximize!
+
+  add_widget: (widget) =>
+    @widgets\append widget
+
+  remove_widget: (widget) =>
+    @widgets\remove widget
+
+  siblings: (view, wraparound = false) =>
+    current = @get_view to_gobject(view or @focus_child)
+    views = @views
+    return {} unless current and #views > 1
+
+    local left, right, up, down, index
+    vertical_siblings = {}
+
+    for i = 1, #views
+      v = views[i]
+      if v.gobject == current.gobject
+        index = i
+      elseif v.x <= current.x and v.x + v.width > current.x
+        if v.y == current.y - 1
+          up = v.gobject
+        elseif v.y == current.y + 1
+          down = v.gobject
+
+        append vertical_siblings, v.gobject
+
+    before = views[index - 1]
+    left = if before and before.y == current.y then before
+
+    after = views[index + 1]
+    right = if after and after.y == current.y then after
+
+    if wraparound
+      left or= before or views[#views]
+      right or= after or views[1]
+      up = vertical_siblings[#vertical_siblings] unless up
+      down = vertical_siblings[1] unless down
+
+    {
+      left: left and left.gobject
+      right: right and right.gobject
+      :up
+      :down
+    }
+
+  to_gobject: => @win
+
+  add_view: (view, placement = 'right_of', anchor) =>
+    gobject = to_gobject view
+    @_place gobject, placement, anchor
+    append @_views, {:view, :gobject}
+    gobject\show!
+    @_reflow!
+    @get_view gobject
+
+  remove_view: (view = nil) =>
+    view = @focus_child unless view
+    error "Missing view to remove", 2 unless view
+    gobject = to_gobject view
+
+    view = @_view_from_gobject gobject
+    error "Asked to remove non-existing view", 2 unless view
+
+    siblings = @siblings gobject
+    focus_target = siblings.right or siblings.left
+    focus_target or= @siblings(gobject, true).left
+    @grid\remove gobject
+    @_reflow!
+    focus_target\grab_focus! if focus_target
+
+    view\release! if view.release
+    @_views = [t for t in *@_views when t.gobject != gobject]
+
+  get_view: (o) =>
+    gobject = to_gobject o
+    for v in *@views
+      return v if v.gobject == gobject
+
+    nil
+
+  remember_focus: =>
+    @data.focus_child = @grid.focus_child
+
+  show_popup: (popup, opts) =>
+    popup\show @win, opts
+
+  -- returns the showing popovers, as `{:popover, :x, :y}` with their position
+  -- relative to the window
+  showing_popovers: => showing_popovers @win, @win\get_native!
+
+  -- returns a texture with the window's current rendering, at the surface's
+  -- scale unless `opts.scale` is given. `opts.with_overlays` includes the
+  -- showing popups, and `opts.region` ({:x, :y, :width, :height}, in window
+  -- coordinates) limits it to a part of the window.
+  get_screenshot: (opts = {}) =>
+    native = @win\get_native!
+    width, height = @win.allocated_width, @win.allocated_height
+    scale = opts.scale or native\get_surface_scale!
+
+    snapshot = Gtk.Snapshot!
+    snapshot\scale scale, scale
+    snapshot\append_widget @win, width, height
+    if opts.with_overlays
+      for p in *@showing_popovers!
+        snapshot\save!
+        snapshot\translate p.x, p.y
+        snapshot\append_widget p.popover, p.popover.allocated_width, p.popover.allocated_height
+        snapshot\restore!
+
+    region = opts.region or x: 0, y: 0, :width, :height
+    native\get_renderer!\render_texture snapshot\to_node!,
+      region.x * scale, region.y * scale, region.width * scale, region.height * scale
+
+  _view_from_gobject: (gobject) =>
+    for v in *@_views
+      if v.gobject == gobject
+        return v.view
+
+    return nil
+
+  _as_rows: (views) =>
+    rows = {}
+    row = {}
+    current = nil
+
+    for v in *views
+      if current and v.y != current.y
+        append rows, row
+        row = {}
+
+      current = v
+      append row, v.gobject
+
+    append rows, row
+    rows
+
+  _reflow: =>
+    views = @views
+    return unless #views > 1
+
+    rows = @_as_rows views
+
+    max_columns = 0
+    max_columns = math.max(max_columns, #r) for r in *rows
+
+    for y = 1, #rows
+      row = rows[y]
+      col_size = math.floor max_columns / #row
+      extra = max_columns % #row
+      for i = 0, #row - 1
+        w_width = col_size
+        w_width += extra if i == #row - 1
+        w_row = y - 1
+        w_col = i * col_size
+        widget = row[i + 1]
+        props = @grid\query_child(widget)
+        if props.row != w_row or props.column != w_col or props.width != w_width
+          @grid\remove widget
+          @grid\attach widget, w_col, w_row, w_width, 1
+
+  _insert_column: (anchor, where) =>
+    rel_column = @grid\query_child(anchor).column
+    if where == 'left_of'
+      @grid\insert_column rel_column
+    else
+      @grid\insert_column rel_column + 1
+
+  _insert_row: (anchor, where) =>
+    rel_row = @grid\query_child(anchor).row
+    if where == 'above'
+      @grid\insert_row rel_row
+    else
+      @grid\insert_row rel_row + 1
+
+  _place: (gobject, placement, anchor) =>
+    where = placements[placement]
+    error "Unknown placement '#{placement}' specified", 2 unless where
+    sibling = to_gobject(anchor) or @focus_child
+
+    if sibling
+      if placement == 'left_of' or placement == 'right_of'
+        @_insert_column sibling, placement
+      else
+        @_insert_row sibling, placement
+
+    @grid\attach_next_to gobject, sibling, Gtk[where], 1, 1
+
+  _on_destroy: =>
+    for view in *@_views
+      if view and view.release
+        view\release!
+
+    @_views = {}
+
+  _on_focus_in: =>
+    howl.app.window = self
+    signal.emit 'window-focused', window: self
+    false
+
+  _on_focus_out: =>
+    signal.emit 'window-defocused', window: self
+    false
+
+-- Signals
+signal.register 'window-focused',
+  description: 'Signaled right after a window has received focus'
+  parameters:
+    window: 'The window that received focus'
+
+signal.register 'window-defocused',
+  description: 'Signaled right after a window has lost focus'
+  parameters:
+    window: 'The window that lost focus'
+
+return Window

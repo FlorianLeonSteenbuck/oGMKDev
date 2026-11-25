@@ -1,0 +1,123 @@
+-- Copyright 2012-2024 The Howl Developers
+-- License: MIT (see LICENSE.md at the top-level directory of the distribution)
+
+aullar = require 'aullar'
+{:View} = aullar
+{:Popup, :style} = howl.ui
+{:ceil, :floor, :max, :min} = math
+
+keymap = {
+  down: =>
+    @view.first_visible_line += 1
+    @view.cursor.line = @view.first_visible_line
+  up: =>
+    @view.first_visible_line -= 1
+    @view.cursor.line = @view.first_visible_line
+  right: => @view.base_x += @view.width_of_space
+  left: => @view.base_x -= @view.width_of_space
+  home: => @view.base_x = 0
+  end: =>
+    width = @view\block_dimensions @view.first_visible_line, @view.last_visible_line
+    @view.base_x = width - @view.width
+  space: => @view.cursor\page_down!
+  backspace: => @view.cursor\page_up!
+  page_down: => @view.cursor\page_down!
+  page_up: => @view.cursor\page_up!
+  escape: => @close!
+
+  on_unhandled: ->
+    -> true
+}
+
+class BufferPopup extends Popup
+
+  new: (buffer, @opts = {}) =>
+    error('Missing argument #1: buffer', 3) if not buffer
+    @_buffer = buffer
+    @default_style = style.popup and style.popup.background and 'popup' or 'default'
+    @view = View buffer._buffer, focusable: false
+    with @view.config
+      .view_show_line_numbers = opts.show_line_numbers or false
+      .view_show_cursor = false
+      .view_show_h_scrollbar = false
+      .view_show_v_scrollbar = false
+
+    -- resize as the buffer changes, after the view has seen the change. aullar
+    -- holds buffer listeners weakly, so we keep a reference
+    resize_if_showing = -> @resize! if @showing
+    @_listener = {
+      on_inserted: resize_if_showing
+      on_deleted: resize_if_showing
+      on_changed: resize_if_showing
+    }
+    buffer._buffer\add_listener @_listener
+
+    @bin = @view\to_gobject!
+    if opts.scrollable
+      @keymap = keymap
+
+    @_place_view!
+    popup_opts = @_get_dimensions!
+    popup_opts.css_class = opts.css_class
+    super @bin, popup_opts
+
+  @property buffer:
+    get: => @_buffer
+    set: (b) =>
+      @_buffer._buffer\remove_listener @_listener
+      @_buffer = b
+      @view.buffer = b._buffer
+      b._buffer\add_listener @_listener
+      @_place_view!
+      @resize!
+
+  -- the buffer may have changed since the popup was created or last shown
+  show: (...) =>
+    @resize!
+    super ...
+
+  release: =>
+    @_buffer._buffer\remove_listener @_listener
+    super!
+
+  resize: =>
+    dimensions = @_get_dimensions!
+    super dimensions.width, dimensions.height
+
+  -- the view can only place a line once it has a size, but the popup is sized
+  -- from the lines it shows, so they are settled up front
+  _place_view: =>
+    nr_lines = @_nr_lines!
+    {:first_visible_line, :middle_visible_line, :last_visible_line} = @opts
+    first = if first_visible_line
+      first_visible_line
+    elseif middle_visible_line
+      middle_visible_line - floor(nr_lines / 2)
+    elseif last_visible_line
+      last_visible_line - nr_lines + 1
+
+    if first
+      @view.first_visible_line = max 1, min(first, #@_buffer.lines - nr_lines + 1)
+
+  _nr_lines: =>
+    return min(@opts.show_lines, #@_buffer.lines) if @opts.show_lines
+    nr_lines = #@_buffer.lines
+    -- don't show the last line if empty
+    if nr_lines > 1 and @_buffer.lines[nr_lines].is_blank
+      nr_lines -= 1
+
+    nr_lines
+
+  _get_dimensions: =>
+    first_line = @view.first_visible_line
+    last_line = first_line + @_nr_lines! - 1
+    -- styles can change the font, so measure the lines as they will be shown
+    @view.buffer\ensure_styled_to line: last_line
+    width, height = @view\block_dimensions first_line, last_line
+    margin = 3
+    width += @view.gutter_width + margin * 2
+    height += margin * 2
+
+    return width: ceil(width), height: ceil(height)
+
+return BufferPopup

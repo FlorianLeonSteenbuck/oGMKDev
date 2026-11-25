@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+ <id>io.howl.Editor</id>
+ <metadata_license>CC0-1.0</metadata_license>
+ <project_license>MIT</project_license>
+ <name>Howl</name>
+ <developer id="io.howl">
+  <name translate="no">Howl Developers</name>
+ </developer>
+ <summary>Lightweight editor with keyboard-centric minimalistic interface</summary>
+ <description>
+  <p>
+   Howl is a general purpose editor that aims to be both lightweight
+   and fully customizable. It is built on top of the very fast LuaJIT
+   runtime, and can be extended in either Lua or Moonscript. It has a
+   minimalistic UI driven mainly by the keyboard.
+  </p>
+ </description>
+ <screenshots>
+  <screenshot type="default">
+   <image width="1048" height="480">
+    https://howl.io/images/screenshots/monokai/buffer-replace.png
+   </image>
+  </screenshot>
+ </screenshots>
+ <content_rating type="oars-1.0" />
+ <releases>
+  <release version="0.6" date="2019-04-05" />
+ </releases>
+ <url type="homepage">https://howl.io</url>
+ <url type="bugtracker">https://github.com/howl-editor/howl/issues</url>
+ <url type="vcs-browser">https://github.com/howl-editor/howl</url>
+ <update_contact>nino at nordman.org</update_contact>
+ <launchable type="desktop-id">io.howl.Editor.desktop</launchable>
+</component>
