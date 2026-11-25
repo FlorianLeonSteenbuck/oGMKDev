@@ -194,6 +194,11 @@ class Application extends PropertyObject
           }
       inspection_api.publish buffer, 'ogmkdev', items
 
+    -- the code templates of a file for Ctrl+Space (src/embed.c howl_templates); the rows are described in
+    -- howl.editing.templates
+    code_templates = require 'howl.editing.templates'
+    _G.HOWL_EMBED_TEMPLATES = (path, rows) -> code_templates.set_for_path path, rows
+
     -- the edge line (eclipse-style margin) of the focused editor; 0 for none (src/embed.c howl_edge)
     _G.HOWL_EMBED_EDGE = (path, column) ->
       file = File(path)

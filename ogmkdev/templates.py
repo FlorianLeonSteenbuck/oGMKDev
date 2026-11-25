@@ -150,6 +150,19 @@ def registry_for(language: str, dialect: Optional[str], custom: Mapping[str, str
     return TemplateRegistry(list(chosen.values()))
 
 
+def howl_rows(registry: TemplateRegistry) -> str:
+    """The templates for the Howl editor (howl/lib/howl/editing/templates.moon): one row per template,
+    "trigger<TAB>body", the body with its backslashes, line breaks and tabs escaped as in EditorConfig values.
+    The templates keep no variables of their own: their defaults are in the bodies."""
+    rows = []
+    for template in registry.templates:
+        if template.variables:
+            raise ValueError(f"template {template.trigger!r} has variables, which the Howl editor does not take")
+        body = template.body.replace("\\", "\\\\").replace("\n", "\\n").replace("\t", "\\t")
+        rows.append(f"{template.trigger}\t{body}")
+    return "\n".join(rows)
+
+
 def builtin_registry() -> TemplateRegistry:
     return TemplateRegistry(list(BUILTIN_TEMPLATES))
 

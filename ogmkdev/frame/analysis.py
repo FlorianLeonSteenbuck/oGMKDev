@@ -15,6 +15,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import diagnostics, docblocks, editorconfig, index as index_module, indexbuild, languages  # noqa: E402
+from .. import templates  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
 from .panels import _scrolled  # noqa: E402
@@ -46,6 +47,14 @@ class AnalysisMixin:
     def _settings_for(self, path: Optional[str]) -> editorconfig.EditorSettings:
         properties = SettingsStore(self.folder).effective_for(path or self.folder)
         return editorconfig.settings_from_properties(properties)
+
+    def publish_templates(self, path: str) -> None:
+        """The code templates of a file for Ctrl+Space in its Howl editor: the built-in templates of its
+        language and dialect, then the EditorConfig ones, which replace built-in templates of the same trigger."""
+        settings = self._settings_for(path)
+        detection = languages.detect(path, settings.custom)
+        registry = templates.registry_for(detection.language, detection.dialect, settings.custom, detection.template)
+        self.editors.templates(path, templates.howl_rows(registry))
 
     # ------------------------------------------------------- doc comments
 
@@ -318,6 +327,8 @@ class AnalysisMixin:
             new = {key: self._widget_value(setting, widget) for key, (setting, widget) in widgets.items()}
             store.apply("global", new)
             window.destroy()
+            for open_path in self.editors.files():
+                self.publish_templates(open_path)
             self.refresh_problems()
             self.set_status("preferences saved")
 

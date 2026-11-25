@@ -53,7 +53,8 @@ is removed once its features are in the frame (see Open items).*
 - Own syntax highlighting (`ogmkdev/highlight.py`) for ECMAScript, BareDown and SQL.
 - Diagnostics in the status line: ECMAScript lexical errors, BareDown unclosed code blocks,
   PHP heredoc errors, and SQL `ENGINE=` checks (MySQL and MariaDB engine names).
-- Variable-based template completion (Ctrl+Space). Templates are the only completion source.
+- Variable-based code templates with Ctrl+Space: the trigger before the cursor expands to its template,
+  built in or from EditorConfig. A word without a template gets Howl's completion.
 - Breakpoints (F9) in the gutter, run configurations, and GDB (GDB/MI) and XDebug (DBGp)
   debugging: continue, step over, step into, step out, stop, watch expressions, current-line marker.
 - Find next, undo and redo.
@@ -67,7 +68,7 @@ is removed once its features are in the frame (see Open items).*
 |---|---|
 | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+W | new / open / save / close tab |
 | Ctrl+F | search forward in the editor (Howl's search); Enter for the next match |
-| Ctrl+Space | Howl's completion; code templates in the frame are still open |
+| Ctrl+Space | code template of the word before the cursor; otherwise Howl's completion |
 | Ctrl+Z / Ctrl+Shift+Z | undo / redo |
 | Alt+click | put an extra caret where the mouse is, or take it away |
 | Ctrl+Alt+Up / Ctrl+Alt+Down | add a caret above the topmost / below the bottommost caret |
@@ -277,8 +278,9 @@ builds the openSUSE `.rpm` from `packaging/ogmkdev.spec` (written, not yet built
 ## Templates
 
 Every language has built-in templates (PHP, Python 2/3/PyPy, ECMAScript, TypeScript, TSX, JSX,
-SQL with dialect variants, Markdown, BareDown, HTML, JSON, CSS, Mustache, Twig). Ctrl+Space shows
-the matching templates; a single match is inserted directly.
+SQL with dialect variants, Markdown, BareDown, HTML, JSON, CSS, Mustache, Twig). Ctrl+Space expands the word
+before the cursor when it is a trigger (`fn`, `class`, `div`, ...): the template replaces the word and
+the cursor goes to `$0`. Any other word gets Howl's completion.
 
 Templates are configured in EditorConfig as `ogmkdev_template_<trigger>` properties. Escapes
 `\n`, `\t` and `\\` are allowed in the value. Sections select the files, and directories can be
@@ -296,8 +298,8 @@ ogmkdev_template_todo = // TODO(legacy): $0
 ```
 
 A configured template applies to every file its section matches, whatever the language, and
-replaces a built-in template with the same trigger. Template bodies use `${name}`,
-`${name:default}` for variables and `$0` for the cursor.
+replaces a built-in template with the same trigger. In a body, `${name:default}` is replaced by its
+default, `${name}` without a default stays as written, and `$0` is where the cursor goes.
 
 ## Layout of the repository
 
@@ -339,11 +341,6 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 - The frame does not drive the debugger yet: GDB (GDB/MI) and XDebug (DBGp) are implemented in
   `ogmkdev/debug`, but stepping and breakpoints are not sent to them from the frame, and there is no
   variables view. XDebug has no UI test; the end-to-end test covers GDB only.
-- File templates (a template per file extension, a new file from it) and the new class command
-  (namespace, class name and imports from a template).
-- Code templates with Ctrl+Space in the frame, and a background index with a file watcher.
-- Coding-standard checks (trailing whitespace, indentation style, line length, final newline) are not
-  diagnostics yet; the severity of each check is already configurable.
 - Change marks colour the whole line; gutter stripes and a diff view per pane are not built yet.
 - Python and JavaScript references are not indexed, only their declarations. Methods of Python classes
   are not in the index, so the HTML export has no page entry for them.

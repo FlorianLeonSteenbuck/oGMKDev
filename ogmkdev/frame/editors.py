@@ -161,6 +161,8 @@ class EditorArea:
         page.set_vexpand(True)
         if not self.frame.editors.add(page, path):
             return None
+        if path:
+            self.frame.publish_templates(path)
         title = os.path.basename(path) if path else "untitled"
         tab = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         tab.append(Gtk.Label(label=title))

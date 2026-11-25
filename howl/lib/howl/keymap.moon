@@ -65,7 +65,7 @@
     ctrl_x:            'editor-cut'
     ctrl_z:            'editor-undo'
     ctrl_Z:            'editor-redo'
-    ctrl_space:        'editor-complete'
+    ctrl_space:        'editor-expand-or-complete'
     ctrl_slash:        'editor-toggle-comment'
 
     shift_delete:      'editor-cut'
@@ -143,7 +143,7 @@
         meta_x:            'editor-cut'
         meta_z:            'editor-undo'
         meta_Z:            'editor-redo'
-        meta_space:        'editor-complete'
+        meta_space:        'editor-expand-or-complete'
         meta_slash:        'editor-toggle-comment'
         meta_insert:       'editor-copy'
         meta_return:       'editor-newline-below'

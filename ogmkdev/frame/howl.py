@@ -46,6 +46,8 @@ class Editors:
         self._lib.howl_take_click.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_edge.restype = ctypes.c_int
         self._lib.howl_edge.argtypes = [ctypes.c_char_p, ctypes.c_int]
+        self._lib.howl_templates.restype = ctypes.c_int
+        self._lib.howl_templates.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self._root = root.encode()
         self.count = 0
 
@@ -88,6 +90,11 @@ class Editors:
         lines = [f"{line}\t{start}\t{end}\t{kind}\t{' '.join(message.split())}"
                  for line, start, end, kind, message in rows]
         return self._lib.howl_inspect(os.path.abspath(path).encode(), "\n".join(lines).encode("utf-8")) == 0
+
+    def templates(self, path: str, rows: str) -> bool:
+        """The code templates of ``path`` for Ctrl+Space in its Howl editors: one row per template,
+        "trigger<TAB>body" with the body escaped (see templates.howl_rows)."""
+        return self._lib.howl_templates(os.path.abspath(path).encode(), rows.encode("utf-8")) == 0
 
     def take_click(self):
         """The last Ctrl+click in a Howl editor, taken once: (word, column, line text), or None."""

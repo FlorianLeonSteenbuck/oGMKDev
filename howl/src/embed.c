@@ -190,6 +190,29 @@ int howl_inspect(const char *file, const char *rows)
   return 0;
 }
 
+/* Sets the code templates of a file for Ctrl+Space in its Howl editor: one row per template,
+   "trigger<TAB>body", the body with its backslashes, line breaks and tabs escaped (see
+   HOWL_EMBED_TEMPLATES in application.moon and howl.editing.templates). */
+int howl_templates(const char *file, const char *rows)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_TEMPLATES");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, file);
+  lua_pushstring(embedded, rows);
+  if (lua_pcall(embedded, 2, 0, 0)) {
+    g_critical("Howl templates for %s failed: %s", file, lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  return 0;
+}
+
 /* Takes the word of the last Ctrl+click in a Howl editor ("" if none). See HOWL_EMBED_TAKE_CLICK. */
 int howl_take_click(char *out, int size)
 {
