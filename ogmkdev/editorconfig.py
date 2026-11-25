@@ -345,3 +345,45 @@ def settings_from_properties(props: Mapping[str, str]) -> EditorSettings:
 
 def settings_for(file_path: str) -> EditorSettings:
     return settings_from_properties(effective_properties(file_path))
+
+
+def write_property(path: str, section: str, key: str, value: Optional[str]) -> None:
+    """Set ``key = value`` in ``[section]`` of the file at ``path`` (``None`` removes the key).
+
+    The file keeps its other lines. A new file starts with ``root = true``. The key is written in
+    lower case, as the parser reads it.
+    """
+    key = key.strip().lower()
+    existed = os.path.isfile(path)
+    lines = []
+    if existed:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    header = f"[{section}]"
+    start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+    if start is None:
+        if value is None:
+            return
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend([header])
+        start = len(lines) - 1
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].strip().startswith("[")), len(lines))
+    for index in range(start + 1, end):
+        name = lines[index].split("=", 1)[0].strip().lower()
+        if "=" in lines[index] and name == key:
+            if value is None:
+                del lines[index]
+            else:
+                lines[index] = f"{key} = {value}"
+            break
+    else:
+        if value is not None:
+            lines.insert(end, f"{key} = {value}")
+    if not existed and not any(line.strip().lower().startswith("root") for line in lines):
+        lines.insert(0, "root = true")
+        lines.insert(1, "")
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+    _load_cached.cache_clear()

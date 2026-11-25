@@ -9,7 +9,7 @@ SHAPE = "<?php\nnamespace App;\n\ninterface Shape extends \\Countable\n{\n    pu
 BASE = "<?php\nnamespace App\\Geometry;\n\nabstract class Base implements \\App\\Shape\n{\n    use Loggable;\n    public const int SIDES = 0;\n    protected $name = 'x';\n    public function describe(Helper $h): string { return new Helper(); }\n}\n"
 CIRCLE = "<?php\nnamespace App;\nuse App\\Geometry\\Base as Parent_;\n\nfinal class Circle extends Parent_ implements Shape\n{\n    public function area(): float { return 3.14; }\n}\n\nfunction make(): Circle { return new Circle(); }\n"
 SQUARE = "<?php\nnamespace App;\n\nclass Square extends Circle\n{\n}\n"
-PY = "class Animal(Base, metaclass=Meta):\n    pass\n\ndef greet(name):\n    return name\n"
+PY = "class Animal(Creature, metaclass=Meta):\n    pass\n\ndef greet(name):\n    return name\n"
 TS = "export interface Store extends Reader<T> {}\nexport class Cache extends Store {\n}\nfunction build() {}\n"
 
 
@@ -75,7 +75,7 @@ class IndexTests(unittest.TestCase):
         self.assertIn("App\\Shape", deps)
 
     def test_python_and_typescript_hierarchies(self):
-        self.assertEqual({s.name for s in self.index.subtypes("Base")}, {"Animal"})
+        self.assertEqual({s.name for s in self.index.subtypes("Creature")}, {"Animal"})
         self.assertEqual({s.name for s in self.index.subtypes("Store")}, {"Cache"})
         self.assertIn("build", {s.name for s in self.index.find("build")})
 

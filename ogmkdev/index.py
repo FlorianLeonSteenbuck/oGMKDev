@@ -364,9 +364,14 @@ class ProjectIndex:
                 break
         return list(seen.values())
 
+    def _canonical(self, name: str) -> str:
+        """The full name of a class given by its short or full name (unchanged when unknown)."""
+        found = self.find(name)
+        return found[0].name if found else name
+
     def subtypes(self, name: str, transitive: bool = True) -> List[Symbol]:
         seen: Dict[str, Symbol] = {}
-        pending = [name]
+        pending = list(dict.fromkeys(symbol.name for symbol in self.find(name))) or [name]
         while pending:
             current = pending.pop()
             for child in self._subtypes.get(current.lower(), []):
@@ -414,9 +419,10 @@ class ProjectIndex:
             return nodes
 
         target = self.find(name)
-        return {"name": name, "symbol": target[0] if target else None,
-                "up": up(name, frozenset({name.lower()}), 0),
-                "down": down(name, frozenset({name.lower()}), 0)}
+        canonical = target[0].name if target else name
+        return {"name": canonical, "symbol": target[0] if target else None,
+                "up": up(canonical, frozenset({canonical.lower()}), 0),
+                "down": down(canonical, frozenset({canonical.lower()}), 0)}
 
     def dependencies(self, name: str) -> List[str]:
         names: List[str] = []

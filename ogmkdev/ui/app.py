@@ -13,6 +13,7 @@ F11 step into, Shift+F11 step out.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shlex
 import subprocess
@@ -31,6 +32,8 @@ except (ImportError, ValueError):
     GtkSource = None
 
 from .. import diagnostics, highlight, languages, runconfig, templates, theme  # noqa: E402
+from ..index import ProjectIndex  # noqa: E402
+from .panels import HierarchyView, ResultsView  # noqa: E402
 from .. import __version__  # noqa: E402
 from ..debug import DebuggerError, Exited, GdbMiDebugger, Output, Stopped, XdebugDebugger  # noqa: E402
 from ..document import Document  # noqa: E402
@@ -39,7 +42,7 @@ BREAKPOINT_CATEGORY = "ogmkdev-breakpoint"
 EXEC_TAG = "ogmkdev-exec"
 # Languages highlighted by our own tokenizers (see ogmkdev/highlight.py), not by GtkSourceView.
 OWN_HIGHLIGHT = frozenset({"ecmascript", "baredown", "sql", "php"})
-MENU_ORDER = ("File", "Edit", "View", "Run", "Debug", "Help")
+MENU_ORDER = ("File", "Edit", "View", "Project", "Run", "Debug", "Help")
 # menu, label, icon name, accelerator, method name, shown in toolbar
 ACTIONS = (
     ("File", "New", "document-new", "<Control>n", "new_document", True),
@@ -59,6 +62,12 @@ ACTIONS = (
     ("Debug", "Step Into", "go-down", "F11", "step_into", True),
     ("Debug", "Step Out", "go-up", "<Shift>F11", "step_out", True),
     ("Debug", "Stop", "media-playback-stop", "", "stop_debug", True),
+    ("Project", "Search in Files...", "edit-find", "<Control><Shift>f", "search_in_files", False),
+    ("Project", "Find Implementations", "go-down", "<Control><Alt>b", "find_implementations", True),
+    ("Project", "Show Type Hierarchy", "go-jump", "<Control>h", "show_hierarchy", True),
+    ("Project", "Inspect Project", "dialog-warning", "", "inspect_project", True),
+    ("Project", "Refresh Index", "view-refresh", "", "refresh_index", False),
+    ("Project", "Open Folder...", "folder-open", "<Control><Shift>o", "open_folder", False),
 )
 
 
@@ -195,6 +204,8 @@ class EditorWindow(Gtk.Window):
         self.status = Gtk.Label(xalign=0)  # created first: list signals may fire during setup
         self.status.set_selectable(True)
         self.run_configs: List[runconfig.RunConfiguration] = runconfig.discover(self.project_dir)
+        self.index = ProjectIndex(self.project_dir, cache_path=self._cache_path())
+        self.connect("destroy", self._save_index)
         self.debugger = None
         self.watch_exprs: List[str] = []
         self._session_bps: Dict[Tuple[str, int], int] = {}
@@ -227,9 +238,15 @@ class EditorWindow(Gtk.Window):
         run_box.pack_start(run_buttons, False, False, 0)
         self._load_run_list()
 
+        self.search_view = ResultsView(self.navigate, "Result")
+        self.problems_view = ResultsView(self.navigate, "Problem")
+        self.hierarchy_view = HierarchyView(self.navigate)
         left = Gtk.Notebook()
         left.append_page(files_scroll, Gtk.Label(label="Files"))
         left.append_page(run_box, Gtk.Label(label="Run"))
+        left.append_page(self.hierarchy_view, Gtk.Label(label="Hierarchy"))
+        self.left = left
+        self.left_pages = {"Files": 0, "Run": 1, "Hierarchy": 2}
 
         self.console = Gtk.TextView(editable=False, cursor_visible=False, monospace=True)
         self.console_buffer = self.console.get_buffer()
@@ -245,6 +262,9 @@ class EditorWindow(Gtk.Window):
         self.bottom = Gtk.Notebook()
         self.bottom.append_page(console_scroll, Gtk.Label(label="Console"))
         self.bottom.append_page(debug_box, Gtk.Label(label="Watches"))
+        self.bottom.append_page(self.problems_view, Gtk.Label(label="Problems"))
+        self.bottom.append_page(self.search_view, Gtk.Label(label="Search"))
+        self.bottom_pages = {"Console": 0, "Watches": 1, "Problems": 2, "Search": 3}
 
         self.find_entry = Gtk.SearchEntry(placeholder_text="Find (Ctrl+F), Enter for next match")
         self.find_entry.connect("activate", lambda *_: self.find_next())
@@ -466,6 +486,8 @@ class EditorWindow(Gtk.Window):
             self._after_save(page)
 
     def _after_save(self, page: Page) -> None:
+        if page.document.path:
+            self.index.invalidate(page.document.path)
         page.dirty = False
         page.apply_settings()
         page.apply_language()
@@ -855,6 +877,126 @@ class EditorWindow(Gtk.Window):
         popover.popup()
         self._popover = popover
 
+    # ------------------------------------------------- project index and tools
+
+    def _cache_path(self) -> str:
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+        return os.path.join(base, "ogmkdev", hashlib.sha1(self.project_dir.encode("utf-8")).hexdigest() + ".json")
+
+    def _save_index(self, *_args) -> None:
+        try:
+            self.index.save_cache()
+        except (OSError, ValueError):
+            pass
+
+    def _word_at_cursor(self) -> str:
+        page = self.page
+        if page is None:
+            return ""
+        buffer = page.buffer
+        cursor = buffer.get_iter_at_mark(buffer.get_insert())
+        start = cursor.copy()
+        while start.backward_char():
+            character = start.get_char()
+            if not (character.isalnum() or character in "_\\"):
+                start.forward_char()
+                break
+        end = cursor.copy()
+        while not end.is_end() and (end.get_char().isalnum() or end.get_char() in "_\\"):
+            end.forward_char()
+        return buffer.get_text(start, end, True).strip("\\")
+
+    def navigate(self, file: str, line: int, column: int = 1) -> None:
+        page = self.open_path(file)
+        buffer = page.buffer
+        last = max(buffer.get_line_count() - 1, 0)
+        iterator = buffer.get_iter_at_line(min(max(line - 1, 0), last))
+        iterator.forward_chars(max(column - 1, 0))
+        buffer.place_cursor(iterator)
+        page.view.scroll_to_iter(iterator, 0.2, False, 0.0, 0.0)
+
+    def _location(self, file: str, line: int) -> str:
+        return f"{os.path.relpath(file, self.project_dir)}:{line}"
+
+    def _show_results(self, view: ResultsView, rows, panel: str) -> None:
+        count = view.show(rows)
+        self.bottom.set_current_page(self.bottom_pages[panel])
+        self.status.set_text(f"{count} {panel.lower()} result(s)")
+
+    def find_implementations(self) -> None:
+        word = self._word_at_cursor()
+        if not word:
+            self.status.set_text("place the cursor on a class or interface name")
+            return
+        found = self.index.implementations(word)
+        rows = [(s.short, self._location(s.file, s.line), s.file, s.line, s.column) for s in found]
+        self.status.set_text(f"implementations of {word}: {len(found)}")
+        self._show_results(self.search_view, rows, "Search")
+
+    def show_hierarchy(self) -> None:
+        word = self._word_at_cursor()
+        if not word:
+            self.status.set_text("place the cursor on a class or interface name")
+            return
+        self.hierarchy_view.show(self.index.hierarchy(word))
+        self.left.set_current_page(self.left_pages["Hierarchy"])
+        self.status.set_text(f"type hierarchy of {word}")
+
+    def search_in_files(self, text: Optional[str] = None) -> None:
+        if text is None:
+            text = self._prompt("Search in Files", "Text to find in the project:")
+        if not text:
+            return
+        hits = self.index.find_in_files(text)
+        rows = [(hit.text[:160], self._location(hit.file, hit.line), hit.file, hit.line, hit.column) for hit in hits]
+        self._show_results(self.search_view, rows, "Search")
+        self.status.set_text(f"{len(hits)} match(es) for '{text}'")
+
+    def inspect_project(self) -> None:
+        results = self.index.inspect()
+        rows = [(f"{item.severity}: {item.message}", self._location(item.file, item.line), item.file,
+                 item.line, item.column) for item in results]
+        self._show_results(self.problems_view, rows, "Problems")
+        self.status.set_text(f"inspection: {len(results)} problem(s)")
+
+    def refresh_index(self) -> None:
+        counts = self.index.refresh()
+        self.status.set_text(f"index: {counts['added']} added, {counts['changed']} changed, "
+                             f"{counts['removed']} removed")
+
+    def open_folder(self) -> None:
+        dialog = Gtk.FileChooserDialog(title="Open Folder", parent=self, action=Gtk.FileChooserAction.SELECT_FOLDER)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK)
+        folder = dialog.get_filename() if dialog.run() == Gtk.ResponseType.OK else None
+        dialog.destroy()
+        if folder:
+            self.set_project(folder)
+
+    def set_project(self, folder: str) -> None:
+        self._save_index()
+        self.project_dir = os.path.abspath(folder)
+        self.tree_store.clear()
+        self._populate_tree(None, self.project_dir)
+        self.run_configs = runconfig.discover(self.project_dir)
+        self._load_run_list()
+        self.index = ProjectIndex(self.project_dir, cache_path=self._cache_path())
+        self.status.set_text(f"project {self.project_dir}")
+
+    def _prompt(self, title: str, label: str) -> str:
+        dialog = Gtk.Dialog(title=title, transient_for=self, modal=True)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+        entry = Gtk.Entry()
+        entry.set_activates_default(True)
+        content = dialog.get_content_area()
+        content.pack_start(Gtk.Label(label=label, xalign=0.0), False, False, 4)
+        content.pack_start(entry, False, False, 4)
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog.show_all()
+        response = dialog.run()
+        text = entry.get_text().strip()
+        dialog.destroy()
+        return text if response == Gtk.ResponseType.OK else ""
+
     def find_next(self) -> None:
         page = self.page
         needle = self.find_entry.get_text()
@@ -911,9 +1053,18 @@ class EditorWindow(Gtk.Window):
     def _on_key(self, _widget, event: Gdk.EventKey) -> bool:
         ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
         shift = bool(event.state & Gdk.ModifierType.SHIFT_MASK)
+        alt = bool(event.state & Gdk.ModifierType.MOD1_MASK)
         key = event.keyval
         if ctrl and key in (Gdk.KEY_s, Gdk.KEY_S):
             self.save_current()
+        elif ctrl and shift and key in (Gdk.KEY_f, Gdk.KEY_F):
+            self.search_in_files()
+        elif ctrl and shift and key in (Gdk.KEY_o, Gdk.KEY_O):
+            self.open_folder()
+        elif ctrl and alt and key in (Gdk.KEY_b, Gdk.KEY_B):
+            self.find_implementations()
+        elif ctrl and key in (Gdk.KEY_h, Gdk.KEY_H):
+            self.show_hierarchy()
         elif ctrl and key in (Gdk.KEY_n, Gdk.KEY_N):
             self.new_document()
         elif ctrl and key in (Gdk.KEY_o, Gdk.KEY_O):
