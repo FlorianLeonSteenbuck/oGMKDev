@@ -47,6 +47,8 @@ def howl_css(mode: str, scheme: str) -> str:
         f"background-color: alpha({colors['foreground']}, 0.22); }}",
         f"scrollbar range {{ background-color: transparent; }}",
         f"flair.search {{  shape: rectangle; background-color: {colors['selection']}; }}",
+        # the edge line (eclipse-style margin) at the column of the file's max_line_length
+        f"flair.edge_line {{ shape: pipe; border-color: {colors['gutter_foreground']}; width: 1px; }}",
         f"flair.list-selection {{  shape: rectangle; background-color: {colors['selection']}; }}",
         # the editor is the editing surface only: no title bar, no processes, activity or inspection
         # indicators; the cursor position (footer) stays

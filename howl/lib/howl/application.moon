@@ -152,6 +152,10 @@ class Application extends PropertyObject
       loc.line_nr = line if line and line > 0
       loc.column = column if column and column > 0
       @open loc, (@editor)
+      -- the line is shown: folds that hide it open (src/embed.c howl_open)
+      editor = @editor
+      if editor and line and line > 0 and editor.buffer.file == File(path)
+        editor\reveal_line line
     -- runs a Howl command, e.g. "save" (src/embed.c howl_command)
     _G.HOWL_EMBED_COMMAND = (name) -> howl.timer.asap -> howl.command.run name
     -- "path<TAB>line:column<TAB>mode<TAB>modified" of the editor that has the focus (src/embed.c howl_status)
@@ -159,6 +163,90 @@ class Application extends PropertyObject
     _G.HOWL_EMBED_THEME = (name, path) ->
       howl.ui.theme.register name, File(path)
       howl.config.theme = name
+
+    -- error hints of a file: wavy underlines with the message as tooltip at the line, from the
+    -- frame's diagnostics (src/embed.c howl_inspect). Rows: "line<TAB>start<TAB>end<TAB>type<TAB>message"
+    inspection_api = require 'howl.inspect'
+    highlight = howl.ui.highlight
+    highlight.define_default 'hint',
+      type: highlight.WAVY_UNDERLINE
+      foreground: '#8a8a8a'
+      line_width: 1
+      line_type: 'solid'
+
+    _G.HOWL_EMBED_INSPECT = (path, rows) ->
+      buffer = @_buffer_for_file File(path)
+      return unless buffer
+      items = {}
+      for row in rows\gmatch '[^\n]+'
+        line_nr, start_col, end_col, kind, message = row\match '^(%d+)\t(%d+)\t(%d+)\t(%a+)\t(.*)$'
+        if line_nr
+          items[#items + 1] = {
+            line: tonumber(line_nr)
+            start_col: tonumber(start_col)
+            end_col: tonumber(end_col)
+            type: kind
+            :message
+          }
+      inspection_api.publish buffer, 'ogmkdev', items
+
+    -- the edge line (eclipse-style margin) of the focused editor; 0 for none (src/embed.c howl_edge)
+    _G.HOWL_EMBED_EDGE = (path, column) ->
+      file = File(path)
+      for ed in *@editors
+        target = ed.buffer and ed.buffer.file == file and column or 0
+        ed.edge_column = target if ed.edge_column != target
+
+    -- Ctrl+click in an editor leaves the word there for the frame (src/embed.c howl_take_click)
+    pending_click = nil
+    howl.signal.connect 'editor-ctrl-click', (args) -> pending_click = args.word
+    _G.HOWL_EMBED_TAKE_CLICK = ->
+      word = pending_click or ''
+      pending_click = nil
+      word
+
+    -- breakpoints: a 'breakpoint' marker on the first character of the line; a left click in the
+    -- gutter toggles it, the command does so for the current line (used by the frame's menus)
+    toggle_breakpoint = (editor, line_nr) ->
+      buffer = editor.buffer
+      line = buffer.lines[line_nr]
+      return false unless line
+      set = if #buffer.markers\for_range(line.start_pos, line.start_pos + 1, name: 'breakpoint') > 0
+        buffer.markers\remove_for_range line.start_pos, line.start_pos + 1, name: 'breakpoint'
+        false
+      else
+        buffer.markers\add {{name: 'breakpoint', start_offset: line.start_pos, end_offset: line.start_pos + 1}}
+        true
+      editor.view.gutter\refresh!
+      set
+
+    howl.signal.connect 'editor-gutter-click', (args) ->
+      toggle_breakpoint args.editor, args.line if args.button == 1
+
+    howl.command.register
+      name: 'breakpoint-toggle'
+      description: 'Toggles a breakpoint on the current line'
+      handler: ->
+        editor = @editor
+        toggle_breakpoint editor, editor.cursor.line if editor
+
+    -- folds or opens the block of the current line (the gutter's arrows do the same)
+    howl.command.register
+      name: 'fold-toggle'
+      description: 'Folds or unfolds the block that starts on the current line'
+      handler: ->
+        editor = @editor
+        editor\toggle_fold editor.cursor.line if editor
+
+    -- asks the frame for the definition of the word at the cursor (the frame takes it as a Ctrl+click)
+    howl.command.register
+      name: 'word-definition'
+      description: 'Asks the frame for the definition of the word at the cursor'
+      handler: ->
+        editor = @editor
+        group = editor and editor.current_context.word
+        if group and not group.empty
+          howl.signal.emit 'editor-ctrl-click', editor: editor, word: group.text
 
     _G.HOWL_EMBED_STATUS = ->
       editor = @editor

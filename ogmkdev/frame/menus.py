@@ -15,6 +15,7 @@ MENUS = (
         ("Undo", "undo", "", "howl:editor-undo"),
         ("Redo", "redo", "", "howl:editor-redo"),
         ("Find...", "find", "", "howl:buffer-search-forward"),
+        ("Fold or Unfold Block", "toggle-fold", "<Control>period", "howl:fold-toggle"),
         ("Search Everywhere...", "search-everywhere", "<Control><Shift>a", "search_everywhere"),
     )),
     ("View", (
@@ -33,6 +34,7 @@ MENUS = (
         ("Refresh Index", "refresh-index", "", "refresh_index"),
         ("Clear Index and Rebuild", "clear-index", "", "clear_index"),
         ("Show Git Changes", "show-git", "<Control><Alt>g", "show_git"),
+        ("Show Current File in Files", "reveal-file", "", "reveal_current_file"),
         ("Show TODOs", "show-todos", "<Control><Alt>t", "show_todos"),
     )),
     ("Settings", (
@@ -42,14 +44,30 @@ MENUS = (
     ("Run", (
         ("Run Configuration", "run-configuration", "", "run_selected"),
         ("Stop Process", "stop-process", "", "stop_process"),
+        ("Toggle Breakpoint", "toggle-breakpoint", "F9", "howl:breakpoint-toggle"),
     )),
     ("Help", (
         ("About", "about", "", "show_about"),
     )),
 )
 
+# The right-click menu of the editor area, in groups (None separates them). It is a popover of the
+# window, so it lies over the Howl editors and the rest of the frame.
+CONTEXT_MENU = (
+    ("Cut", "ctx-cut", "howl:editor-cut"),
+    ("Copy", "ctx-copy", "howl:editor-copy"),
+    ("Paste", "ctx-paste", "howl:editor-paste"),
+    ("Select All", "ctx-select-all", "howl:editor-select-all"),
+    None,
+    ("Go to Definition", "ctx-definition", "howl:word-definition"),
+    ("Toggle Breakpoint", "ctx-breakpoint", "howl:breakpoint-toggle"),
+    ("Fold or Unfold Block", "ctx-fold", "howl:fold-toggle"),
+    None,
+    ("Show Current File in Files", "ctx-reveal", "reveal_current_file"),
+)
+
 # Entries that are not wired yet (their status line says so)
 PENDING = {
-    "split_down": "split down", "split_four": "split into four", "split_six": "split into six",
-    "close_active_pane": "close pane", "debug_selected": "debugger",
+    "debug_selected": "debugger", "step_over": "debugger step", "step_into": "debugger step",
+    "step_out": "debugger step",
 }

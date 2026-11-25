@@ -36,6 +36,12 @@ class Editors:
         self._lib.howl_theme.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self._lib.howl_status.restype = ctypes.c_int
         self._lib.howl_status.argtypes = [ctypes.c_char_p, ctypes.c_int]
+        self._lib.howl_inspect.restype = ctypes.c_int
+        self._lib.howl_inspect.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self._lib.howl_take_click.restype = ctypes.c_int
+        self._lib.howl_take_click.argtypes = [ctypes.c_char_p, ctypes.c_int]
+        self._lib.howl_edge.restype = ctypes.c_int
+        self._lib.howl_edge.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._root = root.encode()
         self.count = 0
 
@@ -71,6 +77,24 @@ class Editors:
             "mode": fields[2],
             "modified": fields[3] == "modified",
         }
+
+    def hints(self, path: str, rows) -> bool:
+        """Error hints of ``path`` in its Howl buffer: rows of (line, start, end, kind, message), columns
+        1-based and end exclusive, kind error, warning or hint. An empty list removes them."""
+        lines = [f"{line}\t{start}\t{end}\t{kind}\t{' '.join(message.split())}"
+                 for line, start, end, kind, message in rows]
+        return self._lib.howl_inspect(os.path.abspath(path).encode(), "\n".join(lines).encode("utf-8")) == 0
+
+    def take_click(self) -> Optional[str]:
+        """The word of the last Ctrl+click in a Howl editor, taken once (None if there was none)."""
+        buffer = ctypes.create_string_buffer(512)
+        if self._lib.howl_take_click(buffer, len(buffer)) != 0:
+            return None
+        return buffer.value.decode("utf-8", "replace") or None
+
+    def set_edge(self, path: str, column: int) -> bool:
+        """The edge line at ``column`` in the editors that show ``path`` (0 for none)."""
+        return self._lib.howl_edge(os.path.abspath(path).encode(), column) == 0
 
     def theme(self, name: str, path: str) -> bool:
         """Registers the Howl theme file ``path`` under ``name`` and selects it."""

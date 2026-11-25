@@ -21,6 +21,10 @@ define_class {
     @last_line = 0
     @area = Gtk.DrawingArea {vexpand: true, css_classes: {'gutter'}}
     @area\set_draw_func_for @, self._draw
+    @click = Gtk.GestureClick!
+    @click.button = 0
+    @area\add_controller @click
+    @click\connect_for @, 'pressed', self._on_pressed
     @reconfigure config
     @sync view
 
@@ -45,6 +49,9 @@ define_class {
 
   to_gobject: => @area
 
+  -- redraws the marks (breakpoints) after they changed
+  refresh: => @area\queue_draw!
+
   release: =>
 
   reconfigure: (config) =>
@@ -56,7 +63,9 @@ define_class {
     num_chars = #lines_text
     changed = @number_chars != num_chars
     return true if not opts.force and not changed
-    @_text_width = math.ceil(@view\text_dimensions(lines_text).width) + 2
+    -- room on the left for the breakpoint dots (see _draw)
+    -- room on the left for the breakpoint dots, on the right for the fold arrows (see _draw)
+    @_text_width = math.ceil(@view\text_dimensions(lines_text).width) + 28
     @area.content_width = @_text_width
     @number_chars = num_chars
     not changed
@@ -79,7 +88,7 @@ define_class {
     cr\set_source_rgba c.red, c.green, c.blue, c.alpha
 
     layout = Layout p_ctx
-    layout.width = @_text_width * Pango.SCALE
+    layout.width = (@_text_width - 14) * Pango.SCALE
     layout.alignment = Pango.ALIGN_RIGHT
 
     y = 0
@@ -87,6 +96,7 @@ define_class {
     for line_nr = @first_line, @last_line
       d_line = d_lines[line_nr]
       break unless d_line
+      continue if d_line.hidden
       layout.text = tostring line_nr
 
       _, text_height = layout\get_pixel_size!
@@ -100,5 +110,63 @@ define_class {
 
       cr\move_to 0, y + (line_height - text_height) / 2
       pango_cairo.show_layout cr, layout
-      y += total_height + 1
+
+      if @_mark_at(line_nr) == 'breakpoint'
+        cr\save!
+        cr\set_source_rgba 0.86, 0.19, 0.19, 1
+        cr\arc 7, y + total_height / 2, 4.5, 0, 2 * math.pi
+        cr\fill!
+        cr\restore!
+
+      fold = @_fold_mark line_nr
+      if fold
+        x0, mid = @_text_width - 11, y + total_height / 2
+        cr\save!
+        cr\set_source_rgba c.red, c.green, c.blue, 0.75
+        if fold == 'open' -- a triangle pointing down
+          cr\move_to x0, mid - 3
+          cr\line_to x0 + 7, mid - 3
+          cr\line_to x0 + 3.5, mid + 3
+        else -- a closed fold: a triangle pointing right
+          cr\move_to x0, mid - 4
+          cr\line_to x0 + 6, mid
+          cr\line_to x0, mid + 4
+        cr\close_path!
+        cr\fill!
+        cr\restore!
+
+      y += d_line.slot
+
+  -- the mark the view's listener gives the line ('breakpoint' or nil)
+  _mark_at: (line_nr) =>
+    listener = @view.listener
+    return nil unless listener and listener.gutter_mark
+    listener.gutter_mark @view, line_nr
+
+  -- 'open' or 'closed' for a line that can be folded, nil otherwise
+  _fold_mark: (line_nr) =>
+    listener = @view.listener
+    return nil unless listener and listener.gutter_fold
+    listener.gutter_fold @view, line_nr
+
+  -- the line number at the height y of the gutter (nil below the last line)
+  _line_at: (y) =>
+    d_lines = @view.display_lines
+    top = 0
+    for line_nr = @first_line, @last_line
+      d_line = d_lines[line_nr]
+      break unless d_line
+      continue if d_line.hidden
+      return line_nr if y < top + d_line.slot
+      top += d_line.slot
+    nil
+
+  _on_pressed: (g_click, n_press, x, y) =>
+    listener = @view.listener
+    return unless listener and listener.on_gutter_click
+    line_nr = @_line_at tonumber(y)
+    return unless line_nr
+    -- the fold arrows are at the right edge, the rest of the gutter sets breakpoints
+    region = tonumber(x) >= @_text_width - 14 and 'fold' or 'breakpoint'
+    listener.on_gutter_click @view, line: line_nr, button: g_click\get_current_button!, :region
 }

@@ -324,6 +324,7 @@ Cursor = {
         return
 
     prev = d_line.prev
+    prev = @view.display_lines[@_visible_line(prev.nr, -1)] if prev and prev.hidden
     if prev
       if prev.is_wrapped and @_navigate_visual
         -- move up into the previous visual (wrapped) line
@@ -345,9 +346,15 @@ Cursor = {
         @move_to pos: @buffer_line.start_offset + offset, extend: opts.extend
         return
 
-    next = @line + 1
+    next = @_visible_line @line + 1, 1
     if next <= @view.buffer.nr_lines
       @move_to line: next, extend: opts.extend
+
+  -- the nearest line from nr in direction step (1 or -1) that is not folded away
+  _visible_line: (nr, step) =>
+    while nr >= 1 and nr <= @view.buffer.nr_lines and @view.display_lines[nr].hidden
+      nr += step
+    nr
 
   page_up: (opts = {}) =>
     if @view.first_visible_line == 1

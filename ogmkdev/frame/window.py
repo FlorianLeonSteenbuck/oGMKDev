@@ -15,7 +15,7 @@ from ogmkdev.workspace import Workspace  # noqa: E402
 from . import theme  # noqa: E402
 from .editors import EditorArea  # noqa: E402
 from .howl import Editors  # noqa: E402
-from .menus import MENUS, PENDING  # noqa: E402
+from .menus import CONTEXT_MENU, MENUS, PENDING  # noqa: E402
 from .panels import PanelsMixin  # noqa: E402
 from .tabs import TabsMixin  # noqa: E402
 from .tools import ToolsMixin  # noqa: E402
@@ -23,6 +23,7 @@ from .analysis import AnalysisMixin  # noqa: E402
 
 HIDDEN_NAMES = {".git", "node_modules", "__pycache__"}
 ICON_THEME = "Humanity"
+EDGE_COLUMN_DEFAULT = 120  # the edge line when the file's EditorConfig sets no max_line_length
 
 # Toolbar: icon, tooltip, target (None for a separator)
 TOOLBAR = (
@@ -34,10 +35,12 @@ TOOLBAR = (
     ("edit-redo", "Redo", "howl:editor-redo"),
     ("edit-find", "Find", "focus_find"),
     None,
+    ("go-jump", "Show current file in Files", "reveal_current_file"),
+    None,
     "spacer",
     ("media-playback-start", "Run", "run_selected"),
     ("system-run", "Run configurations", "show_run_tab"),
-    ("media-record", "Toggle breakpoint", "toggle_breakpoint"),
+    ("media-record", "Toggle breakpoint (F9)", "howl:breakpoint-toggle"),
     ("media-skip-forward", "Step over", "step_over"),
     ("go-down", "Step into", "step_into"),
     ("go-up", "Step out", "step_out"),
@@ -61,6 +64,7 @@ def install_frame_css(mode: str, scheme: str) -> None:
 
 
 class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
+    _edge_key: Optional[tuple] = None
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
                  mode: str = "light", scheme: str = "blend") -> None:
         self.mode, self.scheme = mode, scheme
@@ -73,6 +77,7 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         self.area = EditorArea(self)
         self.set_default_size(1500, 900)
         self._install_actions()
+        self._install_context_menu()
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_child(root)
@@ -142,6 +147,28 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
     def show_run_tab(self) -> None:
         self.left.set_current_page(self.left.page_num(self.run_box))
 
+    # ------------------------------------------------------------ panes
+
+    def split_right(self) -> None:
+        self.area.split_right()
+
+    def split_down(self) -> None:
+        self.area.split_down()
+
+    def split_four(self) -> None:
+        self.area.split_four()
+
+    def split_six(self) -> None:
+        self.area.split_six()
+
+    def close_active_pane(self) -> None:
+        self.area.close_active_pane()
+
+    def show_debug_stop(self, path: str, line: int) -> None:
+        """The debugger stopped at a line: the file opens there, and folds that hide the line open."""
+        self.open_file(path, line, 1)
+        self.set_status(f"stopped at {os.path.basename(path)}:{line}")
+
     # ------------------------------------------------------------ menus
 
     def _menubar(self, app: Gtk.Application) -> Gtk.Widget:
@@ -185,6 +212,39 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
                 action.connect("activate", lambda _a, _p, t=target: self._run_target(t))
                 self.add_action(action)
 
+    def _install_context_menu(self) -> None:
+        """The right-click menu of the editor area: a popover of the window, so it lies over the
+        Howl editors and the rest of the frame."""
+        groups: list = [[]]
+        for item in CONTEXT_MENU:
+            if item is None:
+                groups.append([])
+            else:
+                groups[-1].append(item)
+        model = Gio.Menu()
+        for group in groups:
+            section = Gio.Menu()
+            for label, name, _target in group:
+                section.append(label, f"win.{name}")
+            model.append_section(None, section)
+        for group in groups:
+            for _label, name, target in group:
+                action = Gio.SimpleAction.new(name, None)
+                action.connect("activate", lambda _a, _p, t=target: self._run_target(t))
+                self.add_action(action)
+        self._context_popover = Gtk.PopoverMenu.new_from_model(model)
+        self._context_popover.set_parent(self.area.root)
+        self._context_popover.set_has_arrow(False)
+        click = Gtk.GestureClick(button=3)
+        click.connect("pressed", self._on_context_pressed)
+        self.area.root.add_controller(click)
+
+    def _on_context_pressed(self, _gesture, _n_press, x, y) -> None:
+        rect = Gdk.Rectangle()
+        rect.x, rect.y, rect.width, rect.height = int(x), int(y), 1, 1
+        self._context_popover.set_pointing_to(rect)
+        self._context_popover.popup()
+
     def _run_target(self, target: str) -> None:
         if target.startswith("howl:"):
             command = target[len("howl:"):]
@@ -202,22 +262,24 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
     # ------------------------------------------------------- Files tree
 
     def _left(self) -> Gtk.Widget:
-        self.tree_store = Gtk.TreeStore(str, str)  # name, absolute path ("" for a placeholder)
+        self.tree_store = Gtk.TreeStore(str, str, str)  # name, absolute path ("" for a placeholder), icon
         self.tree = Gtk.TreeView(model=self.tree_store)
         self.tree.set_headers_visible(False)
+        self.tree.append_column(Gtk.TreeViewColumn("", Gtk.CellRendererPixbuf(), icon_name=2))
         self.tree.append_column(Gtk.TreeViewColumn("", Gtk.CellRendererText(), text=0))
         self.tree.connect("row-expanded", self._on_row_expanded)
         self.tree.connect("row-activated", self._on_row_activated)
         scroller = Gtk.ScrolledWindow()
         scroller.set_child(self.tree)
         scroller.set_vexpand(True)
+        self.files_page = scroller
         self.left = Gtk.Notebook()
         self.left.append_page(scroller, Gtk.Label(label="Files"))
         return self.left
 
     def _populate_tree(self) -> None:
         for folder in self.workspace.folders:
-            node = self.tree_store.append(None, [os.path.basename(folder) or folder, folder])
+            node = self.tree_store.append(None, [os.path.basename(folder) or folder, folder, "folder"])
             self._fill(node, folder)
             self.tree.expand_row(self.tree_store.get_path(node), False)
 
@@ -231,9 +293,11 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
                 continue
             if entry.name.startswith(".") and entry.name not in (".editorconfig",):
                 continue
-            node = self.tree_store.append(parent, [entry.name, entry.path])
-            if entry.is_dir(follow_symlinks=False):
-                self.tree_store.append(node, ["", ""])  # filled when the folder is expanded
+            is_dir = entry.is_dir(follow_symlinks=False)
+            node = self.tree_store.append(parent, [entry.name, entry.path,
+                                                   "folder" if is_dir else "text-x-generic"])
+            if is_dir:
+                self.tree_store.append(node, ["", "", ""])  # filled when the folder is expanded
 
     def _on_row_expanded(self, _view, iterator, _path) -> None:
         if self.tree_store.iter_n_children(iterator) == 1:
@@ -246,6 +310,53 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         target = self.tree_store[self.tree_store.get_iter(path)][1]
         if target and os.path.isfile(target):
             self.open_file(target)
+
+    def reveal_current_file(self) -> None:
+        """Shows the file of the active tab in the Files tree: its folders open, the file is selected."""
+        path = self.area.current_path()
+        if not path:
+            self.set_status("no file to show in the Files tree")
+            return
+        if self.reveal_in_tree(path):
+            self.left.set_current_page(self.left.page_num(self.files_page))
+            self.set_status(f"shown in Files: {path}")
+        else:
+            self.set_status(f"{path} is not in the workspace folders")
+
+    def reveal_in_tree(self, path: str) -> bool:
+        store = self.tree_store
+        for index in range(store.iter_n_children(None)):
+            root = store.iter_nth_child(None, index)
+            root_path = store[root][1]
+            if path != root_path and not path.startswith(root_path + os.sep):
+                continue
+            node = root
+            for part in os.path.relpath(path, root_path).split(os.sep):
+                if part in ("", "."):
+                    continue
+                self._fill_if_placeholder(node)
+                child = store.iter_children(node)
+                found = None
+                while child is not None:
+                    if store[child][0] == part:
+                        found = child
+                        break
+                    child = store.iter_next(child)
+                if found is None:
+                    return False
+                node = found
+            self.tree.expand_to_path(store.get_path(node))
+            self.tree.get_selection().select_iter(node)
+            self.tree.scroll_to_cell(store.get_path(node), None, True, 0.5, 0.0)
+            return True
+        return False
+
+    def _fill_if_placeholder(self, iterator) -> None:
+        if self.tree_store.iter_n_children(iterator) == 1:
+            first = self.tree_store.iter_nth_child(iterator, 0)
+            if self.tree_store[first][1] == "":
+                self.tree_store.remove(first)
+                self._fill(iterator, self.tree_store[iterator][1])
 
     # ----------------------------------------------------------- editors
 
@@ -302,7 +413,27 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
             self.position.set_text(f"{os.path.basename(info['path'])}   {info['line']}:{info['column']}"
                                    f"   {info['mode']}   {state}")
         self.track_history(path)
+        self._follow_focus(path)
+        word = self.editors.take_click()
+        if word:
+            self._go_to_word(word)
         return True
+
+    def _follow_focus(self, path: Optional[str]) -> None:
+        """The edge line of the editors of a file: the column of its EditorConfig max_line_length."""
+        key = (path, self.editors.count)
+        if not path or key == self._edge_key:
+            return
+        self._edge_key = key
+        self.editors.set_edge(path, self._settings_for(path).max_line_length or EDGE_COLUMN_DEFAULT)
+
+    def _go_to_word(self, word: str) -> None:
+        """Ctrl+click in the Howl editor: the definition of the word."""
+        self._ensure_index()
+        if not self.index.definitions(word):
+            self.set_status(f"no definition of {word} in the folder")
+            return
+        self._definitions_of(word)
 
     # ---------------------------------------------------- menu actions
 

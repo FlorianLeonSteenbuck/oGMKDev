@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import hashlib
 import os
-from typing import List, Optional
+import re
+from typing import List, Optional, Tuple
 
 import gi
 
@@ -17,6 +18,18 @@ from .. import diagnostics, editorconfig, index as index_module, languages  # no
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
 from .panels import _scrolled  # noqa: E402
+
+
+_HOWL_KINDS = {"error": "error", "warning": "warning", "hint": "hint"}
+_IDENTIFIER = re.compile(r"\$?\w*")
+
+
+def _hint_span(line_text: str, column: int) -> Tuple[int, int]:
+    """The columns (1-based, end exclusive) an error hint underlines: the identifier at the column."""
+    start = max(1, column)
+    match = _IDENTIFIER.match(line_text, start - 1)
+    width = len(match.group(0)) if match else 0
+    return start, start + max(1, width)
 
 
 def _cache_path(folder: str) -> str:
@@ -60,6 +73,20 @@ class AnalysisMixin:
                  f"{os.path.relpath(path, self.folder)}:{item.line}:{item.column}", (path, item.line))
                 for item in found]
         self._set_problems(rows)
+        self._mark_in_editor(path, text, found)
+
+    def _mark_in_editor(self, path: str, text: str, found) -> None:
+        """Error hints in the Howl editor of the file: wavy underlines, the message shows at the line."""
+        lines = text.split("\n")
+        rows = []
+        if SettingsStore(self.folder).value("ogmkdev_diagnostic_marks", path) == "on":
+            for item in found:
+                kind = _HOWL_KINDS.get(item.severity)
+                if kind is None or not 0 < item.line <= len(lines):
+                    continue
+                start, end = _hint_span(lines[item.line - 1], item.column)
+                rows.append((item.line, start, end, kind, f"{item.message} [{item.code}]"))
+        self.editors.hints(path, rows)
 
     def inspect_folder(self) -> None:
         """Inspections of the whole folder: unused and unresolved imports, missing methods, supertypes."""

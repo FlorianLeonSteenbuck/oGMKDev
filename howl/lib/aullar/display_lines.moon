@@ -274,6 +274,9 @@ DisplayLine = define_class {
       @_full_background = full and range.end_offset > line.full_size
 
   properties: {
+    -- the vertical room of the line with its spacing; folded (hidden) lines take none
+    slot: => if @hidden then 0 else @height + 1
+
     block: =>
       if not @_block and @_full_background
         @_block = get_block @display_lines, @
@@ -432,6 +435,8 @@ get_wrap_indicator = (pango_context, view) ->
       line = buffer\get_line nr
       return nil unless line
       d_line = DisplayLine @, view, buffer, pango_context, line, default_font_desc
+      hidden_check = view.listener and view.listener.line_hidden
+      d_line.hidden = hidden_check and hidden_check(view, nr) or false
       @min = min @min, nr
       @max = max @max, nr
       outside = @window.size and (nr < @window.first or nr > @window.last)

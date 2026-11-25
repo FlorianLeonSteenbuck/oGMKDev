@@ -185,7 +185,7 @@ View = {
 
         for line = @_first_visible_line, @_last_visible_line
           d_line = @display_lines[line]
-          y += d_line.height + 1
+          y += d_line.slot
           return line if y >= middle
 
         @_last_visible_line
@@ -195,7 +195,7 @@ View = {
         y = @height / 2
         for nr = line, 1, -1
           d_line = @display_lines[nr]
-          y -= d_line.height + 1
+          y -= d_line.slot
           if y <= 0 or nr == 1
             @first_visible_line = nr
             break
@@ -210,9 +210,9 @@ View = {
           y = 0
           for line in @_buffer\lines @_first_visible_line
             d_line = @display_lines[line.nr]
-            break if y + d_line.height + 1 > @height
+            break if y + d_line.slot > @height
             @_last_visible_line = line.nr
-            y += d_line.height + 1
+            y += d_line.slot
 
           -- +1 for last visible, since next line might be partially shown
           @display_lines\set_window @_first_visible_line, @_last_visible_line + 1
@@ -229,7 +229,7 @@ View = {
         while first_visible > 1
           prev_d_line = @display_lines[first_visible - 1]
           break if (available - prev_d_line.height) < 0
-          available -= prev_d_line.height + 1
+          available -= prev_d_line.slot
           first_visible -= 1
 
         @scroll_to first_visible
@@ -409,7 +409,7 @@ View = {
         max_y = y + d_line.height
 
       last_valid = max last_valid, line.nr
-      y += d_line.height + 1
+      y += d_line.slot
 
     if opts.invalidate -- invalidate any lines after visibly affected block
       local invalidate_to_line
@@ -500,7 +500,7 @@ View = {
           height: max(floor(rect.height / Pango.SCALE), d_line.height)
         }
 
-      y += d_line.height + 1
+      y += d_line.slot
 
     nil
 
@@ -607,13 +607,14 @@ View = {
 
     for line in @_buffer\lines(@_first_visible_line)
       d_line = @display_lines[line.nr]
+      continue if d_line.hidden
 
       if y + d_line.height > clip.y1
         d_line.block -- force evaluation of any block
         lines[#lines + 1] = :line, display_line: d_line
         start_y or= y
 
-      y += d_line.height + 1
+      y += d_line.slot
       break if y + 1 >= clip.y2
 
     current_line = @cursor.line
@@ -625,7 +626,7 @@ View = {
       line_draw_opts.line = line
 
       cr\save!
-      clip_y, clip_height = y - 0.5, display_line.height + 1
+      clip_y, clip_height = y - 0.5, display_line.slot
       cr\rectangle 0, clip_y, @width, clip_height
       cr\clip!
 
@@ -647,7 +648,7 @@ View = {
         if conf.view_show_cursor
           @cursor\draw 0, y, cr, display_line
 
-      y += display_line.height + 1
+      y += display_line.slot
       cr\restore!
       cr\move_to 0, y
 

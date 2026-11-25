@@ -140,6 +140,10 @@ class Editor extends PropertyObject
         log.info "Pre-edit: #{args.str} (Enter to submit, escape to cancel)"
       on_preedit_end: -> log.info "Pre-edit mode finished"
       on_scroll: self\_on_scroll
+      on_gutter_click: self\_on_gutter_click
+      gutter_mark: self\_gutter_mark
+      gutter_fold: self\_gutter_fold
+      line_hidden: self\_line_hidden
 
     @view.listener = listener
     @view.cursor.listener = {
@@ -836,9 +840,128 @@ class Editor extends PropertyObject
     maps = { @buffer.keymap, @mode_at_cursor and @mode_at_cursor.keymap }
     return true if bindings.process event, 'editor', maps, self
 
+  -- the gutter: a click reports the line, a mark per line ('breakpoint' for a breakpoint marker)
+  _on_gutter_click: (view, args) =>
+    if args.region == 'fold'
+      @toggle_fold args.line
+      return true
+    signal.emit 'editor-gutter-click', editor: self, line: args.line, button: args.button
+    true
+
+  -- folds: a 'fold' marker runs from the start of the folded line to the end of the lines indented
+  -- under it; while the marker exists those lines are hidden (aullar asks line_hidden)
+  -- the indentation of a line, tabs counting as four columns
+  _indent_of: (line) =>
+    leading = line.text\match '^[ \t]*'
+    #leading + #leading\gsub('[^\t]', '') * 3
+
+  _fold_end: (line_nr) =>
+    header = @buffer.lines[line_nr]
+    return nil unless header and not header.is_empty
+    indent = @_indent_of header
+    last = nil
+    nr = line_nr + 1
+    while nr <= @view.buffer.nr_lines
+      line = @buffer.lines[nr]
+      unless line.is_empty
+        break if @_indent_of(line) <= indent
+        last = line
+      nr += 1
+    last and last.end_pos
+
+  _fold_marker: (line_nr) =>
+    line = @buffer.lines[line_nr]
+    return nil unless line
+    for m in *@buffer.markers\for_range(line.start_pos, line.start_pos + 1, name: 'fold')
+      return m if m.start_offset == line.start_pos
+    nil
+
+  _line_hidden: (view, line_nr) =>
+    line = @buffer.lines[line_nr]
+    return false unless line
+    for m in *@buffer.markers\for_range(line.start_pos, line.start_pos + 1, name: 'fold')
+      return true if m.start_offset < line.start_pos
+    false
+
+  _gutter_fold: (view, line_nr) =>
+    return 'closed' if @_fold_marker line_nr
+    return 'open' if @_fold_end line_nr
+    nil
+
+  toggle_fold: (line_nr) =>
+    marker = @_fold_marker line_nr
+    if marker
+      @buffer.markers\remove_for_range marker.start_offset, marker.start_offset + 1, name: 'fold'
+    else
+      end_offset = @_fold_end line_nr
+      return false unless end_offset
+      line = @buffer.lines[line_nr]
+      @buffer.markers\add {{name: 'fold', start_offset: line.start_pos, end_offset: end_offset}}
+    @_refresh_folds!
+    true
+
+  -- a cursor or selection hidden in a fold makes the fold open again when text is written there;
+  -- the cursor stays where it is while the fold is closed, and the other folds stay closed
+  _unfold_for_edit: =>
+    positions = {@cursor.pos}
+    positions[#positions + 1] = @selection.anchor unless @selection.empty
+    changed = false
+    for pos in *positions
+      changed = @_open_folds_at(pos) or changed
+    @_refresh_folds! if changed
+
+  -- opens the folds that hide the position, without refreshing the display; true if any opened
+  _open_folds_at: (pos) =>
+    line = @buffer.lines\at_pos pos
+    changed = false
+    for m in *@buffer.markers\for_range(line.start_pos, line.start_pos + 1, name: 'fold')
+      if m.start_offset < line.start_pos
+        @buffer.markers\remove_for_range m.start_offset, m.start_offset + 1, name: 'fold'
+        changed = true
+    changed
+
+  -- going to a line (a search hit, a definition, the debugger stopping there) opens the folds around it
+  reveal_line: (line_nr) =>
+    line = @buffer.lines[line_nr]
+    return unless line
+    @_refresh_folds! if @_open_folds_at line.start_pos
+
+  -- the line display is recreated, so the hidden state of every line is asked again
+  _refresh_folds: =>
+    d_lines = @view.display_lines
+    for nr = 1, @view.buffer.nr_lines
+      d_lines[nr] = nil
+    @view\refresh_display from_line: 1, invalidate: true, gutter: true
+    @view.gutter\refresh!
+
+  _gutter_mark: (view, line_nr) =>
+    line = @buffer.lines[line_nr]
+    return nil unless line
+    for _ in *@buffer.markers\for_range(line.start_pos, line.start_pos + 1, name: 'breakpoint')
+      return 'breakpoint'
+    nil
+
+  -- the word at pos (the cursor moves there), nil if there is none
+  _word_at: (pos) =>
+    @cursor.pos = pos
+    group = @current_context.word
+    return nil if group.empty
+    group.text
+
   _on_button_press: (view, event) =>
     @remove_popup!
-    return false if event.button == 3
+    if event.button == 3
+      -- a right click puts the cursor where the mouse is (unless it is in a selection)
+      pos = @_pos_from_coordinates(event.x, event.y)
+      @cursor.pos = pos if pos and @selection.empty
+      return false
+
+    if event.button == 1 and event.control and event.nr_presses == 1
+      pos = @_pos_from_coordinates(event.x, event.y)
+      word = pos and @_word_at(pos)
+      if word
+        signal.emit 'editor-ctrl-click', editor: self, word: word
+        return true
 
     if event.button == 1
       @drag_press_nr_presses = event.nr_presses
@@ -983,6 +1106,7 @@ class Editor extends PropertyObject
     false
 
   _on_insert_at_cursor: (_, args) =>
+    @_unfold_for_edit!
     params = moon.copy args
     params.editor = self
     return if signal.emit('insert-at-cursor', params) == signal.abort
@@ -1015,6 +1139,7 @@ class Editor extends PropertyObject
       true
 
   _on_delete_back: (_, args) =>
+    @_unfold_for_edit!
     if @pop
       params = text: args.text, editor: self, at_pos: @buffer\char_offset(args.pos)
       @pop.popup\on_delete_back self, params if @pop.popup.on_delete_back
@@ -1286,6 +1411,19 @@ signal.register 'editor-released',
   description: 'Signaled right after an editor was released'
   parameters:
     editor: 'The editor that is being released'
+
+signal.register 'editor-ctrl-click',
+  description: 'Signaled when the left button is clicked with Ctrl in an editor, after the cursor moved to the word'
+  parameters:
+    editor: 'The editor that was clicked'
+    word: 'The word under the mouse'
+
+signal.register 'editor-gutter-click',
+  description: 'Signaled when the gutter of an editor is clicked, on the line of the click'
+  parameters:
+    editor: 'The editor whose gutter was clicked'
+    line: 'The line number that was clicked'
+    button: 'The mouse button'
 
 signal.register 'insert-at-cursor',
   description: 'Signaled right after text has been inserted into an editor at the cursor position'

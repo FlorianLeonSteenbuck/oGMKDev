@@ -166,3 +166,71 @@ int howl_theme(const char *name, const char *file)
   }
   return 0;
 }
+
+/* Sets the error hints of a file in its Howl buffer: one line per hint,
+   "line<TAB>start<TAB>end<TAB>type<TAB>message" (columns 1-based, end exclusive, type error,
+   warning or hint). See HOWL_EMBED_INSPECT in application.moon. */
+int howl_inspect(const char *file, const char *rows)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_INSPECT");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, file);
+  lua_pushstring(embedded, rows);
+  if (lua_pcall(embedded, 2, 0, 0)) {
+    g_critical("Howl hints for %s failed: %s", file, lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  return 0;
+}
+
+/* Takes the word of the last Ctrl+click in a Howl editor ("" if none). See HOWL_EMBED_TAKE_CLICK. */
+int howl_take_click(char *out, int size)
+{
+  out[0] = 0;
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_TAKE_CLICK");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  if (lua_pcall(embedded, 0, 1, 0)) {
+    g_critical("Howl click failed: %s", lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  const char *word = lua_tostring(embedded, -1);
+  if (word)
+    snprintf(out, size, "%s", word);
+  lua_pop(embedded, 1);
+  return 0;
+}
+
+/* Sets the edge line (eclipse-style margin) of the editors showing `file` to `column` (0 for none);
+   other editors get none. See HOWL_EMBED_EDGE in application.moon. */
+int howl_edge(const char *file, int column)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_EDGE");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, file);
+  lua_pushinteger(embedded, column);
+  if (lua_pcall(embedded, 2, 0, 0)) {
+    g_critical("Howl edge line failed: %s", lua_tostring(embedded, -1));
+    return 1;
+  }
+  return 0;
+}
