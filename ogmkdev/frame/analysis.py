@@ -248,6 +248,17 @@ class AnalysisMixin:
         root = self.hierarchy_store.append(None, [name, "class", "", None])
         add(root, tree.get("up", []), "supertype")
         add(root, tree.get("down", []), "subtype")
+        # what the class uses: its supertypes and traits, and the names it refers to; unknown names are external
+        section = self.hierarchy_store.append(root, ["dependencies", "", "", None])
+        for dependency in self.index.dependencies(name):
+            if dependency.lower() == name.lower():
+                continue
+            found = self.index.find(dependency)
+            symbol = found[0] if found else None
+            label = dependency if symbol else f"{dependency}  (external)"
+            where = f"{os.path.relpath(symbol.file, self.folder)}:{symbol.line}" if symbol else ""
+            self.hierarchy_store.append(section, [label, "dependency", where,
+                                                  (symbol.file, symbol.line) if symbol else None])
         self.hierarchy_view.expand_all()
         self.class_diagram.show(tree)
         self.left.set_current_page(self.left.page_num(self.hierarchy_box))

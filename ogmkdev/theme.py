@@ -122,7 +122,8 @@ def css(colors: Dict[str, str]) -> str:
         "button, label, box { " + chrome + " }",
         "button { background-image: none; }",
         "entry, searchentry, list, listbox, treeview, treeview.view { " + field + " }",
-        "row:selected, treeview.view:selected, menu menuitem:hover, menubar > menuitem:hover { " + selected + " }",
+        "row:selected, treeview.view:selected, menu menuitem:hover, menubar > menuitem:hover, "
+        "popover.menu modelbutton:hover, popover.menu modelbutton:focus { " + selected + " }",
         f"textview text {{ {field} }}",
         f"textview border {{ background-color: {colors['gutter_background']}; "
         f"color: {colors['gutter_foreground']}; }}",

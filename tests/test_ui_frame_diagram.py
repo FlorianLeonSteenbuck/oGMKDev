@@ -70,5 +70,68 @@ class ClassDiagramTests(unittest.TestCase):
         self.assertTrue(_pump_until(lambda: self.frame.area.current_path() == base.file, timeout=10))
 
 
+@unittest.skipUnless(GTK_AVAILABLE, "needs GTK 4, a display and libhowl.so")
+class HierarchyDependenciesTests(unittest.TestCase):
+    """The Dependencies heading under the class in the Hierarchy tab: the supertypes and the classes the class
+    refers to, each with its file; a name the project does not declare is marked external."""
+
+    def setUp(self):
+        self._directory = tempfile.TemporaryDirectory()
+        self.folder = self._directory.name
+        self.base = self._write("base.php", "<?php\nclass Base {}\n")
+        self.money = self._write("money.php", "<?php\nclass Money {}\n")
+        order = self._write("order.php", "<?php\n"
+                            "class Order extends Base {\n"
+                            "    public function total(): Money { return new Money(); }\n"
+                            "    public function stamp(): DateTime { return new DateTime(); }\n"
+                            "}\n")
+        self.app = Gtk.Application(application_id="org.ogmkdev.test.dependencies",
+                                   flags=Gio.ApplicationFlags.NON_UNIQUE)
+        self.app.register(None)
+        self.frame = Frame(self.app, self.folder, [order], "light", "blend")
+        self.frame.present()
+        self.assertTrue(_pump_until(lambda: self.frame.editors.status() is not None, timeout=40))
+        self.assertTrue(_pump_until(lambda: all(self.frame.index.find(name) for name in ("Base", "Money", "Order")),
+                                    timeout=90))
+
+    def tearDown(self):
+        self.frame.close()
+        self._directory.cleanup()
+
+    def _write(self, name, text):
+        path = os.path.join(self.folder, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        return path
+
+    def _dependencies(self):
+        """The rows under the Dependencies heading as (label, (file, line) or None)."""
+        store = self.frame.hierarchy_store
+        rows = []
+        heading = store.iter_children(store.get_iter_first())
+        while heading is not None:
+            if store[heading][0] == "dependencies":
+                row = store.iter_children(heading)
+                while row is not None:
+                    rows.append((store[row][0], store[row][3]))
+                    row = store.iter_next(row)
+            heading = store.iter_next(heading)
+        return rows
+
+    def test_the_dependencies_are_the_supertypes_and_the_classes_referred_to(self):
+        self.frame.show_hierarchy()
+        found = dict(self._dependencies())
+        self.assertEqual(found["Base"], (self.base, 2))
+        self.assertEqual(found["Money"], (self.money, 2))
+        self.assertIsNone(found["DateTime  (external)"])
+        self.assertNotIn("Order", found)
+
+    def test_a_class_without_dependencies_still_has_the_heading(self):
+        self.frame.open_file(self.base)
+        self.assertTrue(_pump_until(lambda: self.frame.area.current_path() == self.base, timeout=10))
+        self.frame.show_hierarchy()
+        self.assertEqual(self._dependencies(), [])
+
+
 if __name__ == "__main__":
     unittest.main()

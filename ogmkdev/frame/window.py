@@ -14,6 +14,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from ogmkdev import filetemplates, index as index_module, markup, newclass, scaffold  # noqa: E402
 from ogmkdev.settings import SettingsStore  # noqa: E402
+from ogmkdev.theme import MODES, SCHEMES  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from . import theme  # noqa: E402
 from .editors import EditorArea  # noqa: E402
@@ -70,6 +71,11 @@ def install_frame_css(mode: str, scheme: str) -> None:
     _frame_provider.load_from_string(theme.frame_css(mode, scheme))
 
 
+def theme_folder() -> str:
+    """The folder of the Howl theme files the frame writes (under the user's cache)."""
+    return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "ogmkdev", "themes")
+
+
 class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
     _edge_key: Optional[tuple] = None
     _loose_root = None  # the tree entry 'Loose files' (a Gtk.TreeIter) while it exists
@@ -92,6 +98,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         self.area = EditorArea(self)
         self.set_default_size(1500, 900)
         self._install_actions()
+        self._install_theme_actions()
         self._install_context_menu()
         self._install_xml_menu()
 
@@ -142,8 +149,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         for path in files:
             self.open_file(path)
         # the Howl theme is selected once Howl runs (the first editor starts it)
-        cache = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "ogmkdev", "themes")
-        self.editors.theme(theme.theme_name(mode, scheme), theme.write_howl_theme(mode, scheme, cache))
+        self._apply_howl_theme()
         self.set_status(f"folder {self.folder}")
         self._poll_source = GLib.timeout_add(500, self._poll)
         self.connect("close-request", self._on_close_request)
@@ -198,8 +204,79 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
                 submenu.append(label, f"win.{name}")
                 if accelerator:
                     app.set_accels_for_action(f"win.{name}", [accelerator])
+            if title == "View":
+                self._theme_items(submenu)
             menu.append_submenu(title, submenu)
         return Gtk.PopoverMenuBar.new_from_model(menu)
+
+    # ------------------------------------------------------------ theme
+
+    def _theme_items(self, submenu: Gio.Menu) -> None:
+        """The theme items of the View menu: a check item for dark mode, then a radio item per colour scheme."""
+        dark = Gio.Menu()
+        dark.append("Dark Theme", "win.dark-theme")
+        submenu.append_section(None, dark)
+        schemes = Gio.Menu()
+        for name in SCHEMES:
+            item = Gio.MenuItem.new(f"Color scheme: {name.capitalize()}", None)
+            item.set_action_and_target_value("win.color-scheme", GLib.Variant.new_string(name))
+            schemes.append_item(item)
+        submenu.append_section(None, schemes)
+
+    def _install_theme_actions(self) -> None:
+        """Dark mode is an action with a boolean state, the colour scheme one with a string state: the menu
+        shows the current choice with a check mark or a radio mark."""
+        self._dark_action = Gio.SimpleAction.new_stateful("dark-theme", None,
+                                                          GLib.Variant.new_boolean(self.mode == "dark"))
+        self._dark_action.connect("activate", lambda _action, _parameter: self.set_theme(
+            "light" if self.mode == "dark" else "dark"))
+        self.add_action(self._dark_action)
+        self._scheme_action = Gio.SimpleAction.new_stateful("color-scheme", GLib.VariantType.new("s"),
+                                                            GLib.Variant.new_string(self.scheme))
+        self._scheme_action.connect("activate", lambda _action, parameter: self.set_theme(
+            self.mode, parameter.get_string()))
+        self.add_action(self._scheme_action)
+
+    def set_theme(self, mode: str, scheme: Optional[str] = None) -> None:
+        """Switches between light and dark mode and between colour schemes while the frame runs: the frame's
+        colours, the Howl theme of the editors, the marks of the View menu and the folder colours. The CSS and
+        Howl belong to the whole process, so every open frame follows."""
+        if mode not in MODES:
+            raise ValueError(f"unknown mode {mode!r}")
+        if scheme is not None and scheme not in SCHEMES:
+            raise ValueError(f"unknown colour scheme {scheme!r}")
+        scheme = scheme or self.scheme
+        for frame in self._open_frames():
+            frame.mode, frame.scheme = mode, scheme
+            frame._sync_theme_actions()
+            frame._refresh_role_colours()
+        install_frame_css(mode, scheme)
+        self._apply_howl_theme()
+        self.set_status(f"theme {theme.theme_name(mode, scheme)}")
+
+    def _open_frames(self) -> list:
+        """This frame and the other frames of the application."""
+        application = self.get_application()
+        windows = application.get_windows() if application is not None else []
+        return [self] + [window for window in windows if isinstance(window, Frame) and window is not self]
+
+    def _sync_theme_actions(self) -> None:
+        self._dark_action.set_state(GLib.Variant.new_boolean(self.mode == "dark"))
+        self._scheme_action.set_state(GLib.Variant.new_string(self.scheme))
+
+    def _refresh_role_colours(self) -> None:
+        """The folder rows of the tree keep the colour of their role, which depends on the mode."""
+        def refresh(model, _path, iterator):
+            if model[iterator][2] == "folder":
+                model[iterator][3] = self._role_colour(model[iterator][1])
+            return False  # keep walking the tree
+
+        self.tree_store.foreach(refresh)
+
+    def _apply_howl_theme(self) -> None:
+        """Registers the Howl theme of the frame's mode and scheme and selects it in the editors."""
+        self.editors.theme(theme.theme_name(self.mode, self.scheme),
+                           theme.write_howl_theme(self.mode, self.scheme, theme_folder()))
 
     def _toolbar(self) -> Gtk.Widget:
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
