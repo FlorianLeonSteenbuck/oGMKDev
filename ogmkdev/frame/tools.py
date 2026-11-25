@@ -12,7 +12,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
 from .. import htmldoc  # noqa: E402
-from .. import editing, languages, organize  # noqa: E402
+from .. import changes, editing, languages, organize  # noqa: E402
 from .classdiagram import ClassDiagram  # noqa: E402
 from .theme import palette_for  # noqa: E402
 from ..history import LocalHistory  # noqa: E402
@@ -54,6 +54,53 @@ class ToolsMixin:
         box.append(paned)
         self.hierarchy_box = box
         self.left.append_page(box, Gtk.Label(label="Hierarchy"))
+
+    # ------------------------------------------------------------ Changes
+
+    def _build_changes(self) -> None:
+        self.changes_view = _text_view()
+        self.changes_view.set_editable(False)
+        self.changes_page = _scrolled(self.changes_view)
+        self.bottom.append_page(self.changes_page, Gtk.Label(label="Changes"))
+        self._change_path: Optional[str] = None
+        self._change_key = None
+
+    def show_changes(self) -> None:
+        self.bottom.set_current_page(self.bottom.page_num(self.changes_page))
+
+    def _follow_changes(self, info, path: Optional[str]) -> None:
+        """The changes of the focused file since it was saved: stripes in the gutter of its Howl editor, and the
+        unified diff in the Changes tab. They are kept while the file is modified and removed when it is saved
+        (or when the focus moves to another file)."""
+        marked = self._change_path
+        off = path is not None and self._settings_for(path).custom.get("ogmkdev_change_marks", "on").strip().lower() == "off"
+        shown = path if info and path and info["modified"] and os.path.isfile(path) and not off else None
+        if marked and marked != shown:
+            self.editors.changes(marked, [])
+            self._change_path = None
+            self._change_key = None
+            self.changes_view.get_buffer().set_text("")
+        if shown is None:
+            return
+        try:
+            with open(shown, encoding="utf-8", errors="replace") as handle:
+                saved = handle.read()
+        except OSError:
+            saved = ""
+        current = self.editors.text(shown)
+        if current is None:
+            return
+        marks = changes.line_changes(saved, current)
+        diff = changes.diff_text(saved, current, "saved", "buffer")
+        key = (shown, tuple(marks), diff)
+        if key == self._change_key:
+            return
+        self._change_key = key
+        self._change_path = shown
+        self.editors.changes(shown, marks)
+        self.changes_view.get_buffer().set_text(diff or "no changes since the file was saved")
+        count = len({line for line, _kind in marks})
+        self.set_status(f"{count} line(s) changed since {os.path.basename(shown)} was saved")
 
     # ----------------------------------------------------------- History
 

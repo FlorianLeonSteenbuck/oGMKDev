@@ -49,6 +49,10 @@ class Editors:
         self._lib.howl_edge.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_templates.restype = ctypes.c_int
         self._lib.howl_templates.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self._lib.howl_changes.restype = ctypes.c_int
+        self._lib.howl_changes.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self._lib.howl_text.restype = ctypes.c_int
+        self._lib.howl_text.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_breakpoints.restype = ctypes.c_int
         self._lib.howl_breakpoints.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_close.restype = ctypes.c_int
@@ -90,6 +94,23 @@ class Editors:
             "mode": fields[2],
             "modified": fields[3] == "modified",
         }
+
+    def changes(self, path: str, rows) -> bool:
+        """The change marks of ``path`` in its Howl buffers: rows of (line, kind), kind added, changed or
+        deleted. An empty list removes them."""
+        lines = [f"{line}\t{kind}" for line, kind in rows]
+        return self._lib.howl_changes(os.path.abspath(path).encode(), "\n".join(lines).encode("utf-8")) == 0
+
+    TEXT_LIMIT = 4 * 1024 * 1024
+
+    def text(self, path: str) -> Optional[str]:
+        """The text of the Howl buffer of ``path``; None when no editor shows it or the text is too large."""
+        buffer = ctypes.create_string_buffer(self.TEXT_LIMIT)
+        if self._lib.howl_text(os.path.abspath(path).encode(), buffer, self.TEXT_LIMIT) != 0:
+            return None
+        if len(buffer.value) >= self.TEXT_LIMIT - 1:
+            return None  # truncated by the buffer
+        return buffer.value.decode("utf-8", "replace")
 
     def hints(self, path: str, rows) -> bool:
         """Error hints of ``path`` in its Howl buffer: rows of (line, start, end, kind, message), columns

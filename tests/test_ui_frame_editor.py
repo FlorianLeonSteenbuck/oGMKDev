@@ -104,6 +104,20 @@ class EditorTests(FrameTestCase):
         # the focused buffer reloads the written text, so it is no longer modified
         self.assertTrue(pump_until(lambda: (frame.editors.status() or {}).get("modified") is False, timeout=15))
 
+    def test_a_change_since_the_save_is_shown_as_a_diff_and_cleared_by_the_save(self):
+        path = write(self.folder, "notes.txt", "one\ntwo\n")
+        frame = self.frame([path])
+        self.focus(frame, path)
+
+        def diff_text():
+            buffer = frame.changes_view.get_buffer()
+            return buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), True)
+
+        frame.editors.insert_before(path, 2, "inserted\n")
+        self.assertTrue(pump_until(lambda: "+inserted" in diff_text()), diff_text())
+        frame.editors.command("save")
+        self.assertTrue(pump_until(lambda: "+inserted" not in diff_text()), diff_text())
+
     def test_a_baredown_file_gets_the_baredown_mode(self):
         path = write(self.folder, "notes.bd", "= Title\n- item **bold**\n")
         frame = self.frame([path])

@@ -372,3 +372,52 @@ int howl_insert(const char *file, int line, const char *text)
   lua_pop(embedded, 1);
   return done ? 0 : 1;
 }
+
+/* Replaces the change marks of the editors that show a file: rows of "line<TAB>kind" (kinds added, changed,
+   deleted). See HOWL_EMBED_CHANGES in application.moon. */
+int howl_changes(const char *file, const char *rows)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_CHANGES");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, file);
+  lua_pushstring(embedded, rows);
+  if (lua_pcall(embedded, 2, 0, 0)) {
+    g_critical("Howl changes for %s failed: %s", file, lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  return 0;
+}
+
+/* Copies the text of the buffer that shows a file into out (at most size - 1 bytes). Returns 1 when no Howl
+   editor shows the file. See HOWL_EMBED_TEXT in application.moon. */
+int howl_text(const char *file, char *out, int size)
+{
+  out[0] = 0;
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_TEXT");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, file);
+  if (lua_pcall(embedded, 1, 1, 0)) {
+    g_critical("Howl text of %s failed: %s", file, lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  const char *text = lua_tostring(embedded, -1);
+  int found = text != NULL;
+  if (text)
+    snprintf(out, size, "%s", text);
+  lua_pop(embedded, 1);
+  return found ? 0 : 1;
+}

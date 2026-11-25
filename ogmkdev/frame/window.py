@@ -173,6 +173,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         self._build_problems()
         self._build_search()
         self._build_todos()
+        self._build_changes()
 
     def show_run_tab(self) -> None:
         self.left.set_current_page(self.left.page_num(self.run_box))
@@ -666,6 +667,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         self._autosave_tick(info, path)
         self.track_history(path)
         self._follow_focus(path)
+        self._follow_changes(info, path)
         self._sync_loose()
         self._follow_structure(path)
         click = self.editors.take_click()

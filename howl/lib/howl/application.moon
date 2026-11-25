@@ -220,6 +220,34 @@ class Application extends PropertyObject
           }
       inspection_api.publish buffer, 'ogmkdev', items
 
+    -- the changes of a file since it was saved: one "line<TAB>kind" row each, kind added, changed or
+    -- deleted; they are markers on the first character of the lines and the gutter shows them as stripes
+    -- (src/embed.c howl_changes). The rows replace the earlier marks of the file.
+    change_names = {'change-added', 'change-changed', 'change-deleted'}
+    _G.HOWL_EMBED_CHANGES = (path, rows) ->
+      file = File(path)
+      wanted = {}
+      for row in (rows or '')\gmatch '[^\n]+'
+        line_nr, kind = row\match '^(%d+)\t(%a+)$'
+        wanted[#wanted + 1] = {tonumber(line_nr), kind} if line_nr
+      for ed in *@editors
+        buffer = ed.buffer
+        continue unless buffer and buffer.file == file
+        for name in *change_names
+          buffer.markers\remove_for_range 0, buffer.length, name: name
+        for item in *wanted
+          line = buffer.lines[item[1]]
+          if line
+            buffer.markers\add {{name: 'change-' .. item[2], start_offset: line.start_pos, end_offset: line.start_pos + 1}}
+        ed.view.gutter\refresh! if ed.view and ed.view.gutter
+
+    -- the text of the buffer that shows a file, nil when no editor shows it (src/embed.c howl_text)
+    _G.HOWL_EMBED_TEXT = (path) ->
+      file = File(path)
+      for ed in *@editors
+        return ed.buffer.text if ed.buffer and ed.buffer.file == file
+      nil
+
     -- the code templates of a file for Ctrl+Space (src/embed.c howl_templates); the rows are described in
     -- howl.editing.templates
     code_templates = require 'howl.editing.templates'

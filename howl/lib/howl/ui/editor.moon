@@ -169,6 +169,7 @@ class Editor extends PropertyObject
       on_gutter_click: self\_on_gutter_click
       gutter_mark: self\_gutter_mark
       gutter_fold: self\_gutter_fold
+      gutter_change: self\_gutter_change
       line_hidden: self\_line_hidden
 
     @view.listener = listener
@@ -964,6 +965,14 @@ class Editor extends PropertyObject
       d_lines[nr] = nil
     @view\refresh_display from_line: 1, invalidate: true, gutter: true
     @view.gutter\refresh!
+
+  -- the change of a line since the file was saved: 'added', 'changed', 'deleted', or nil
+  _gutter_change: (view, line_nr) =>
+    line = @buffer.lines[line_nr]
+    return nil unless line
+    for kind in *{'added', 'changed', 'deleted'}
+      return kind if #@buffer.markers\for_range(line.start_pos, line.start_pos + 1, name: 'change-' .. kind) > 0
+    nil
 
   _gutter_mark: (view, line_nr) =>
     line = @buffer.lines[line_nr]

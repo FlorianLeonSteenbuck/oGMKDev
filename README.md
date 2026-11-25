@@ -47,6 +47,9 @@ grammar or language server. Every language here is implemented in this repositor
 - EditorConfig applied on open and on save: indent, tab width, line endings, charset, trailing whitespace,
   final newline. A saved file that differs from its EditorConfig is written again, and the editor reloads
   it. Scoping keys: `ogmkdev_language`, `ogmkdev_dialect`.
+- **Change marks**: since the file was last saved, a green stripe in the gutter marks an added line, a blue
+  one a changed line, and a red triangle a removed block (`ogmkdev_change_marks = off` removes them).
+  The Changes tab of the bottom panel (Tools > Show Changes) shows the unified diff of the focused file.
 - BareDown (`.bd`) is highlighted by the `baredown` mode of Howl (`howl/bundles/baredown`): the line kinds
   and the inline spans of `ogmkdev/baredown.py`, with the same rules and the theme's colours.
 - Language detection with compound extensions (`page.mustache.html`, `schema.mysql.sql`),
@@ -250,8 +253,8 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
   project EditorConfig; `none` removes the shortcut. Example: `ogmkdev_key_save_current = <Primary>s`.
 - **Current line** is highlighted with the Eclipse color; switch it off with `ogmkdev_current_line = false`.
 - **Problem underlines** can be switched off in EditorConfig (global or project): `ogmkdev_diagnostic_marks = off`.
-  The frame does not apply yet `ogmkdev_syntax_highlight`, `ogmkdev_current_line`, `ogmkdev_change_marks` and
-  `ogmkdev_git_colors` (see Open items).
+  The frame does not apply yet `ogmkdev_syntax_highlight`, `ogmkdev_current_line` and `ogmkdev_git_colors`
+  (see Open items).
 - **Git** (Git tab in the left panel, Project > Show Git Changes, Ctrl+Alt+G): lists new, modified and
   deleted files of the workspace folders with their staged state. Stage and Unstage work on the selected
   rows, Diff shows the staged and unstaged changes (new files as a new-file patch), Commit... commits the
@@ -347,16 +350,14 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
   breakpoints are the gutter's marks, sent before each run or step. The Variables tab shows the locals
   of the stopped program and the watch expressions. `tests/test_ui_frame_debug.py` runs the XDebug and
   the GDB sessions through the frame.
-- Change marks colour the whole line; gutter stripes and a diff view per pane are not built yet.
 - Python and JavaScript references are not indexed, only their declarations. Methods of Python classes
   are not in the index, so the HTML export has no page entry for them.
 - Outline and navigation on top of the ECMAScript tree of `ogmkdev/parsers/javascript.py`.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - Dialect-specific SQL keyword sets; PHP and Python syntax colours in the frame.
-- The settings `ogmkdev_syntax_highlight = off`, `ogmkdev_current_line = false`, `ogmkdev_git_colors = off`
-  and `ogmkdev_change_marks = off` are read by the frame's settings but not applied: Howl has no switch for its
-  lexer per buffer, and the current-line flair and the Git panel's colours are not wired yet. The change marks
-  are task 40.
+- The settings `ogmkdev_syntax_highlight = off`, `ogmkdev_current_line = false` and `ogmkdev_git_colors = off`
+  are read by the frame's settings but not applied: Howl has no switch for its lexer per buffer, and the
+  current-line flair and the Git panel's colours are not wired yet.
 - A new untitled editor does not take Howl's current editor: `HOWL_EMBED_FOCUS` runs for it, but the status
   line keeps the previous file, and the commands act on that file. Not solved yet; the test only checks the tab.
 - The `.rpm` package is written but has not been built on openSUSE.

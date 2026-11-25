@@ -50,6 +50,7 @@ MENUS = (
         ("Refresh Index", "refresh-index", "", "refresh_index"),
         ("Clear Index and Rebuild", "clear-index", "", "clear_index"),
         ("Show Git Changes", "show-git", "<Control><Alt>g", "show_git"),
+        ("Show Changes", "show-changes", "", "show_changes"),
         ("Stage Selected Files", "git-stage", "", "git_stage"),
         ("Unstage Selected Files", "git-unstage", "", "git_unstage"),
         ("Commit Staged...", "git-commit", "", "git_commit"),

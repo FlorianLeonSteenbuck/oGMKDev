@@ -9,6 +9,13 @@ Layout = Pango.Layout
 Gtk = require 'ljglibs.gtk'
 pango_cairo = Pango.cairo
 
+-- the colours of the change stripes: added, changed and deleted lines (fixed, like the breakpoint dots)
+CHANGE_COLOURS = {
+  added: {0.18, 0.62, 0.26}
+  changed: {0.12, 0.44, 0.92}
+  deleted: {0.97, 0.32, 0.29}
+}
+
 ffi_cast = ffi.cast
 int_t = ffi.typeof 'int'
 cairo_t = ffi.typeof 'cairo_t *'
@@ -119,6 +126,21 @@ define_class {
         cr\fill!
         cr\restore!
 
+      change = @_change_at line_nr
+      if change
+        cr\save!
+        colour = CHANGE_COLOURS[change]
+        cr\set_source_rgba colour[1], colour[2], colour[3], 1
+        if change == 'deleted' -- a triangle at the top of the line: lines were removed above it
+          cr\move_to 0, y
+          cr\line_to 5, y + 3
+          cr\line_to 0, y + 6
+          cr\close_path!
+        else
+          cr\rectangle 0, y, 4, total_height
+        cr\fill!
+        cr\restore!
+
       fold = @_fold_mark line_nr
       if fold
         x0, mid = @_text_width - 11, y + total_height / 2
@@ -143,6 +165,12 @@ define_class {
     listener = @view.listener
     return nil unless listener and listener.gutter_mark
     listener.gutter_mark @view, line_nr
+
+  -- 'added', 'changed', 'deleted' or nil for the change of a line since the file was saved
+  _change_at: (line_nr) =>
+    listener = @view.listener
+    return nil unless listener and listener.gutter_change
+    listener.gutter_change @view, line_nr
 
   -- 'open' or 'closed' for a line that can be folded, nil otherwise
   _fold_mark: (line_nr) =>
