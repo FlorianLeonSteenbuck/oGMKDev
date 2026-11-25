@@ -1,5 +1,36 @@
 # ogmkdev
 
+## The frame (GTK 4) with the Howl editor
+
+`python3 -m ogmkdev.frame --folder samples/shop [--mode dark --scheme jetbrains] [FILE ...]`
+
+The frame is a GTK 4 window. Its editor areas hold Howl editors: Howl is built as `libhowl.so`
+(`packaging/build-howl.sh`) and loaded into the frame's process, so the editor is a GTK widget of the
+frame's layout, not a separate window. Details: `howl/OGMKDEV.md`.
+
+- Editor area with panes: split right, down, into four and six; every tab is one Howl editor.
+- Howl shows only the editing surface and the cursor position; the colours come from the palettes in
+  `ogmkdev/theme.py` (`--mode`, `--scheme`).
+- Left: Files, Run configurations, Hierarchy (index), History (local history, patch sets, revert),
+  Git (stage, unstage, diff, commit).
+- Bottom: Console (run output), Watches, Problems (diagnostics of the open file, inspections of the
+  folder), Search (search in files), TODO (TODO words in comments with priorities).
+- Tools: go to definition, find implementations, show type hierarchy, inspect folder, refresh and clear
+  the index; Search Everywhere and Quick Open.
+- Settings > Preferences edits the global settings; the frame is a single window per session: starting it
+  again with files hands them to the running frame.
+
+Screenshots (sample data in `samples/shop`):
+
+![Split panes with Howl editors](samples/shop/screenshots/split-panes.png)
+
+![Problems and hierarchy](samples/shop/screenshots/problems-hierarchy.png)
+
+Open: multi-cursor selection (Howl has none yet), the debugger UI and breakpoints, the class diagram,
+templates and file templates, organise imports, keymap configuration, the colour switches for the
+editor, and custom highlighting from the settings (the Howl bundle `ogmkdev` has it for now).
+
+
 A lightweight code editor written in Python with GTK 3 (PyGObject and GtkSourceView 3).
 The window follows the layout of KDevelop: menu bar, icon toolbar, tool panels around a tabbed
 editor, and a status bar. The product is the editor; its base is the KDevelop source tree in

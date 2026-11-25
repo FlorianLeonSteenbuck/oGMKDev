@@ -1,9 +1,5 @@
-"""The menu bar of the frame: short and clean. Only entries that work are listed.
-
-Each entry is (label, action name, accelerator, target). A target is either the name of a Window
-method, or "howl:<command>" for a Howl command that runs in the editor that has the focus.
-The Howl editor takes its own keys first, so accelerators are only given where Howl does not use them.
-"""
+"""The menu bar of the frame. Each entry is (label, action name, accelerator, target): a target is
+the name of a Window method, or "howl:<command>" for a Howl command in the focused editor."""
 
 MENUS = (
     ("File", (
@@ -23,12 +19,25 @@ MENUS = (
     )),
     ("View", (
         ("Split Right", "split-right", "", "split_right"),
+        ("Split Down", "split-down", "", "split_down"),
+        ("Split into Four", "split-four", "", "split_four"),
+        ("Split into Six", "split-six", "", "split_six"),
         ("Close Pane", "close-pane", "", "close_active_pane"),
     )),
     ("Tools", (
         ("Search in Files...", "search-in-files", "<Control><Shift>f", "focus_find"),
+        ("Go to Definition...", "go-to-definition", "", "go_to_definition"),
+        ("Find Implementations", "find-implementations", "", "find_implementations"),
+        ("Show Type Hierarchy", "show-hierarchy", "", "show_hierarchy"),
+        ("Inspect Folder", "inspect-folder", "", "inspect_folder"),
+        ("Refresh Index", "refresh-index", "", "refresh_index"),
+        ("Clear Index and Rebuild", "clear-index", "", "clear_index"),
         ("Show Git Changes", "show-git", "<Control><Alt>g", "show_git"),
         ("Show TODOs", "show-todos", "<Control><Alt>t", "show_todos"),
+    )),
+    ("Settings", (
+        ("Preferences...", "preferences", "", "open_global_settings"),
+        ("Error Hinting...", "error-hinting", "", "open_diagnostic_settings"),
     )),
     ("Run", (
         ("Run Configuration", "run-configuration", "", "run_selected"),
@@ -39,8 +48,8 @@ MENUS = (
     )),
 )
 
-# Entries that are not listed; kept for the status line when a method is missing
+# Entries that are not wired yet (their status line says so)
 PENDING = {
-    "split_right": "split right", "close_active_pane": "close pane",
-    "search_everywhere": "search everywhere", "quick_open": "quick open",
+    "split_down": "split down", "split_four": "split into four", "split_six": "split into six",
+    "close_active_pane": "close pane", "debug_selected": "debugger",
 }

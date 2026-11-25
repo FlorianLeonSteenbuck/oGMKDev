@@ -39,9 +39,15 @@ def howl_css(mode: str, scheme: str) -> str:
         f".content-box {{ background-color: {colors['background']}; }}",
         f".gutter {{ background-color: {colors['gutter_background']}; color: {colors['gutter_foreground']}; }}",
         f".indicator {{ background-color: {colors['chrome']}; color: {colors['chrome_text']}; }}",
-        f"flair.current-line {{ background-color: {colors['current_line']}; }}",
-        f"flair.search {{ background-color: {colors['selection']}; }}",
-        f"flair.list-selection {{ background-color: {colors['selection']}; }}",
+        f"flair.current_line {{  shape: rectangle; background-color: {colors['current_line']}; }}",
+        # thin scrollbar in the text colour, no bright track
+        # same selectors as Howl's own themes, so they win over the default scrollbar
+        f"scrollbar range trough {{ background-color: transparent; }}",
+        f"scrollbar range trough slider {{ min-width: 6px; min-height: 6px; border-radius: 3px; "
+        f"background-color: alpha({colors['foreground']}, 0.22); }}",
+        f"scrollbar range {{ background-color: transparent; }}",
+        f"flair.search {{  shape: rectangle; background-color: {colors['selection']}; }}",
+        f"flair.list-selection {{  shape: rectangle; background-color: {colors['selection']}; }}",
         # the editor is the editing surface only: no title bar, no processes, activity or inspection
         # indicators; the cursor position (footer) stays
         # GTK 4 CSS has no display property: the extra indicators are made empty and transparent

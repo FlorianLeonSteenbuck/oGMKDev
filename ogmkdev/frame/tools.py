@@ -32,11 +32,16 @@ class ToolsMixin:
     # --------------------------------------------------------- Hierarchy
 
     def _build_hierarchy(self) -> None:
-        self.hierarchy_store, self.hierarchy_view = _list(("Name", "Kind", "File"))
+        self.hierarchy_store = Gtk.TreeStore(str, str, str, object)  # name, kind, where, (file, line)
+        self.hierarchy_view = Gtk.TreeView(model=self.hierarchy_store)
+        for index, heading in enumerate(("Name", "Kind", "File")):
+            self.hierarchy_view.append_column(Gtk.TreeViewColumn(heading, Gtk.CellRendererText(), text=index))
+        self.hierarchy_view.connect("row-activated", self._on_hierarchy_activated)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         box.append(Gtk.Label(label="Place the cursor on a class, then Tools > Show Type Hierarchy.", xalign=0,
                              wrap=True))
         box.append(_scrolled(self.hierarchy_view))
+        self.hierarchy_box = box
         self.left.append_page(box, Gtk.Label(label="Hierarchy"))
 
     # ----------------------------------------------------------- History
@@ -90,6 +95,7 @@ class ToolsMixin:
         if changed or path != self._history_path:
             self._history_path = path
             self.refresh_history()
+            self.refresh_problems(path)
 
     def refresh_history(self) -> None:
         if not hasattr(self, "hist_store"):
@@ -173,6 +179,7 @@ class ToolsMixin:
 
     def _build_problems(self) -> None:
         self.problems_store, self.problems_view = _list(("Severity", "Message", "Where"))
+        self.problems_view.connect("row-activated", self._on_problem_activated)
         self.bottom.append_page(_scrolled(self.problems_view), Gtk.Label(label="Problems"))
 
     def _build_search(self) -> None:

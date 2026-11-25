@@ -19,6 +19,7 @@ from .menus import MENUS, PENDING  # noqa: E402
 from .panels import PanelsMixin  # noqa: E402
 from .tabs import TabsMixin  # noqa: E402
 from .tools import ToolsMixin  # noqa: E402
+from .analysis import AnalysisMixin  # noqa: E402
 
 HIDDEN_NAMES = {".git", "node_modules", "__pycache__"}
 ICON_THEME = "Humanity"
@@ -33,15 +34,16 @@ TOOLBAR = (
     ("edit-redo", "Redo", "howl:editor-redo"),
     ("edit-find", "Find", "focus_find"),
     None,
+    "spacer",
     ("media-playback-start", "Run", "run_selected"),
     ("system-run", "Run configurations", "show_run_tab"),
     ("media-record", "Toggle breakpoint", "toggle_breakpoint"),
-    ("go-next", "Step over", "step_over"),
+    ("media-skip-forward", "Step over", "step_over"),
     ("go-down", "Step into", "step_into"),
     ("go-up", "Step out", "step_out"),
     ("media-playback-stop", "Stop", "stop_process"),
     None,
-    ("dialog-warning", "Inspect folder", "inspect_project"),
+    ("dialog-warning", "Inspect folder", "inspect_folder"),
 )
 
 _frame_provider: Optional[Gtk.CssProvider] = None
@@ -58,7 +60,7 @@ def install_frame_css(mode: str, scheme: str) -> None:
     _frame_provider.load_from_string(theme.frame_css(mode, scheme))
 
 
-class Frame(ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
+class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
                  mode: str = "light", scheme: str = "blend") -> None:
         self.mode, self.scheme = mode, scheme
@@ -68,8 +70,6 @@ class Frame(ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
         self.folder = os.path.abspath(folder)
         self.workspace = Workspace.from_properties([self.folder], {})
         self.editors = Editors()
-        cache = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "ogmkdev", "themes")
-        self.editors.theme(theme.theme_name(mode, scheme), theme.write_howl_theme(mode, scheme, cache))
         self.area = EditorArea(self)
         self.set_default_size(1500, 900)
         self._install_actions()
@@ -119,6 +119,9 @@ class Frame(ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
             self.add_editor(None)
         for path in files:
             self.open_file(path)
+        # the Howl theme is selected once Howl runs (the first editor starts it)
+        cache = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "ogmkdev", "themes")
+        self.editors.theme(theme.theme_name(mode, scheme), theme.write_howl_theme(mode, scheme, cache))
         self.set_status(f"folder {self.folder}")
         GLib.timeout_add(500, self._poll)
 
@@ -156,6 +159,11 @@ class Frame(ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
         bar.add_css_class("ogmkdev-toolbar")
         for item in TOOLBAR:
+            if item == "spacer":
+                spacer = Gtk.Box()
+                spacer.set_hexpand(True)
+                bar.append(spacer)
+                continue
             if item is None:
                 separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
                 separator.set_margin_start(4)

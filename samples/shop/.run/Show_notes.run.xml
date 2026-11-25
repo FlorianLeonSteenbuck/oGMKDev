@@ -1,0 +1,5 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Show notes" type="ShConfigurationType" factory="Shell script">
+    <option name="SCRIPT_TEXT" value="cat notes.txt" />
+  </configuration>
+</component>

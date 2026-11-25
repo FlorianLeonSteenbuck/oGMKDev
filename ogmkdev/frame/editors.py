@@ -152,7 +152,7 @@ class EditorArea:
         if path:
             for page, known in self.pages.items():
                 if known == path:
-                    notebook = page.get_parent()
+                    notebook = self._notebook_of(page)
                     notebook.set_current_page(notebook.page_num(page))
                     self.active = notebook
                     return page
@@ -175,8 +175,14 @@ class EditorArea:
         self.pages[page] = path
         return page
 
+    def _notebook_of(self, page: Gtk.Widget) -> Optional[Gtk.Notebook]:
+        for notebook in self.panes:
+            if notebook.page_num(page) >= 0:
+                return notebook
+        return None
+
     def _close_page(self, page: Gtk.Widget) -> None:
-        notebook = page.get_parent()
+        notebook = self._notebook_of(page)
         if notebook is not None:
             notebook.remove_page(notebook.page_num(page))
 
