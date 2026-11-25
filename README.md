@@ -247,11 +247,9 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
 - **Keymap**: every action can be rebound with `ogmkdev_key_<action> = <accelerator>` in the global or the
   project EditorConfig; `none` removes the shortcut. Example: `ogmkdev_key_save_current = <Primary>s`.
 - **Current line** is highlighted with the Eclipse color; switch it off with `ogmkdev_current_line = false`.
-- **Colours can be switched off** in EditorConfig (global or project): `ogmkdev_syntax_highlight = off`
-  (no syntax colours), `ogmkdev_current_line = false`, `ogmkdev_change_marks = off` (gutter marks),
-  `ogmkdev_diagnostic_marks = off` (problem underlines), `ogmkdev_git_colors = off` (Git status colours in
-  the tree and the Git panel). The change mark colours are `ogmkdev_change_color_added`, `_modified` and
-  `_deleted` (hex values such as `#3FB950`). The Settings dialog has them in the Colors group.
+- **Problem underlines** can be switched off in EditorConfig (global or project): `ogmkdev_diagnostic_marks = off`.
+  The frame does not apply yet `ogmkdev_syntax_highlight`, `ogmkdev_current_line`, `ogmkdev_change_marks` and
+  `ogmkdev_git_colors` (see Open items).
 - **Git** (Git tab in the left panel, Project > Show Git Changes, Ctrl+Alt+G): lists new, modified and
   deleted files of the workspace folders with their staged state. Stage and Unstage work on the selected
   rows, Diff shows the staged and unstaged changes (new files as a new-file patch), Commit... commits the
@@ -354,6 +352,10 @@ System packages: `python3-gi`, `gir1.2-gtk-4.0`, and an icon theme with the stan
 - The class diagram scrolls but has no zoom and no edge routing yet.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - Dialect-specific SQL keyword sets; PHP and Python syntax colours in the frame.
+- The settings `ogmkdev_syntax_highlight = off`, `ogmkdev_current_line = false`, `ogmkdev_git_colors = off`
+  and `ogmkdev_change_marks = off` are read by the frame's settings but not applied: Howl has no switch for its
+  lexer per buffer, and the current-line flair and the Git panel's colours are not wired yet. The change marks
+  are task 40.
 - A new untitled editor does not take Howl's current editor: `HOWL_EMBED_FOCUS` runs for it, but the status
   line keeps the previous file, and the commands act on that file. Not solved yet; the test only checks the tab.
 - The `.rpm` package is written but has not been built on openSUSE.
