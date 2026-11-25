@@ -1,0 +1,9 @@
+{
+    "KPlugin": {
+        "Description": "This plugin is purely for unit-test",
+        "License": "LGPL",
+        "Name": "GlobalDefaultPlugin"
+    },
+    "X-KDevelop-Category": "Global",
+    "X-KDevelop-Mode": "NoGUI"
+}

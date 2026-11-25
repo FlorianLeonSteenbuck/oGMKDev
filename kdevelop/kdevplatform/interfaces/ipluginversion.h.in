@@ -1,0 +1,17 @@
+/*
+    SPDX-FileCopyrightText: 2013 Aleix Pol Gonzalez <aleixpol@kde.org>
+
+    SPDX-License-Identifier: LGPL-2.0-or-later
+*/
+
+#ifndef IPLUGINVESION_H
+#define IPLUGINVESION_H
+
+/**
+ * Current KDevelop plugin interface version. Interfaces declare plugin version
+ * to make sure old source (or binary) incompatible plugins are not loaded.
+ * Increase this if it is necessary that old plugins stop working.
+ */
+#define KDEVELOP_PLUGIN_VERSION @KDEV_PLUGIN_VERSION@
+
+#endif

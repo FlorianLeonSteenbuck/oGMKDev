@@ -1,0 +1,98 @@
+[Desktop Entry]
+Type=ServiceType
+X-KDE-ServiceType=KDevelop/Plugin
+X-KDE-Derived=KPluginInfo
+Name=KDevelop Plugin
+Name[ar]=ملحق مطوّرك
+Name[az]=KDevelop qoşması
+Name[ca]=Connector del KDevelop
+Name[ca@valencia]=Connector de KDevelop
+Name[cs]=Modul KDevelop
+Name[de]=KDevelop-Modul
+Name[el]=Πρόσθετο του KDevelop
+Name[en_GB]=KDevelop Plugin
+Name[eo]=KDevelop Kromsoftvaro
+Name[es]=Complemento de KDevelop
+Name[et]=KDevelopi plugin
+Name[eu]=KDevelop plugina
+Name[fi]=KDevelop-liitännäinen
+Name[fr]=Module externe pour KDevelop
+Name[gl]=Complemento de KDevelop
+Name[he]=תוסף KDevelop
+Name[it]=Estensione per KDevelop
+Name[ka]=KDevelop -ის დამატება
+Name[ko]=KDevelop 플러그인
+Name[nb]=KDevelop programtillegg
+Name[nl]=Plugin van KDevelop
+Name[pl]=Wtyczka do KDevelopa
+Name[pt]='Plugin' do KDevelop
+Name[pt_BR]=Plugin do KDevelop
+Name[ru]=Расширение KDevelop
+Name[sa]=KDevelop प्लगिन्
+Name[sk]=Plugin KDevelop
+Name[sl]=Vstavek za KDevelop
+Name[sv]=KDevelop-insticksprogram
+Name[tr]=KDevelop Eklentisi
+Name[uk]=Додаток KDevelop
+Name[zh_CN]=KDevelop 插件
+Name[zh_TW]=KDevelop 外掛程式
+
+# mandatory, versioning - prevent DLL hell
+[PropertyDef::X-KDevelop-Version]
+Type=int
+
+# optional, determines whether a plugin is loaded only after
+# a project is opened, or is a global plugin.
+# If it is not set, the plugin can only be loaded by the
+# user or via requesting one of its dependencies
+# allowed values: Global, Project
+[PropertyDef::X-KDevelop-Category]
+Type=QString
+
+# mandatory, GUI-Operation Mode, determines whether a plugin
+# can work without having a mainwindow/partcontroller
+# running
+# allowed values: GUI, NoGUI
+[PropertyDef::X-KDevelop-Mode]
+Type=QString
+
+# optional, Interfaces that a plugin implements
+# usually values start with org.kdevelop
+[PropertyDef::X-KDevelop-Interfaces]
+Type=QStringList
+
+# optional, interfaces that this plugin depends
+# on
+[PropertyDef::X-KDevelop-IRequired]
+Type=QStringList
+
+# optional, interfaces that this plugin can use,
+# but the plugin still works if the interfaces are
+# not available.
+[PropertyDef::X-KDevelop-IOptional]
+Type=QStringList
+
+# optional, mimetypes supported by a language plugin
+[PropertyDef::X-KDevelop-SupportedMimeTypes]
+Type=QStringList
+
+# optional, languages supported by a language plugin
+# Example language names: "C", "C++", "Objective-C", "CMake"
+[PropertyDef::X-KDevelop-Languages]
+Type=QStringList
+
+# optional, defines whether the plugin can be disabled
+# by the user. Possible values are "AlwaysOn" and "UserSelectable".
+# If the property is missing then UserSelectable is assumed
+[PropertyDef::X-KDevelop-LoadMode]
+Type=QString
+
+# optional, list of filters for "projectfiles" for the project plugin
+# For example: Makefile,Makefile.* for Makefile's
+[PropertyDef::X-KDevelop-ProjectFilesFilter]
+Type=QStringList
+
+# optional, description for the projectfiles filter
+[PropertyDef::X-KDevelop-ProjectFilesFilterDescription]
+Type=QString
+

@@ -1,0 +1,12 @@
+<!DOCTYPE gui SYSTEM "kpartgui.dtd">
+<gui name="kdevheaptrack" version="2" translationDomain="kdevheaptrack">
+<MenuBar>
+  <Menu name="run">
+    <Menu name="debug_attach_menu">
+      <Action name="heaptrack_attach"/>
+    </Menu>
+
+    <Action name="heaptrack_launch" group="run_operations"/>
+  </Menu>
+</MenuBar>
+</gui>

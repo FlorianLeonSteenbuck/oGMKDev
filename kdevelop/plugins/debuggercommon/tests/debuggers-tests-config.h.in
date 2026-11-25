@@ -1,0 +1,6 @@
+#pragma once
+
+#define DEBUGGEE_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/debuggees"
+#define DEBUGGEE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/debuggees"
+#cmakedefine GDB_SRC_DIR "${GDB_SRC_DIR}"
+#cmakedefine LLDB_SRC_DIR "${LLDB_SRC_DIR}"

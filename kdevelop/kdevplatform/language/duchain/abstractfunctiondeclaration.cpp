@@ -1,0 +1,66 @@
+/*
+    SPDX-FileCopyrightText: 2007 Hamish Rodda <rodda@kde.org>
+    SPDX-FileCopyrightText: 2007-2008 David Nolden <david.nolden.kdevelop@art-master.de>
+
+    SPDX-License-Identifier: LGPL-2.0-only
+*/
+
+#include "abstractfunctiondeclaration.h"
+
+#include "types/functiontype.h"
+#include "declaration.h"
+#include "ducontext.h"
+#include <serialization/indexedstring.h>
+
+namespace KDevelop {
+AbstractFunctionDeclaration::~AbstractFunctionDeclaration()
+{
+}
+
+bool AbstractFunctionDeclaration::isInline() const
+{
+    return data()->m_specifiers.testFlag(FunctionSpecifier::Inline);
+}
+
+void AbstractFunctionDeclaration::setInline(bool isInline)
+{
+    dynamicData()->m_specifiers.setFlag(FunctionSpecifier::Inline, isInline);
+}
+
+bool AbstractFunctionDeclaration::isNoexcept() const
+{
+    return data()->m_specifiers.testFlag(FunctionSpecifier::Noexcept);
+}
+
+void AbstractFunctionDeclaration::setNoexcept(bool isNoexcept)
+{
+    dynamicData()->m_specifiers.setFlag(FunctionSpecifier::Noexcept, isNoexcept);
+}
+
+void AbstractFunctionDeclaration::setFunctionSpecifiers(FunctionSpecifiers specifiers)
+{
+    dynamicData()->m_specifiers = specifiers;
+}
+
+IndexedString AbstractFunctionDeclaration::defaultParameterForArgument(int index) const
+{
+    FunctionType::Ptr fType = dynamic_cast<const Declaration*>(this)->type<FunctionType>();
+    if (fType && index >= 0 && index < fType->arguments().size()) {
+        index -= (fType->arguments().size() - defaultParametersSize());
+        if (index >= 0 && index < ( int )defaultParametersSize())
+            return defaultParameters()[index];
+    }
+
+    return IndexedString();
+}
+
+void AbstractFunctionDeclaration::setInternalFunctionContext(DUContext* context)
+{
+    Q_ASSERT(!context || context->type() == DUContext::Function);
+    dynamicData()->m_functionContext = context;
+}
+DUContext* AbstractFunctionDeclaration::internalFunctionContext() const
+{
+    return data()->m_functionContext.context();
+}
+}

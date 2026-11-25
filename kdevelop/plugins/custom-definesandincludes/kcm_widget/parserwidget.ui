@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ParserWidget</class>
+ <widget class="QWidget" name="ParserWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>579</width>
+    <height>407</height>
+   </rect>
+  </property>
+  <layout class="QGridLayout" name="gridLayout">
+   <property name="margin">
+    <number>0</number>
+   </property>
+   <item row="1" column="0">
+    <widget class="QCheckBox" name="parseHeadersInPlainC">
+     <property name="toolTip">
+      <string comment="@info:tooltip">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Check this if you want &lt;code&gt;*.h&lt;/code&gt; headers to be parsed in plain C mode. By default they are parsed as C++ headers.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     </property>
+     <property name="text">
+      <string comment="@option:check">Parse *.h headers in plain C</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="0">
+    <widget class="QGroupBox" name="groupBox">
+     <property name="title">
+      <string notr="true"/>
+     </property>
+     <layout class="QFormLayout" name="formLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_2">
+        <property name="text">
+         <string comment="@label:listbox">C++ profi&amp;le:</string>
+        </property>
+        <property name="buddy">
+         <cstring>languageStandardsCpp</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="languageStandardsCpp">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="toolTip">
+         <string comment="@info:tooltip">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Choose language profile. &lt;/p&gt;&lt;p&gt;Use &amp;quot;Custom&amp;quot; profile to modify parser command-line arguments&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        </property>
+        <item>
+         <property name="text">
+          <string comment="@item:inlistbox language standard">Custom</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++03</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++11</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++14</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++17</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++20</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++23</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++2c</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="argumentsLabel">
+        <property name="text">
+         <string comment="@label:textbox">C++ co&amp;mmand-line arguments:</string>
+        </property>
+        <property name="buddy">
+         <cstring>parserOptionsCpp</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLineEdit" name="parserOptionsCpp"/>
+      </item>
+      <item row="2" column="0">
+       <spacer name="verticalSpacer_2">
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_3">
+        <property name="text">
+         <string comment="@label:listbox">C profi&amp;le:</string>
+        </property>
+        <property name="buddy">
+         <cstring>languageStandardsC</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QComboBox" name="languageStandardsC">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="toolTip">
+         <string comment="@info:tooltip">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Choose language profile. &lt;/p&gt;&lt;p&gt;Use &amp;quot;Custom&amp;quot; profile to modify parser command-line arguments&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        </property>
+        <item>
+         <property name="text">
+          <string comment="@item:inlistbox language standard">Custom</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c89</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">gnu89</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c99</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">gnu99</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c11</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">gnu11</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c17</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">gnu17</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c23</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">gnu23</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c2y</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">gnu2y</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="argumentsLabel_2">
+        <property name="text">
+         <string comment="@label:textbox">C co&amp;mmand-line arguments:</string>
+        </property>
+        <property name="buddy">
+         <cstring>parserOptionsC</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QLineEdit" name="parserOptionsC"/>
+      </item>
+      <item row="5" column="0">
+       <spacer name="verticalSpacer_3">
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item row="6" column="0">
+       <widget class="QLabel" name="label_4">
+        <property name="text">
+         <string comment="@label:listbox">OpenCL C &amp;profile:</string>
+        </property>
+        <property name="buddy">
+         <cstring>languageStandardsOpenCl</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="1">
+       <widget class="QComboBox" name="languageStandardsOpenCl">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="toolTip">
+         <string comment="@info:tooltip">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Choose language profile. &lt;/p&gt;&lt;p&gt;Use &amp;quot;Custom&amp;quot; profile to modify parser command-line arguments&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        </property>
+        <item>
+         <property name="text">
+          <string comment="@item:inlistbox language standard">Custom</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">CL1.1</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">CL1.2</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">CL2.0</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="7" column="0">
+       <widget class="QLabel" name="argumentsLabel_3">
+        <property name="text">
+         <string comment="@label:textbox">OpenCL C comma&amp;nd-line arguments:</string>
+        </property>
+        <property name="buddy">
+         <cstring>parserOptionsOpenCl</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="7" column="1">
+       <widget class="QLineEdit" name="parserOptionsOpenCl"/>
+      </item>
+      <item row="8" column="0">
+       <spacer name="verticalSpacer_4">
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item row="9" column="0">
+       <widget class="QLabel" name="label_5">
+        <property name="text">
+         <string comment="@label:listbox">CUDA C P&amp;rofile:</string>
+        </property>
+        <property name="buddy">
+         <cstring>languageStandardsCuda</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="9" column="1">
+       <widget class="QComboBox" name="languageStandardsCuda">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="toolTip">
+         <string comment="@info:tooltip">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Choose language profile. &lt;/p&gt;&lt;p&gt;Use &amp;quot;Custom&amp;quot; profile to modify parser command-line arguments&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        </property>
+        <item>
+         <property name="text">
+          <string comment="@item:inlistbox language standard">Custom</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++03</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++11</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++14</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++17</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c++20</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string notr="true">c99</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="10" column="0">
+       <widget class="QLabel" name="argumentsLabel_4">
+        <property name="text">
+         <string comment="@label:textbox">CUDA C comman&amp;d-line arguments:</string>
+        </property>
+        <property name="buddy">
+         <cstring>parserOptionsCuda</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="10" column="1">
+       <widget class="QLineEdit" name="parserOptionsCuda"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>406</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

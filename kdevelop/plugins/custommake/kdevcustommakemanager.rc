@@ -1,0 +1,8 @@
+<!DOCTYPE gui SYSTEM "kpartgui.dtd">
+<gui name="kdevcustommakemanager" version="5" translationDomain="kdevcustommake">
+  <MenuBar>
+  <Menu name="run">
+   <Action name="build_target"/>
+  </Menu>
+</MenuBar>
+</gui>

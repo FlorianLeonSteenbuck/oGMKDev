@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+    <!-- Not yet registered, mimetype based on proposal in https://bugs.freedesktop.org/show_bug.cgi?id=23700 -->
+    <mime-type type="text/vnd.nvidia.cuda.csrc">
+        <comment>NVIDIA CUDA C source code</comment>
+        <comment xml:lang="ar">شفرة مصدر NVIDIA CUDA C</comment>
+        <comment xml:lang="ca">Codi font en C per a CUDA de NVIDIA</comment>
+        <comment xml:lang="ca@valencia">Codi font en C per a CUDA de NVIDIA</comment>
+        <comment xml:lang="cs">Zdrojový kód NVIDIA CUDA C</comment>
+        <comment xml:lang="de">NVIDIA CUDA C Quelltext</comment>
+        <comment xml:lang="el">NVIDIA CUDA C πηγαίος κώδικας</comment>
+        <comment xml:lang="en_GB">NVIDIA CUDA C source code</comment>
+        <comment xml:lang="eo">NVIDIA CUDA C-fontkodo</comment>
+        <comment xml:lang="es">Código fuente de NVIDIA CUDA C</comment>
+        <comment xml:lang="eu">NVIDIA CUDA C sorburu-kodea</comment>
+        <comment xml:lang="fi">NVIDIA CUDA -C-lähdekoodi</comment>
+        <comment xml:lang="fr">Code source « C » pour « Nvidia CUDA »</comment>
+        <comment xml:lang="gl">Código fonte en C de NVIDIA CUDA.</comment>
+        <comment xml:lang="he">קוד מקור ב־C ל־NVIDIA CUDA</comment>
+        <comment xml:lang="hu">NVIDIA CUDA C forráskód</comment>
+        <comment xml:lang="it">Codice sorgente CUDA C di NVIDIA</comment>
+        <comment xml:lang="ka">NVIDIA CUDA-ის C-ის საწყისი კოდი</comment>
+        <comment xml:lang="ko">NVIDIA CUDA C 소스 코드</comment>
+        <comment xml:lang="nl">NVIDIA CUDA C broncode</comment>
+        <comment xml:lang="nn">NVIDIA CUDA C-kjeldekode</comment>
+        <comment xml:lang="pl">Kod źródłowy NVIDIA CUDA C</comment>
+        <comment xml:lang="pt">Código-fonte em CUDA C da NVIDIA</comment>
+        <comment xml:lang="pt_BR">Código-fonte em CUDA C da NVIDIA</comment>
+        <comment xml:lang="ru">Исходный код NVIDIA CUDA C</comment>
+        <comment xml:lang="sa">NVIDIA CUDA C स्रोत कोड</comment>
+        <comment xml:lang="sk">Zdrojový kód NVIDIA CUDA C</comment>
+        <comment xml:lang="sl">Izvorna koda NVIDIA CUDA C</comment>
+        <comment xml:lang="sv">NVIDIA CUDA C-källkod</comment>
+        <comment xml:lang="tr">NVIDIA CUDA C kaynak kodu</comment>
+        <comment xml:lang="ug">NVIDIA CUDA C ئەسلى كودى</comment>
+        <comment xml:lang="uk">початковий код C NVIDIA CUDA</comment>
+        <comment xml:lang="zh_CN">NVIDIA CUDA C 源代码</comment>
+        <comment xml:lang="zh_TW">NVIDIA CUDA C 來源程式碼</comment>
+        <sub-class-of type="text/x-c++src"/>
+        <glob pattern="*.cu"/>
+    </mime-type>
+
+    <mime-type type="text/vnd.nvidia.cuda.chdr">
+        <comment>NVIDIA CUDA C header</comment>
+        <comment xml:lang="ar">رأس NVIDIA CUDA C</comment>
+        <comment xml:lang="ca">Capçalera en C per a CUDA de NVIDIA</comment>
+        <comment xml:lang="ca@valencia">Capçalera en C per a CUDA de NVIDIA</comment>
+        <comment xml:lang="cs">Hlavičkový soubor NVIDIA CUDA C</comment>
+        <comment xml:lang="de">NVIDIA CUDA C Header</comment>
+        <comment xml:lang="el">NVIDIA CUDA C κεφαλίδα</comment>
+        <comment xml:lang="en_GB">NVIDIA CUDA C header</comment>
+        <comment xml:lang="eo">NVIDIA CUDA C-kapdosiero</comment>
+        <comment xml:lang="es">Cabecera de NVIDIA CUDA C</comment>
+        <comment xml:lang="eu">NVIDIA CUDA C goiburua</comment>
+        <comment xml:lang="fi">NVIDIA CUDA -C-otsake</comment>
+        <comment xml:lang="fr">En-tête « C » pour « Nvidia CUDA »</comment>
+        <comment xml:lang="gl">Cabeceira en C de NVIDIA CUDA.</comment>
+        <comment xml:lang="he">כותרת ב־C ל־NVIDIA CUDA</comment>
+        <comment xml:lang="hu">NVIDIA CUDA C fejléc</comment>
+        <comment xml:lang="it">Intestazione CUDA C di NVIDIA</comment>
+        <comment xml:lang="ka">NVIDIA CUDA-ის C-ის თავსართი</comment>
+        <comment xml:lang="ko">NVIDIA CUDA C 헤더</comment>
+        <comment xml:lang="nl">NVIDIA CUDA C header</comment>
+        <comment xml:lang="nn">NVIDIA CUDA C-deklarasjonsfil</comment>
+        <comment xml:lang="pl">Nagłówek NVIDIA CUDA C</comment>
+        <comment xml:lang="pt">Ficheiro de inclusão em CUDA C da NVIDIA</comment>
+        <comment xml:lang="pt_BR">Cabeçalho C da NVIDIA CUDA</comment>
+        <comment xml:lang="ru">Заголовочный файл NVIDIA CUDA C</comment>
+        <comment xml:lang="sa">NVIDIA CUDA C शीर्षकम्</comment>
+        <comment xml:lang="sk">Hlavička NVIDIA CUDA C</comment>
+        <comment xml:lang="sl">Glava NVIDIA CUDA C</comment>
+        <comment xml:lang="sv">NVIDIA CUDA C-deklarationsfil</comment>
+        <comment xml:lang="tr">NVIDIA CUDA C üst bilgisi</comment>
+        <comment xml:lang="ug">NVIDIA CUDA C ھۆججەت بېشى</comment>
+        <comment xml:lang="uk">файл заголовків C NVIDIA CUDA</comment>
+        <comment xml:lang="zh_CN">NVIDIA CUDA C 头文件</comment>
+        <comment xml:lang="zh_TW">NVIDIA CUDA C 標頭檔</comment>
+        <sub-class-of type="text/x-c++hdr"/>
+        <glob pattern="*.cuh"/>
+    </mime-type>
+</mime-info>

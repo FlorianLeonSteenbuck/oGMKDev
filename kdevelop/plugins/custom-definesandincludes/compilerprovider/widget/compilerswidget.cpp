@@ -1,0 +1,220 @@
+/*
+    SPDX-FileCopyrightText: 2014 Sergey Kalinichev <kalinichev.so.0@gmail.com>
+
+    SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
+*/
+
+#include "compilerswidget.h"
+
+#include <QAction>
+#include <KLocalizedString>
+#include <QKeySequence>
+#include <QMenu>
+
+#include "ui_compilerswidget.h"
+#include "compilersmodel.h"
+#include "../compilerprovider/settingsmanager.h"
+#include "../compilerprovider/compilerprovider.h"
+#include <debug.h>
+
+using namespace KDevelop;
+
+CompilersWidget::CompilersWidget(QWidget* parent)
+    : ConfigPage(nullptr, nullptr, parent)
+    , m_ui(new Ui::CompilersWidget)
+    , m_compilersModel(new CompilersModel(this))
+{
+    m_ui->setupUi(this);
+    m_ui->compilers->setModel(m_compilersModel);
+    m_ui->compilers->header()->setSectionResizeMode(QHeaderView::Stretch);
+
+    m_addMenu = new QMenu(m_ui->addButton);
+
+    m_addMenu->clear();
+
+    auto settings = SettingsManager::globalInstance();
+    auto provider = settings->provider();
+    const auto compilerFactories = provider->compilerFactories();
+    for (const auto& factory : compilerFactories) {
+        auto* action = new QAction(m_addMenu);
+        const QString fname = factory->name();
+        action->setText(fname);
+        connect(action, &QAction::triggered, this, [this, fname]() { addCompiler(fname); });
+        m_addMenu->addAction(action);
+    }
+    m_ui->addButton->setMenu(m_addMenu);
+
+    connect(m_ui->removeButton, &QPushButton::clicked, this, &CompilersWidget::deleteCompiler);
+
+    auto delAction = new QAction(i18nc("@action", "Delete Compiler"), this);
+    delAction->setShortcut( QKeySequence( QStringLiteral("Del") ) );
+    delAction->setShortcutContext( Qt::WidgetWithChildrenShortcut );
+    m_ui->compilers->addAction( delAction );
+    connect( delAction, &QAction::triggered, this, &CompilersWidget::deleteCompiler );
+
+    connect(m_ui->compilers->selectionModel(), &QItemSelectionModel::currentChanged, this, &CompilersWidget::compilerSelected);
+
+    connect(m_ui->compilerName, &QLineEdit::textEdited, this, &CompilersWidget::compilerEdited);
+
+    connect(m_ui->compilerPath, &KUrlRequester::textEdited, this, &CompilersWidget::compilerEdited);
+
+    connect(m_compilersModel, &CompilersModel::compilerChanged, this, &CompilersWidget::compilerChanged);
+
+    enableItems(false);
+}
+
+CompilersWidget::~CompilersWidget()
+{
+}
+
+void CompilersWidget::setCompilers(const QVector< CompilerPointer >& compilers)
+{
+    m_compilersModel->setCompilers(compilers);
+    m_ui->compilers->expandAll();
+}
+
+void CompilersWidget::clear()
+{
+    m_compilersModel->setCompilers({});
+}
+
+void CompilersWidget::deleteCompiler()
+{
+    qCDebug(DEFINESANDINCLUDES) << "Deleting compiler";
+    auto selectionModel = m_ui->compilers->selectionModel();
+    const auto selectedRowsBefore = selectionModel->selectedIndexes();
+    for (const QModelIndex& row : selectedRowsBefore) {
+        if (row.column() == 1) {
+            //Don't remove the same compiler twice
+            continue;
+        }
+
+        if(m_compilersModel->removeRows(row.row(), 1, row.parent())) {
+            auto selectedCompiler = selectionModel->selectedIndexes();
+            compilerSelected(selectedCompiler.isEmpty() ? QModelIndex() : selectedCompiler.first());
+        }
+    }
+
+    emit changed();
+}
+
+void CompilersWidget::addCompiler(const QString& factoryName)
+{
+    auto settings = SettingsManager::globalInstance();
+    auto provider = settings->provider();
+    const auto compilerFactories = provider->compilerFactories();
+    for (const auto& factory : compilerFactories) {
+        if (factoryName == factory->name()) {
+            //add compiler without any information, the user will fill the data in later
+            auto compilerIndex = m_compilersModel->addCompiler(factory->createCompiler(QString(), QString()));
+
+            m_ui->compilers->selectionModel()->select(compilerIndex, QItemSelectionModel::Clear | QItemSelectionModel::SelectCurrent | QItemSelectionModel::Rows);
+            compilerSelected(compilerIndex);
+            m_ui->compilers->scrollTo(compilerIndex);
+            m_ui->compilerName->setFocus(Qt::OtherFocusReason);
+            break;
+        }
+    }
+
+    emit changed();
+}
+
+QVector< CompilerPointer > CompilersWidget::compilers() const
+{
+    return m_compilersModel->compilers();
+}
+
+void CompilersWidget::compilerSelected(const QModelIndex& index)
+{
+    auto compiler = index.data(CompilersModel::CompilerDataRole);
+    if (compiler.value<CompilerPointer>()) {
+        m_ui->compilerName->setText(compiler.value<CompilerPointer>()->name());
+        m_ui->compilerPath->setText(compiler.value<CompilerPointer>()->path());
+        enableItems(true);
+    } else {
+        enableItems(false);
+    }
+}
+
+void CompilersWidget::compilerEdited()
+{
+    auto indexes = m_ui->compilers->selectionModel()->selectedIndexes();
+    Q_ASSERT(!indexes.isEmpty());
+
+    auto compiler = indexes.first().data(CompilersModel::CompilerDataRole);
+    if (!compiler.value<CompilerPointer>()) {
+        return;
+    }
+
+    compiler.value<CompilerPointer>()->setName(m_ui->compilerName->text());
+    compiler.value<CompilerPointer>()->setPath(m_ui->compilerPath->text());
+
+    m_compilersModel->updateCompiler(m_ui->compilers->selectionModel()->selection());
+
+    emit changed();
+}
+
+void CompilersWidget::enableItems(bool enable)
+{
+    m_ui->compilerName->setEnabled(enable);
+    m_ui->compilerPath->setEnabled(enable);
+
+    if(!enable) {
+        m_ui->compilerName->clear();
+        m_ui->compilerPath->clear();
+    }
+}
+
+void CompilersWidget::reset()
+{
+    auto settings = SettingsManager::globalInstance();
+    setCompilers(settings->provider()->compilers());
+}
+
+void CompilersWidget::apply()
+{
+    auto settings = SettingsManager::globalInstance();
+    auto provider = settings->provider();
+
+    settings->writeUserDefinedCompilers(compilers());
+
+    const auto& providerCompilers = provider->compilers();
+    const auto& widgetCompilers = compilers();
+    for (auto& compiler: providerCompilers) {
+        if (!widgetCompilers.contains(compiler)) {
+            provider->unregisterCompiler(compiler);
+        }
+    }
+
+    for (auto& compiler: widgetCompilers) {
+        if (!providerCompilers.contains(compiler)) {
+            provider->registerCompiler(compiler);
+        }
+    }
+}
+
+void CompilersWidget::defaults()
+{
+}
+
+QString CompilersWidget::name() const
+{
+    return i18nc("@title:tab", "C/C++ Compilers");
+}
+
+QString CompilersWidget::fullName() const
+{
+    return i18nc("@title:tab", "Configure C/C++ Compilers");
+}
+
+QIcon CompilersWidget::icon() const
+{
+    return QIcon::fromTheme(QStringLiteral("kdevelop"));
+}
+
+KDevelop::ConfigPage::ConfigPageType CompilersWidget::configPageType() const
+{
+    return ConfigPage::LanguageConfigPage;
+}
+
+#include "moc_compilerswidget.cpp"

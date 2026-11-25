@@ -1,0 +1,9 @@
+<!DOCTYPE gui SYSTEM "kpartgui.dtd">
+<gui name="kdevmakebuilder" version="5" translationDomain="kdevmakebuilder">
+<MenuBar>
+  <Menu name="view">
+    <Action name="next_make_error" />
+    <Action name="prev_make_error" />
+  </Menu>
+</MenuBar>
+</gui>

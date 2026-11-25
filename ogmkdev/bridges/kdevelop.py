@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from . import VENDOR_KDEVELOP
+from . import KDEVELOP_SOURCE
 
 MI_TEST_FILES = (
     os.path.join("plugins", "debuggercommon", "tests", "test_miparser.cpp"),
@@ -80,7 +80,7 @@ def _c_unescape(text: str) -> str:
     return "".join(out)
 
 
-def mi_corpus(kdevelop_root: str = VENDOR_KDEVELOP) -> List[str]:
+def mi_corpus(kdevelop_root: str = KDEVELOP_SOURCE) -> List[str]:
     """MI transcript lines found as C string literals in KDevelop's GDB/MI tests."""
     lines: List[str] = []
     for relative in MI_TEST_FILES:

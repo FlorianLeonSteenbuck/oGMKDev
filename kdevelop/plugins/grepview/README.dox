@@ -1,0 +1,12 @@
+/** \class GrepViewPlugin
+Integrates "find|grep" in KDevelop - allows fast searching of multiple files using patterns or regular expressions.
+
+\authors <a href="mailto:bernd AT kdevelop.org">Bernd Gehrmann</a>
+
+\maintainer <a href="mailto:jens.dagerbo AT swipnet.se">Jens Dagerbo</a> aka teatime
+
+\feature grep works on editor context menu
+
+\bug bugs in <a href="https://bugs.kde.org/buglist.cgi?component=grepview&product=kdevplatform&resolution=---">Grep Frontend component at Bugzilla database</a>
+
+*/

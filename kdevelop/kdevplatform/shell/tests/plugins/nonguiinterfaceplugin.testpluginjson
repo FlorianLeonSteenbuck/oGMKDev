@@ -1,0 +1,11 @@
+{
+    "KPlugin": {
+        "Description": "This plugin is purely for unit-test",
+        "License": "LGPL",
+        "Name": "NonGuiInterface"
+    },
+    "X-KDevelop-Interfaces": [
+        "org.kdevelop.ITestNonGuiInterface"
+    ],
+    "X-KDevelop-Mode": "NoGUI"
+}

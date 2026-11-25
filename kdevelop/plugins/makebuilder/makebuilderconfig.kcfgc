@@ -1,0 +1,7 @@
+File=makebuilderconfig.kcfg
+ClassName=MakeBuilderSettings
+Singleton=true
+Mutators=true
+Inherits=KDevelop::ProjectConfigSkeleton
+IncludeFiles=project/projectconfigskeleton.h
+SourceIncludeFiles=makebuilderpreferences.h
