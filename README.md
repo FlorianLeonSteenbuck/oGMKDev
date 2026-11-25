@@ -204,6 +204,21 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
 builds the openSUSE `.rpm` from `packaging/ogmkdev.spec` (written, not yet built here). Both use
 `packaging/install-tree.sh`. See `packaging/README.md`.
 
+## Panes, local history and autosave
+
+- **Split the editor** (View menu): right, down, into four (2 x 2) or into six (2 x 3). Each pane has its
+  own tabs; tabs can be dragged from one pane to another. Closing a pane (Ctrl+Alt+W or its close button)
+  moves its tabs to the neighbouring pane.
+- **Local history**: opening a file and every save keep a snapshot in `$XDG_DATA_HOME/ogmkdev/history`,
+  outside the project. The History panel lists the revisions, shows the diff against the current text (or
+  the patch set of a selection), reverts to a selected revision, and extracts a patch set (`.patch` file) from
+  the selected or from all revisions.
+- **Changed lines**: lines added, modified or deleted since the last save are marked in the gutter.
+- **Autosave**: off by default. `--autosave` starts with it on, `--no-autosave` starts with it off; the
+  setting `ogmkdev_autosave = on` makes it the default. Autosaves are kept in the local history too.
+- **Index at startup**: `--clear-index` removes the index cache before the project is indexed;
+  Project > Clear Index and Rebuild does the same while the editor runs.
+
 ## Templates
 
 Every language has built-in templates (PHP, Python 2/3/PyPy, ECMAScript, TypeScript, TSX, JSX,
@@ -271,6 +286,7 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 - Coding-standard checks (trailing whitespace, indentation style, line length, final newline) are not
   added as diagnostics yet; the diagnostic severities are already configurable per check.
 - The `.rpm` package is written but has not been built on openSUSE.
+- Change marks colour the whole line; gutter stripes and a diff view per pane are not built yet.
 
 - Build an AST on top of the ECMAScript parse tree (outline, navigation).
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
