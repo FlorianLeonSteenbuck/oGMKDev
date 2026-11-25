@@ -59,6 +59,32 @@ class EcmaScriptLexerTests(unittest.TestCase):
     def test_unexpected_character_is_reported(self):
         self.assertEqual(E.problems("a # b")[0][2], "unexpected character")
 
+    def test_es2022_logical_assignment_and_nullish_punctuators(self):
+        self.assertEqual([v for _, v in kinds("a ??= b ||= c &&= d ?? e")
+                          if v in ("??=", "||=", "&&=", "??")], ["??=", "||=", "&&=", "??"])
+
+    def test_numeric_separators_and_bigint_are_single_numbers(self):
+        self.assertEqual(kinds("1_000n 0x_ff 2.5e1_0"),
+                         [("number", "1_000n"), ("number", "0x_ff"), ("number", "2.5e1_0")])
+
+    def test_private_names_and_the_hashbang_line(self):
+        self.assertEqual(kinds("this.#count"),
+                         [("keyword", "this"), ("punctuator", "."), ("private-name", "#count")])
+        self.assertEqual(E.tokenize("#!/usr/bin/env node\nx")[0].kind, "comment")
+
+    def test_unicode_escape_in_an_identifier(self):
+        self.assertEqual(kinds(r"ab = 1")[0], ("identifier", r"ab"))
+
+    def test_template_parts_for_a_parser(self):
+        source = "`a${b}c`"
+        self.assertEqual(E.scan_token(source, 0, substitutions=True).kind, "template-open")
+        after = E.scan_template_continuation(source, 5)  # the brace that closes the substitution
+        self.assertEqual((after.kind, after.end), ("template", 8))
+
+    def test_slash_is_a_regexp_only_when_the_caller_allows_it(self):
+        self.assertEqual(E.scan_token("/x/g", 0, regexp_allowed=True).kind, "regexp")
+        self.assertEqual(E.scan_token("/x/g", 0).kind, "punctuator")
+
 
 if __name__ == "__main__":
     unittest.main()

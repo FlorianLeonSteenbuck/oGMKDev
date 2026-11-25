@@ -18,6 +18,10 @@ Limits: the first syntax error stops the parse (KDevelop's error recovery is not
 grammar is ES5 plus the QML words, which are identifiers in JavaScript mode here. ES2015 syntax
 that the grammar lacks (arrow functions, template substitutions, classes, modules) is reported as
 a syntax error. Postfix ``++`` and ``--`` after a line break are restricted as in ECMAScript.
+
+The diagnostics use the recursive-descent parser in :mod:`ogmkdev.parsers.javascript`, which covers
+ECMAScript 2022. This driver stays as the ES5 reference: the tests check that the new parser accepts
+every program it accepts.
 """
 
 from __future__ import annotations

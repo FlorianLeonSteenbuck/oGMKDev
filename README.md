@@ -108,7 +108,7 @@ Paragraphs are lines up to the next blank line. Files use the extensions `.bd` a
 
 | Language | Current source | Next step |
 |---|---|---|
-| ECMAScript (JavaScript) | lexer ported from KDevelop's QML/JS lexer, LALR driver over KDevelop's generated tables (`tools/generate_ecmascript_tables.py`), syntax diagnostics, own highlighting | AST and outline on top of the parse tree |
+| ECMAScript (JavaScript) | lexer ported from KDevelop's QML/JS lexer; recursive-descent parser for ECMAScript 2022 (`ogmkdev/parsers/javascript.py`) for the syntax diagnostics; KDevelop's ES5 LALR driver kept as the reference (`tools/generate_ecmascript_tables.py`); own highlighting | outline and navigation on top of the parser's tree |
 | BareDown | own tokenizer, parser and HTML renderer | - |
 | SQL (Oracle, Apache Hive, MySQL, MariaDB, MSSQL, PostgreSQL) | lexer rules and keyword list ported from Howl, `ENGINE=` checks, own highlighting | dialect-specific keyword sets |
 | PHP | heredoc and nowdoc scanner, diagnostics; highlighting by GtkSourceView | own parser |
@@ -349,7 +349,7 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 - Change marks colour the whole line; gutter stripes and a diff view per pane are not built yet.
 - Python and JavaScript references are not indexed, only their declarations. Methods of Python classes
   are not in the index, so the HTML export has no page entry for them.
-- Build an AST on top of the ECMAScript parse tree (outline, navigation).
+- Outline and navigation on top of the ECMAScript tree of `ogmkdev/parsers/javascript.py`.
 - The class diagram scrolls but has no zoom and no edge routing yet.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - Dialect-specific SQL keyword sets; TypeScript and JSX lexers; PHP and Python syntax colours in the frame.

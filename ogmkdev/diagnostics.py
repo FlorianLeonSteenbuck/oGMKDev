@@ -20,7 +20,6 @@ Every diagnostic has a 1-based line and column.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, replace
 from typing import Dict, List, Optional
 
@@ -28,7 +27,7 @@ from . import baredown, heredoc, markup, php_features, sql, standards
 from .editorconfig import EditorSettings
 from .languages import Detection
 from .lexers import ecmascript_lexer
-from .parsers import ecmascript as jsparser
+from .parsers import javascript as jsparser
 
 SEVERITIES = ("error", "warning", "hint", "off")
 
@@ -40,11 +39,6 @@ class Diagnostic:
     severity: str        # error | warning | hint
     code: str
     message: str
-
-
-# ECMAScript 2015 and later syntax that the ES5 grammar does not have (modules, let/const, classes,
-# arrow functions, template literals)
-ES2015_SYNTAX = re.compile(r"\b(import|export|class|const|let)\b|=>|`")
 
 
 def _position(text: str, offset: int):
@@ -78,19 +72,13 @@ def analyze(text: str, detection: Detection, settings: Optional[EditorSettings] 
         lexical = ecmascript_lexer.problems(text)
         for line, column, message in lexical:
             found.append(Diagnostic(line, column, "error", "js-lexical", message))
-        modern = ES2015_SYNTAX.search(text) if not lexical else None
-        if modern:
-            # the grammar is ES5 (see parsers/ecmascript.py): a modern construct is not an error,
-            # so the syntax check is skipped for the file and a hint says where it starts
-            line, column = _position(text, modern.start())
-            found.append(Diagnostic(line, column, "hint", "js-es2015",
-                                    "ECMAScript 2015+ syntax: the syntax check covers ES5 only and is "
-                                    "skipped for this file"))
-        elif not lexical:
+        if not lexical:
             try:
                 jsparser.parse(text)
             except jsparser.ParseError as error:
                 found.append(Diagnostic(error.line, error.column, "error", "js-syntax", error.message))
+            except RecursionError:
+                pass  # nested deeper than the recursive parser goes: no verdict
     if detection.template is None:  # templated files (Mustache, Twig) are not checked as plain markup
         if detection.language == "json":
             for line, column, message in markup.json_problems(text):
