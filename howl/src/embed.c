@@ -234,3 +234,27 @@ int howl_edge(const char *file, int column)
   }
   return 0;
 }
+
+/* Copies the paths of the files shown in the Howl editors, one per line (see HOWL_EMBED_FILES). */
+int howl_files(char *out, int size)
+{
+  out[0] = 0;
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_FILES");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  if (lua_pcall(embedded, 0, 1, 0)) {
+    g_critical("Howl files failed: %s", lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  const char *text = lua_tostring(embedded, -1);
+  if (text)
+    snprintf(out, size, "%s", text);
+  lua_pop(embedded, 1);
+  return 0;
+}

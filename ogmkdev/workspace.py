@@ -1,10 +1,14 @@
-"""Workspace: project folders, source and test folders, and ignored folders.
+"""Workspace: project folders, the folders of each role, and hidden folders.
 
-Configured with the ``ogmkdev_source_roots``, ``ogmkdev_test_roots`` and ``ogmkdev_exclude`` keys (global
-and project scope, see :mod:`ogmkdev.settings`). Each list is comma separated. An entry with a slash is
-a path relative to its project folder (``src/main``); an entry without one is a folder name that is
-matched anywhere in the path (``tests``). Ignored folders are hidden from the tree and left out of the
-index and of search.
+Configured with the ``ogmkdev_source_roots``, ``ogmkdev_test_roots``, ``ogmkdev_build_roots``,
+``ogmkdev_artifact_roots``, ``ogmkdev_asset_roots`` and ``ogmkdev_exclude`` keys (global and project
+scope, see :mod:`ogmkdev.settings`). Each list is comma separated. An entry with a slash is a path
+relative to its project folder (``src/main``); an entry without one is a folder name that is matched
+anywhere in the path (``tests``).
+
+Hidden are the ignored folders and files (``ogmkdev_exclude``, by default IDE configuration such as
+``.idea`` and ``*.iml``) and the dot-folders and dot-files, except ``.editorconfig``. Hidden entries are
+not in the tree, not in the index and not in search: the index holds what the tree shows.
 """
 
 from __future__ import annotations
@@ -13,6 +17,14 @@ import fnmatch
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
+
+DEFAULT_EXCLUDES = (".git", "node_modules", "__pycache__", "vendor", ".idea", "*.iml")
+DEFAULT_TEST_ROOTS = ("tests", "test", "spec")
+DEFAULT_SOURCE_NAMES = ("src", "source", "app", "lib", "include")
+DEFAULT_BUILD_NAMES = ("build", "dist", "out", "target", "bin", "obj")
+DEFAULT_ARTIFACT_NAMES = ("artifacts", "coverage", "reports", "logs")
+DEFAULT_ASSET_NAMES = ("assets", "static", "public", "resources", "images", "fonts")
+ROLES = ("test", "source", "build", "artifacts", "assets")
 
 
 def _items(text: str) -> Tuple[str, ...]:
@@ -31,8 +43,11 @@ def _items(text: str) -> Tuple[str, ...]:
 class Workspace:
     folders: List[str] = field(default_factory=list)
     source_roots: Tuple[str, ...] = ()
-    test_roots: Tuple[str, ...] = ("tests", "test", "spec")
-    excludes: Tuple[str, ...] = (".git", "node_modules", "__pycache__", "vendor")
+    test_roots: Tuple[str, ...] = DEFAULT_TEST_ROOTS
+    excludes: Tuple[str, ...] = DEFAULT_EXCLUDES
+    build_roots: Tuple[str, ...] = DEFAULT_BUILD_NAMES
+    artifact_roots: Tuple[str, ...] = DEFAULT_ARTIFACT_NAMES
+    asset_roots: Tuple[str, ...] = DEFAULT_ASSET_NAMES
 
     @classmethod
     def from_properties(cls, folders: Sequence[str], props: Dict[str, str]) -> "Workspace":
@@ -40,7 +55,10 @@ class Workspace:
             folders=[os.path.abspath(f) for f in folders],
             source_roots=_items(props.get("ogmkdev_source_roots", "")),
             test_roots=_items(props.get("ogmkdev_test_roots", "tests,test,spec")),
-            excludes=_items(props.get("ogmkdev_exclude", ".git,node_modules,__pycache__,vendor")),
+            excludes=_items(props.get("ogmkdev_exclude", ",".join(DEFAULT_EXCLUDES))),
+            build_roots=_items(props.get("ogmkdev_build_roots", ",".join(DEFAULT_BUILD_NAMES))),
+            artifact_roots=_items(props.get("ogmkdev_artifact_roots", ",".join(DEFAULT_ARTIFACT_NAMES))),
+            asset_roots=_items(props.get("ogmkdev_asset_roots", ",".join(DEFAULT_ASSET_NAMES))),
         )
 
     def folder_of(self, path: str) -> Optional[Tuple[str, str]]:
@@ -72,6 +90,35 @@ class Workspace:
                 return True
         return False
 
+    def is_hidden(self, path: str) -> bool:
+        """Not shown in the tree, not indexed, not searched: ignored, or a dot-folder or dot-file."""
+        if self.is_excluded(path):
+            return True
+        located = self.folder_of(path)
+        if located is None:
+            return False
+        return any(segment.startswith(".") and segment != ".editorconfig"
+                   for segment in located[1].split("/") if segment not in ("", "."))
+
+    def role(self, path: str) -> Optional[str]:
+        """The role of a folder: ``test``, ``source``, ``build``, ``artifacts`` or ``assets``.
+
+        The first matching role wins in that order; a folder with no role, a hidden folder and a file
+        have none. Source folders default to the common names when ``ogmkdev_source_roots`` is empty.
+        """
+        located = self.folder_of(path)
+        if located is None or self.is_hidden(path) or not os.path.isdir(path):
+            return None
+        relative = located[1]
+        if relative in ("", "."):
+            return None
+        sources = self.source_roots or DEFAULT_SOURCE_NAMES
+        for role, entries in (("test", self.test_roots), ("source", sources), ("build", self.build_roots),
+                              ("artifacts", self.artifact_roots), ("assets", self.asset_roots)):
+            if any(self._matches(relative, entry) for entry in entries):
+                return role
+        return None
+
     def kind(self, path: str) -> str:
         """``excluded``, ``test``, ``source`` or ``other`` (outside every folder or not in a root)."""
         if self.is_excluded(path):
@@ -87,22 +134,22 @@ class Workspace:
         return "other"
 
     def excluded_predicate(self):
-        return self.is_excluded
+        return self.is_hidden
 
 
 SKIP_NAMES = {".git", "node_modules", "__pycache__"}
 
 
 def workspace_files(workspace: "Workspace", limit: int = 20000) -> List[str]:
-    """Files of the workspace folders, without ignored folders (for quick open and search)."""
+    """Files the tree shows in the workspace folders (for quick open and search)."""
     found: List[str] = []
     for folder in workspace.folders:
         for directory, subdirs, names in os.walk(folder):
-            subdirs[:] = [d for d in subdirs if d not in SKIP_NAMES and not workspace.is_excluded(
+            subdirs[:] = [d for d in subdirs if d not in SKIP_NAMES and not workspace.is_hidden(
                 os.path.join(directory, d))]
             for name in names:
                 path = os.path.join(directory, name)
-                if not workspace.is_excluded(path):
+                if not workspace.is_hidden(path):
                     found.append(path)
                     if len(found) >= limit:
                         return found

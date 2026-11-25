@@ -36,6 +36,8 @@ class Editors:
         self._lib.howl_theme.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self._lib.howl_status.restype = ctypes.c_int
         self._lib.howl_status.argtypes = [ctypes.c_char_p, ctypes.c_int]
+        self._lib.howl_files.restype = ctypes.c_int
+        self._lib.howl_files.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_inspect.restype = ctypes.c_int
         self._lib.howl_inspect.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self._lib.howl_take_click.restype = ctypes.c_int
@@ -95,6 +97,13 @@ class Editors:
     def set_edge(self, path: str, column: int) -> bool:
         """The edge line at ``column`` in the editors that show ``path`` (0 for none)."""
         return self._lib.howl_edge(os.path.abspath(path).encode(), column) == 0
+
+    def files(self) -> list:
+        """The paths of the files shown in the Howl editors."""
+        buffer = ctypes.create_string_buffer(65536)
+        if self._lib.howl_files(buffer, len(buffer)) != 0:
+            return []
+        return [path for path in buffer.value.decode("utf-8", "replace").split("\n") if path]
 
     def theme(self, name: str, path: str) -> bool:
         """Registers the Howl theme file ``path`` under ``name`` and selects it."""

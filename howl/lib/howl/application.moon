@@ -248,6 +248,14 @@ class Application extends PropertyObject
         if group and not group.empty
           howl.signal.emit 'editor-ctrl-click', editor: editor, word: group.text
 
+    -- the paths of the files shown in the Howl editors, one per line (src/embed.c howl_files)
+    _G.HOWL_EMBED_FILES = ->
+      paths = {}
+      for ed in *@editors
+        path = ed.buffer and ed.buffer.file and ed.buffer.file.path
+        paths[#paths + 1] = path if path
+      table.concat paths, '\n'
+
     _G.HOWL_EMBED_STATUS = ->
       editor = @editor
       buffer = editor and editor.buffer

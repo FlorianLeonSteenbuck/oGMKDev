@@ -327,7 +327,8 @@ class ProjectIndex:
     def invalidate(self, path: str) -> bool:
         """Re-index one file (after a save). Returns True when it is indexed now."""
         path = os.path.abspath(path)
-        if not os.path.isfile(path) or os.path.splitext(path)[1].lower() not in INDEXED:
+        ignored = self.excluded is not None and self.excluded(path)
+        if ignored or not os.path.isfile(path) or os.path.splitext(path)[1].lower() not in INDEXED:
             removed = self.files.pop(path, None) is not None
             if removed:
                 self._rebuild()

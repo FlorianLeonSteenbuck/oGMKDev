@@ -110,7 +110,7 @@ class AnalysisMixin:
     def _ensure_index(self) -> None:
         if getattr(self, "index", None) is None:
             self.index = index_module.ProjectIndex(self.workspace.folders, cache_path=_cache_path(self.folder),
-                                                   excluded=self.workspace.is_excluded)
+                                                   excluded=self.workspace.is_hidden)
             self.index.refresh()
 
     def refresh_index(self) -> None:

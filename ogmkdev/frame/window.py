@@ -11,6 +11,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
+from ogmkdev.settings import SettingsStore  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from . import theme  # noqa: E402
 from .editors import EditorArea  # noqa: E402
@@ -22,6 +23,7 @@ from .tools import ToolsMixin  # noqa: E402
 from .analysis import AnalysisMixin  # noqa: E402
 
 HIDDEN_NAMES = {".git", "node_modules", "__pycache__"}
+LOOSE_LABEL = "Loose files"  # the tree entry for open files the tree does not show
 ICON_THEME = "Humanity"
 EDGE_COLUMN_DEFAULT = 120  # the edge line when the file's EditorConfig sets no max_line_length
 
@@ -65,6 +67,7 @@ def install_frame_css(mode: str, scheme: str) -> None:
 
 class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
     _edge_key: Optional[tuple] = None
+    _loose_root = None  # the tree entry 'Loose files' (a Gtk.TreeIter) while it exists
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
                  mode: str = "light", scheme: str = "blend") -> None:
         self.mode, self.scheme = mode, scheme
@@ -72,7 +75,8 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         super().__init__(application=app, title="oGMKDev")
         self.add_css_class("ogmkdev-frame")
         self.folder = os.path.abspath(folder)
-        self.workspace = Workspace.from_properties([self.folder], {})
+        self.workspace = Workspace.from_properties(
+            [self.folder], SettingsStore(self.folder).effective_for(os.path.join(self.folder, "_")))
         self.editors = Editors()
         self.area = EditorArea(self)
         self.set_default_size(1500, 900)
@@ -262,11 +266,12 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
     # ------------------------------------------------------- Files tree
 
     def _left(self) -> Gtk.Widget:
-        self.tree_store = Gtk.TreeStore(str, str, str)  # name, absolute path ("" for a placeholder), icon
+        # name, absolute path ("" for a placeholder), icon, colour of the folder's role (None: no colour)
+        self.tree_store = Gtk.TreeStore(str, str, str, str)
         self.tree = Gtk.TreeView(model=self.tree_store)
         self.tree.set_headers_visible(False)
         self.tree.append_column(Gtk.TreeViewColumn("", Gtk.CellRendererPixbuf(), icon_name=2))
-        self.tree.append_column(Gtk.TreeViewColumn("", Gtk.CellRendererText(), text=0))
+        self.tree.append_column(Gtk.TreeViewColumn("", Gtk.CellRendererText(), text=0, foreground=3))
         self.tree.connect("row-expanded", self._on_row_expanded)
         self.tree.connect("row-activated", self._on_row_activated)
         scroller = Gtk.ScrolledWindow()
@@ -279,7 +284,7 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
 
     def _populate_tree(self) -> None:
         for folder in self.workspace.folders:
-            node = self.tree_store.append(None, [os.path.basename(folder) or folder, folder, "folder"])
+            node = self.tree_store.append(None, [os.path.basename(folder) or folder, folder, "folder", None])
             self._fill(node, folder)
             self.tree.expand_row(self.tree_store.get_path(node), False)
 
@@ -289,15 +294,60 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         except OSError:
             return
         for entry in entries:
-            if entry.name in HIDDEN_NAMES or self.workspace.is_excluded(entry.path):
-                continue
-            if entry.name.startswith(".") and entry.name not in (".editorconfig",):
+            if entry.name in HIDDEN_NAMES or self.workspace.is_hidden(entry.path):
                 continue
             is_dir = entry.is_dir(follow_symlinks=False)
             node = self.tree_store.append(parent, [entry.name, entry.path,
-                                                   "folder" if is_dir else "text-x-generic"])
+                                                   "folder" if is_dir else "text-x-generic",
+                                                   self._role_colour(entry.path) if is_dir else None])
             if is_dir:
-                self.tree_store.append(node, ["", "", ""])  # filled when the folder is expanded
+                self.tree_store.append(node, ["", "", "", None])  # filled when the folder is expanded
+
+    def _role_colour(self, path: str) -> Optional[str]:
+        role = self.workspace.role(path)
+        return theme.role_colour(self.mode, role) if role else None
+
+    def _sync_loose(self) -> None:
+        """Open files the tree does not show (ignored, hidden or outside the folders) hang loose below the
+        'Loose files' entry at the end of the tree; a file that is closed leaves it again."""
+        loose = [path for path in self.editors.files()
+                 if self.workspace.folder_of(path) is None or self.workspace.is_hidden(path)]
+        shown = set(loose)
+        present = set()
+        if self._loose_root is not None:
+            child = self.tree_store.iter_children(self._loose_root)
+            while child is not None:
+                following = self.tree_store.iter_next(child)
+                path = self.tree_store[child][1]
+                if path in shown:
+                    present.add(path)
+                else:
+                    self.tree_store.remove(child)
+                child = following
+        for path in loose:
+            if path in present:
+                continue
+            if self._loose_root is None:
+                self._loose_root = self.tree_store.append(None, [LOOSE_LABEL, "", "document-properties", None])
+            self.tree_store.append(self._loose_root, [os.path.basename(path), path, "text-x-generic", None])
+            self.tree.expand_row(self.tree_store.get_path(self._loose_root), False)
+        if self._loose_root is not None and not self.tree_store.iter_n_children(self._loose_root):
+            self.tree_store.remove(self._loose_root)
+            self._loose_root = None
+
+    def _reveal_loose(self, path: str) -> bool:
+        """Selects an open file that hangs loose below 'Loose files'."""
+        if self._loose_root is None:
+            return False
+        child = self.tree_store.iter_children(self._loose_root)
+        while child is not None:
+            if self.tree_store[child][1] == path:
+                self.tree.expand_row(self.tree_store.get_path(self._loose_root), False)
+                self.tree.get_selection().select_iter(child)
+                self.tree.scroll_to_cell(self.tree_store.get_path(child), None, True, 0.5, 0.0)
+                return True
+            child = self.tree_store.iter_next(child)
+        return False
 
     def _on_row_expanded(self, _view, iterator, _path) -> None:
         if self.tree_store.iter_n_children(iterator) == 1:
@@ -317,7 +367,7 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         if not path:
             self.set_status("no file to show in the Files tree")
             return
-        if self.reveal_in_tree(path):
+        if self.reveal_in_tree(path) or self._reveal_loose(path):
             self.left.set_current_page(self.left.page_num(self.files_page))
             self.set_status(f"shown in Files: {path}")
         else:
@@ -328,6 +378,8 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         for index in range(store.iter_n_children(None)):
             root = store.iter_nth_child(None, index)
             root_path = store[root][1]
+            if not root_path:
+                continue  # the 'Loose files' entry is not a folder
             if path != root_path and not path.startswith(root_path + os.sep):
                 continue
             node = root
@@ -414,6 +466,7 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
                                    f"   {info['mode']}   {state}")
         self.track_history(path)
         self._follow_focus(path)
+        self._sync_loose()
         word = self.editors.take_click()
         if word:
             self._go_to_word(word)

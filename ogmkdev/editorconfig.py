@@ -29,7 +29,8 @@ UNSET = "unset"
 TEMPLATE_KEY_PREFIX = "ogmkdev_template_"
 # Values of these keys keep their case (names of folders, templates, and so on).
 CASE_PRESERVING_PREFIXES = (TEMPLATE_KEY_PREFIX, "ogmkdev_filetemplate_", "ogmkdev_source_roots",
-                            "ogmkdev_test_roots", "ogmkdev_exclude", "ogmkdev_key_")
+                            "ogmkdev_test_roots", "ogmkdev_exclude", "ogmkdev_key_",
+                            "ogmkdev_build_roots", "ogmkdev_artifact_roots", "ogmkdev_asset_roots")
 NUMERIC_RANGE_LIMIT = 10_000
 
 INDENT_STYLES = frozenset({"tab", "space"})

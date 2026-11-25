@@ -76,3 +76,17 @@ def theme_name(mode: str, scheme: str) -> str:
 
 def palette_for(mode: str, scheme: str) -> Dict[str, str]:
     return palettes.palette(mode, scheme)
+
+
+# Colours of the folder roles in the tree (ogmkdev/workspace.py): test, source, build, artifacts, assets
+ROLE_COLOURS = {
+    "light": {"source": "#0969da", "test": "#1a7f37", "build": "#9a6700", "artifacts": "#8250df",
+              "assets": "#bf3989"},
+    "dark": {"source": "#58a6ff", "test": "#3fb950", "build": "#d29922", "artifacts": "#a371f7",
+             "assets": "#f778ba"},
+}
+
+
+def role_colour(mode, role):
+    """The colour of a folder role in light or dark mode, None when the role has none."""
+    return ROLE_COLOURS.get(mode, ROLE_COLOURS["light"]).get(role)
