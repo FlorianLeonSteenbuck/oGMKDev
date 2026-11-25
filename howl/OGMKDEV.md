@@ -36,6 +36,17 @@ Howl window: one editor view per instance, started with the files on the command
   separated by `;`, e.g. `console.log=#ffb86c;DEPRECATED=#ff5555`. Every occurrence of the text is
   highlighted in every buffer; changes are picked up within a second. The text is matched literally, not as a regex.
 
+## Howl as a library (libhowl.so)
+
+`src/embed.c` builds Howl into `libhowl.so`. A GTK 4 program loads it and gives it a container
+(a `GtkBox` of its own layout); Howl's editor content is moved into that box as a GTK widget, in the
+same process. The window Howl creates for the content is hidden. `howl_embed(container, app_root, file)`
+starts it; `Application:embed` in `lib/howl/application.moon` does the work on the Lua side.
+`tools/howl_frame_demo.py` shows it in a GTK 4 Python window.
+
+Limits so far: one editor per process (a second call returns 1); the keyboard goes to the editor
+through the window's focus controller.
+
 ## Known gaps
 
 - The Language Server Protocol parts of Howl are still there; oGMKDev does not use them.

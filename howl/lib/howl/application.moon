@@ -136,6 +136,22 @@ class Application extends PropertyObject
     hidden_buffers = [b for b in *@_buffers when not b.showing]
     return #hidden_buffers > 0 and hidden_buffers[1] or @_buffers[1]
 
+  -- Howl's editor as a widget of a GTK program that runs its own main loop (src/embed.c):
+  -- the window Howl creates for the editor is hidden and its content moves into `container`
+  embed: (container, file) =>
+    ffi = require 'ffi'
+    C = ffi.C
+    @g_app = Gtk.Application 'org.ogmkdev.howl-embedded', Gtk.Application.NON_UNIQUE
+    @g_app\register!
+    files = if file and file != '' then {file} else {}
+    @_load files, {}
+    window = @window\to_gobject!
+    content = C.gtk_window_get_child window
+    C.gtk_window_set_child window, nil
+    C.gtk_box_append ffi.cast('GtkBox *', container), content
+    C.gtk_widget_hide ffi.cast('GtkWidget *', window)
+    content
+
   new_window: (properties = {}) =>
     props = title: @title
     props[k] = v for k, v in pairs(properties)

@@ -8,3 +8,4 @@ site/build/
 site/source/doc/spec/
 site/.bundle/
 tmp/
+src/libhowl.so

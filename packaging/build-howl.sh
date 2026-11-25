@@ -27,7 +27,7 @@ if [ -z "${LUAJIT_SRC:-}" ]; then
   LUAJIT_SRC=${LUAJIT_SRC%/}
 fi
 if [ ! -f "$LUAJIT_SRC/src/libluajit.a" ]; then
-  make -C "$LUAJIT_SRC" XCFLAGS=-DLUAJIT_ENABLE_LUA52COMPAT
+  make -C "$LUAJIT_SRC" XCFLAGS="-DLUAJIT_ENABLE_LUA52COMPAT -fPIC"
 fi
 cp "$LUAJIT_SRC/src/libluajit.a" "$WORK/libluajit.a"
 
@@ -45,4 +45,12 @@ make -C "$ROOT/howl/src" howl \
   DEP_OBJECTS="$WORK/lpeg.o" \
   LIBS="-lm -ldl $GTK_LIBS"
 
-echo "built $ROOT/howl/src/howl"
+make -C "$ROOT/howl/src" libhowl.so \
+  LUAJIT="$LUAJIT_SRC" \
+  LUAJIT_SRC_DIR="$LUAJIT_SRC/src" \
+  LUAJIT_CFLAGS="-I$LUAJIT_SRC/src" \
+  ARCHIVES="$WORK/libluajit.a" \
+  DEP_OBJECTS="$WORK/lpeg.o" \
+  LIBS="-lm -ldl $GTK_LIBS"
+
+echo "built $ROOT/howl/src/howl and $ROOT/howl/src/libhowl.so"

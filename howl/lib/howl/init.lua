@@ -31,6 +31,7 @@ local function parse_args(arg_vector)
     ['--help'] = 'help',
     ['--reuse'] = 'reuse',
     ['--new-instance'] = 'new_instance',
+    ['--embed'] = 'embed',
     ['--compile'] = 'compile',
     ['--lint'] = 'lint',
     ['--no-profile'] = 'no_profile',
@@ -230,6 +231,8 @@ local function main()
           howl.app:pump_mainloop()
         end
       end
+    elseif args.embed then
+      howl.app:embed(HOWL_EMBED_CONTAINER, HOWL_EMBED_FILE)
     else
       howl.app:run()
     end

@@ -76,6 +76,10 @@ bytecode: howl
 	-@find ../lib ../bundles -name '*.bc' | xargs rm
 	@find ../lib ../bundles \( -name '*.lua' -o -name '*.moon' \) ! -name '*_spec.moon' | xargs ./howl --compile
 
+# Howl as a library for GTK programs (src/embed.c)
+libhowl.so: embed.c process_helpers.c main.h $(DEP_OBJECTS)
+	${CC} -shared -fPIC $(CFLAGS) -o libhowl.so embed.c process_helpers.c $(DEP_OBJECTS) ${ARCHIVES} ${LIBS}
+
 install: all
 	@echo Installing to $(DESTDIR)$(PREFIX)..
 	@mkdir -p $(DESTDIR)$(PREFIX)/bin/

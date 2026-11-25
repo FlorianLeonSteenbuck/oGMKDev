@@ -325,6 +325,8 @@ ffi.cdef [[
   typedef struct {} GtkBox;
   GtkBox * gtk_box_new (GtkOrientation orientation, gint spacing);
   void gtk_box_append (GtkBox *box, GtkWidget *child);
+  GtkWidget *gtk_window_get_child (void *window);
+  void gtk_window_set_child (void *window, GtkWidget *child);
   void gtk_box_prepend (GtkBox *box, GtkWidget *child);
   void gtk_box_remove (GtkBox* box, GtkWidget* child);
   void gtk_box_insert_child_after (
