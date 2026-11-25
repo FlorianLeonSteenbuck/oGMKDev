@@ -31,6 +31,8 @@ class ThemeTests(unittest.TestCase):
                 ratio = theme.contrast_ratio(colors["comment"], background)
                 self.assertGreaterEqual(ratio, 4.5, f"{mode}/{scheme} comment: {ratio:.2f}")
                 self.assertGreaterEqual(theme.contrast_ratio(colors["foreground"], colors["gutter_background"]), 4.5)
+                self.assertGreaterEqual(theme.contrast_ratio(colors["chrome_text"], colors["chrome"]), 4.5,
+                                        f"{mode}/{scheme} chrome")
 
     def test_dark_mode_is_dark_and_light_mode_is_light(self):
         self.assertLess(theme.luminance(theme.palette("dark")["background"]), 0.05)
@@ -56,6 +58,7 @@ class ThemeTests(unittest.TestCase):
         css = theme.css(theme.palette("dark"))
         self.assertIn("background-color: #2B2B2D", css)
         self.assertIn("textview border", css)
+        self.assertIn("background-color: #3C3F41", css)
 
 
 if __name__ == "__main__":

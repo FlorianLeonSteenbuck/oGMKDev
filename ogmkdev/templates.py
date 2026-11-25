@@ -1,22 +1,41 @@
-"""Variable-based templates: the only source of auto-completion proposals.
+"""Variable-based templates for completion: built in for every language, or configured in EditorConfig.
 
-A template has a trigger word, a body and named variables::
+Body syntax:
 
-    ${name}            variable with no default (required; left as-is when not supplied)
+    ${name}            variable without a default (stays visible when no value is given)
     ${name:default}    variable with a default
-    $0                 final cursor position
+    $0                 cursor position after the expansion
+    anything else      literal text (so PHP's $variable needs no escaping)
 
-Completion filters templates by their trigger prefix and language. Nothing is inferred
-from the code, which keeps the completion engine small and predictable.
+Configuration: a template is an EditorConfig property ``ogmkdev_template_<trigger>``. Its value
+may use the escapes ``\\n``, ``\\t`` and ``\\\\``. Sections select the files: ``[*.php]``,
+``[legacy/**]`` or ``[**/templates/**]`` scope templates to a language or a directory. A
+configured template applies to every file its section matches and replaces a built-in template
+with the same trigger, so a project can change any template without a second configuration format.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from .editorconfig import TEMPLATE_KEY_PREFIX
+
+ANY_LANGUAGE = "*"
+TRIGGER = re.compile(r"^[a-z0-9_-]+$")
 _VARIABLE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}|\$0")
+_ESCAPE = re.compile(r"\\(.)")
+_UNESCAPE = {"n": "\n", "t": "\t", "\\": "\\"}
+
+# Languages whose templates also serve another language (family members and template layers).
+FAMILY: Dict[str, Tuple[str, ...]] = {
+    "pypy": ("pypy", "python"),
+    "tsx": ("tsx", "typescript"),
+    "jsx": ("jsx", "ecmascript"),
+    "mustache": ("mustache", "html"),
+    "twig": ("twig", "html"),
+}
 
 
 @dataclass(frozen=True)
@@ -25,14 +44,18 @@ class Template:
     language: str
     body: str
     description: str = ""
-    dialect: Optional[str] = None      # restricts the template to one dialect when set
+    dialect: Optional[str] = None
     variables: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class Expansion:
     text: str
-    cursor: int                        # offset of $0 (or the end of the text)
+    cursor: int
+
+
+def unescape(value: str) -> str:
+    return _ESCAPE.sub(lambda m: _UNESCAPE.get(m.group(1), "\\" + m.group(1)), value)
 
 
 def variable_names(body: str) -> List[str]:
@@ -44,7 +67,7 @@ def variable_names(body: str) -> List[str]:
 
 
 def expand(template: Template, values: Optional[Mapping[str, str]] = None) -> Expansion:
-    """Replace variables; ``values`` override template defaults; ``$0`` marks the cursor."""
+    """Replace variables (``values`` override defaults) and locate ``$0``."""
     values = dict(values or {})
     defaults = dict(template.variables)
     cursor: Optional[int] = None
@@ -54,23 +77,32 @@ def expand(template: Template, values: Optional[Mapping[str, str]] = None) -> Ex
         pieces.append(template.body[last:match.start()])
         last = match.end()
         if match.group(0) == "$0":
-            cursor = sum(len(p) for p in pieces)
+            cursor = sum(len(piece) for piece in pieces)
             continue
         name, inline_default = match.group(1), match.group(2)
         if name in values:
-            text = values[name]
+            pieces.append(values[name])
         elif name in defaults:
-            text = defaults[name]
+            pieces.append(defaults[name])
         elif inline_default is not None:
-            text = inline_default
+            pieces.append(inline_default)
         else:
-            text = match.group(0)
-        pieces.append(text)
+            pieces.append(match.group(0))
     pieces.append(template.body[last:])
     text = "".join(pieces)
-    if cursor is None:
-        cursor = len(text)
-    return Expansion(text, cursor)
+    return Expansion(text, len(text) if cursor is None else cursor)
+
+
+def from_config(custom: Mapping[str, str]) -> List[Template]:
+    """Templates defined by ``ogmkdev_template_<trigger>`` keys in the file's EditorConfig."""
+    result: List[Template] = []
+    for key, value in custom.items():
+        if not key.startswith(TEMPLATE_KEY_PREFIX):
+            continue
+        trigger = key[len(TEMPLATE_KEY_PREFIX):]
+        if TRIGGER.match(trigger):
+            result.append(Template(trigger, ANY_LANGUAGE, unescape(value), "defined in .editorconfig"))
+    return result
 
 
 @dataclass
@@ -80,47 +112,162 @@ class TemplateRegistry:
     def add(self, template: Template) -> None:
         self.templates.append(template)
 
-    def complete(self, prefix: str, language: str, dialect: Optional[str] = None) -> List[Template]:
+    def complete(self, prefix: str, language: Optional[str] = None,
+                 dialect: Optional[str] = None) -> List[Template]:
+        """Templates whose trigger starts with ``prefix``. Without a language, all are considered."""
         matches = []
         for template in self.templates:
-            if template.language != language:
+            if language is not None and template.language not in (language, ANY_LANGUAGE):
                 continue
-            if template.dialect and template.dialect != dialect:
+            if template.dialect and dialect is not None and template.dialect != dialect:
                 continue
             if template.trigger.startswith(prefix):
                 matches.append(template)
         return sorted(matches, key=lambda t: (len(t.trigger), t.trigger))
 
 
-BUILTIN_TEMPLATES: Tuple[Template, ...] = (
-    Template("foreach", "php",
-             "foreach (${collection:items} as ${key:key} => ${value:value}) {\n    $0\n}",
-             "foreach over an array with key"),
-    Template("fn", "php",
-             "fn(${args:x}) => $0;", "arrow function (PHP 7.4+)"),
-    Template("for", "python",
-             "for ${item:item} in ${collection:items}:\n    $0", "for loop"),
-    Template("def", "python",
-             "def ${name:function}(${args:self}):\n    $0", "function definition"),
-    Template("forof", "typescript",
-             "for (const ${item:item} of ${collection:items}) {\n    $0\n}", "for...of loop"),
-    Template("fc", "tsx",
-             "const ${name:Component}: React.FC = () => {\n    return (\n        <div>$0</div>\n    );\n};",
-             "function component"),
-    Template("select", "sql",
-             "SELECT ${columns:*}\nFROM ${table:table_name}\nWHERE $0;", "select statement"),
-    Template("createtable", "sql",
-             "CREATE TABLE ${table:table_name} (\n    id INT NOT NULL,\n    $0\n) ENGINE=${engine:InnoDB};",
-             "create table with storage engine", "mysql"),
-    Template("createtable", "sql",
-             "CREATE TABLE ${table:table_name} (\n    id INT NOT NULL,\n    $0\n) ENGINE=${engine:InnoDB};",
-             "create table with storage engine", "mariadb"),
-    Template("section", "mustache",
-             "{{#${name:items}}}\n    {{${field:name}}}$0\n{{/${name:items}}}", "Mustache section"),
-    Template("for", "twig",
-             "{% for ${item:item} in ${collection:items} %}\n    $0\n{% endfor %}", "Twig for loop"),
-)
+def languages_for(language: str, template: Optional[str] = None) -> Tuple[str, ...]:
+    names: List[str] = []
+    for name in (template, language):
+        if name:
+            for member in FAMILY.get(name, (name,)):
+                if member not in names:
+                    names.append(member)
+    return tuple(names)
+
+
+def registry_for(language: str, dialect: Optional[str], custom: Mapping[str, str],
+                 template: Optional[str] = None) -> TemplateRegistry:
+    """Every template that applies to a file: built-in for its language and dialect, then configured."""
+    names = languages_for(language, template)
+    chosen: Dict[str, Template] = {}
+    # generic templates first, so that dialect-specific ones replace them
+    for item in sorted(BUILTIN_TEMPLATES, key=lambda t: t.dialect is not None):
+        if item.language in names and (item.dialect is None or item.dialect == dialect):
+            chosen[item.trigger] = item
+    for item in from_config(custom):
+        chosen[item.trigger] = item
+    return TemplateRegistry(list(chosen.values()))
 
 
 def builtin_registry() -> TemplateRegistry:
     return TemplateRegistry(list(BUILTIN_TEMPLATES))
+
+
+def _t(trigger: str, language: str, description: str, body: str, dialect: Optional[str] = None) -> Template:
+    return Template(trigger, language, body, description, dialect)
+
+
+BUILTIN_TEMPLATES: Tuple[Template, ...] = (
+    # PHP
+    _t("foreach", "php", "foreach over an array with key",
+       "foreach (${collection:$items} as ${key:key} => ${value:value}) {\n    $0\n}"),
+    _t("fn", "php", "arrow function (PHP 7.4+)", "fn(${args:x}) => $0;"),
+    _t("if", "php", "if block", "if (${condition:true}) {\n    $0\n}"),
+    _t("ifelse", "php", "if / else block", "if (${condition:true}) {\n    $0\n} else {\n    \n}"),
+    _t("while", "php", "while loop", "while (${condition:true}) {\n    $0\n}"),
+    _t("try", "php", "try / catch", "try {\n    $0\n} catch (${exception:Exception} $${name:e}) {\n}"),
+    _t("function", "php", "function definition", "function ${name:name}(${args:}) {\n    $0\n}"),
+    _t("class", "php", "class with constructor",
+       "class ${name:Name} {\n    public function __construct(${args:}) {\n        $0\n    }\n}"),
+    _t("heredoc", "php", "heredoc string",
+       "$${variable:text} = <<<${label:HEREDOC}\n$0\n${label:HEREDOC};"),
+    # Python 2 and 3, PyPy
+    _t("for", "python", "for loop", "for ${item:item} in ${collection:items}:\n    $0"),
+    _t("def", "python", "function definition", "def ${name:function}(${args:self}):\n    $0"),
+    _t("class", "python", "class definition", "class ${name:Name}:\n    def __init__(self):\n        $0"),
+    _t("with", "python", "with statement", "with ${expr:open('file')} as ${name:f}:\n    $0"),
+    _t("try", "python", "try / except", "try:\n    $0\nexcept ${exception:Exception} as ${name:e}:\n    pass"),
+    _t("ifmain", "python", "script entry point", "if __name__ == '__main__':\n    $0"),
+    _t("comp", "python", "list comprehension", "[${expr:item} for ${item:item} in ${collection:items}]"),
+    # ECMAScript (KDevelop grammar: ES5 plus QML words)
+    _t("for", "ecmascript", "for loop",
+       "for (var ${index:i} = 0; ${index:i} < ${length:n}; ${index:i}++) {\n    $0\n}"),
+    _t("forin", "ecmascript", "for-in loop", "for (var ${key:key} in ${object:obj}) {\n    $0\n}"),
+    _t("function", "ecmascript", "function declaration", "function ${name:name}(${args:}) {\n    $0\n}"),
+    _t("if", "ecmascript", "if block", "if (${condition:true}) {\n    $0\n}"),
+    _t("try", "ecmascript", "try / catch", "try {\n    $0\n} catch (${error:e}) {\n}"),
+    _t("switch", "ecmascript", "switch statement",
+       "switch (${value:value}) {\n    case ${case:0}:\n        $0\n        break;\n    default:\n}"),
+    _t("obj", "ecmascript", "object literal", "var ${name:obj} = {\n    $0\n};"),
+    _t("log", "ecmascript", "console.log", "console.log(${value:value});$0"),
+    # TypeScript and TSX
+    _t("forof", "typescript", "for...of loop", "for (const ${item:item} of ${collection:items}) {\n    $0\n}"),
+    _t("interface", "typescript", "interface", "interface ${name:Name} {\n    $0\n}"),
+    _t("type", "typescript", "type alias", "type ${name:Name} = $0;"),
+    _t("class", "typescript", "class with constructor",
+       "class ${name:Name} {\n    constructor(${args:}) {\n        $0\n    }\n}"),
+    _t("fn", "typescript", "typed function",
+       "function ${name:name}(${args:arg: string}): ${returns:void} {\n    $0\n}"),
+    _t("enum", "typescript", "enum", "enum ${name:Name} {\n    $0\n}"),
+    _t("fc", "tsx", "function component",
+       "const ${name:Component}: React.FC = () => {\n    return (\n        <div>$0</div>\n    );\n};"),
+    _t("state", "tsx", "useState hook", "const [${value:value}, set${Value:Value}] = React.useState(${initial:null});"),
+    _t("fc", "jsx", "function component",
+       "function ${name:Component}() {\n    return (\n        <div>$0</div>\n    );\n}"),
+    # SQL, generic and per dialect
+    _t("select", "sql", "select statement", "SELECT ${columns:*}\nFROM ${table:table_name}\nWHERE $0;"),
+    _t("join", "sql", "select with inner join",
+       "SELECT ${columns:*}\nFROM ${table:table_name} AS ${alias:t}\nINNER JOIN ${other:other_table} AS ${alias2:o} ON $0;"),
+    _t("insert", "sql", "insert statement", "INSERT INTO ${table:table_name} (${columns:column})\nVALUES (${values:value});"),
+    _t("update", "sql", "update statement", "UPDATE ${table:table_name}\nSET ${column:column} = ${value:value}\nWHERE $0;"),
+    _t("delete", "sql", "delete statement", "DELETE FROM ${table:table_name}\nWHERE $0;"),
+    _t("with", "sql", "common table expression", "WITH ${name:cte} AS (\n    $0\n)\nSELECT * FROM ${name:cte};"),
+    _t("createtable", "sql", "create table",
+       "CREATE TABLE ${table:table_name} (\n    id INT NOT NULL,\n    $0\n);"),
+    _t("createindex", "sql", "create index", "CREATE INDEX ${name:idx_name} ON ${table:table_name} (${column:column});"),
+    _t("createtable", "sql", "create table with ENGINE and charset",
+       "CREATE TABLE ${table:table_name} (\n    id INT NOT NULL AUTO_INCREMENT,\n    $0\n    PRIMARY KEY (id)\n) ENGINE=${engine:InnoDB} DEFAULT CHARSET=${charset:utf8mb4};", "mysql"),
+    _t("createtable", "sql", "create table with ENGINE and charset",
+       "CREATE TABLE ${table:table_name} (\n    id INT NOT NULL AUTO_INCREMENT,\n    $0\n    PRIMARY KEY (id)\n) ENGINE=${engine:InnoDB} DEFAULT CHARSET=${charset:utf8mb4};", "mariadb"),
+    _t("createtable", "sql", "create table with identity column",
+       "CREATE TABLE ${table:table_name} (\n    id INT IDENTITY(1,1) PRIMARY KEY,\n    $0\n);", "mssql"),
+    _t("createtable", "sql", "create table with serial column",
+       "CREATE TABLE ${table:table_name} (\n    id SERIAL PRIMARY KEY,\n    $0\n);", "postgresql"),
+    _t("createtable", "sql", "create table with identity column",
+       "CREATE TABLE ${table:table_name} (\n    id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,\n    $0\n);", "oracle"),
+    _t("createtable", "sql", "create table stored as a Hive format",
+       "CREATE TABLE ${table:table_name} (\n    $0\n)\nSTORED AS ${format:PARQUET};", "apache-hive"),
+    # Markdown
+    _t("link", "markdown", "inline link", "[${text:text}](${url:https://})"),
+    _t("image", "markdown", "image", "![${alt:alt}](${url:image.png})"),
+    _t("code", "markdown", "fenced code block", "```${language:}\n$0\n```"),
+    _t("table", "markdown", "table", "| ${a:column} | ${b:column} |\n| --- | --- |\n| $0 |  |"),
+    _t("todo", "markdown", "task list item", "- [ ] $0"),
+    # BareDown
+    _t("heading", "baredown", "heading", "= ${title:Title}\n$0"),
+    _t("link", "baredown", "link to a page", "[[${target:Page}|${label:label}]]"),
+    _t("code", "baredown", "fenced code block", "~~~ ${language:python}\n$0\n~~~"),
+    _t("bullet", "baredown", "bullet item", "- $0"),
+    _t("ordered", "baredown", "ordered item", "+ $0"),
+    _t("quote", "baredown", "block quote", "> $0"),
+    _t("note", "baredown", "comment line", "%% $0"),
+    _t("rule", "baredown", "horizontal rule", "----"),
+    # HTML
+    _t("html5", "html", "HTML5 document",
+       '<!DOCTYPE html>\n<html lang="${lang:en}">\n<head>\n    <meta charset="utf-8">\n'
+       "    <title>${title:Title}</title>\n</head>\n<body>\n    $0\n</body>\n</html>"),
+    _t("div", "html", "div element", '<div class="${class:name}">$0</div>'),
+    _t("a", "html", "anchor", '<a href="${url:#}">$0</a>'),
+    _t("img", "html", "image", '<img src="${src:image.png}" alt="${alt:alt}">'),
+    _t("ul", "html", "unordered list", "<ul>\n    <li>$0</li>\n</ul>"),
+    # JSON
+    _t("obj", "json", "object", '{\n    "${key:key}": $0\n}'),
+    _t("arr", "json", "array", "[\n    $0\n]"),
+    # CSS
+    _t("rule", "css", "style rule", "${selector:selector} {\n    $0\n}"),
+    _t("media", "css", "media query", "@media (${feature:max-width}: ${value:600px}) {\n    $0\n}"),
+    _t("flex", "css", "flex container",
+       "display: flex;\njustify-content: ${justify:center};\nalign-items: ${align:center};$0"),
+    # Mustache (template layer over the base language)
+    _t("section", "mustache", "section", "{{#${name:items}}}\n    {{${field:name}}}$0\n{{/${name:items}}}"),
+    _t("inverted", "mustache", "inverted section", "{{^${name:items}}}\n    $0\n{{/${name:items}}}"),
+    _t("partial", "mustache", "partial", "{{> ${name:partial}}}"),
+    _t("var", "mustache", "variable", "{{${name:name}}}$0"),
+    # Twig (template layer over the base language)
+    _t("for", "twig", "for loop", "{% for ${item:item} in ${collection:items} %}\n    $0\n{% endfor %}"),
+    _t("if", "twig", "if block", "{% if ${condition:cond} %}\n    $0\n{% endif %}"),
+    _t("block", "twig", "block", "{% block ${name:content} %}\n    $0\n{% endblock %}"),
+    _t("extends", "twig", "extends a base template", '{% extends "${base:base.html.twig}" %}'),
+    _t("include", "twig", "include a template", '{% include "${template:partial.html.twig}" %}'),
+)

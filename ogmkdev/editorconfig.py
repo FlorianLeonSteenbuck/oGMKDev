@@ -25,6 +25,8 @@ from typing import Dict, List, Mapping, Optional, Tuple
 
 CONFIG_FILE_NAME = ".editorconfig"
 UNSET = "unset"
+# Template bodies are case-sensitive, so their values keep their case: ogmkdev_template_<trigger>.
+TEMPLATE_KEY_PREFIX = "ogmkdev_template_"
 NUMERIC_RANGE_LIMIT = 10_000
 
 INDENT_STYLES = frozenset({"tab", "space"})
@@ -218,10 +220,12 @@ def parse(text: str, path: str = CONFIG_FILE_NAME) -> EditorConfigFile:
             continue
         key, _, value = line.partition("=")
         key = key.strip().lower()
-        value = value.strip().lower()
+        value = value.strip()
+        if not key.startswith(TEMPLATE_KEY_PREFIX):
+            value = value.lower()
         if current is None:
             if key == "root":
-                root = value == "true"
+                root = value.lower() == "true"
             continue
         current[key] = value
     sections = tuple(Section(glob, compile_section_glob(glob), props) for glob, props in raw)

@@ -18,6 +18,7 @@ SCHEMES = ("blend", "jetbrains", "eclipse")
 BASE: Dict[str, Dict[str, str]] = {
     "light": {
         "background": "#FFFFFF", "foreground": "#1E1B26",
+        "chrome": "#F4F3F6", "chrome_text": "#1E1B26", "chrome_border": "#D6D2DE",
         "gutter_background": "#F7F5FA", "gutter_foreground": "#8E86A0",
         "current_line": "#F5F0FC", "selection": "#DCCBF2", "accent": "#7A2EC0",
         "error_background": "#FBD5DA",
@@ -30,6 +31,7 @@ BASE: Dict[str, Dict[str, str]] = {
     },
     "dark": {
         "background": "#2B2B2D", "foreground": "#BCBEC4",
+        "chrome": "#3C3F41", "chrome_text": "#BCBEC4", "chrome_border": "#515457",
         "gutter_background": "#313335", "gutter_foreground": "#6F737A",
         "current_line": "#323236", "selection": "#3D3152", "accent": "#B983E0",
         "error_background": "#4A2226",
@@ -104,12 +106,22 @@ STYLE_NAMES = tuple(tag_properties(BASE["light"]).keys())
 
 
 def css(colors: Dict[str, str]) -> str:
-    """Widget colors for text views (text area and gutter)."""
-    return (
-        f"textview text {{ background-color: {colors['background']}; color: {colors['foreground']}; }}\n"
+    """Widget colors: window chrome (menus, toolbar, tabs, panels) and the text areas."""
+    chrome = f"background-color: {colors['chrome']}; color: {colors['chrome_text']}; border-color: {colors['chrome_border']};"
+    field = f"background-color: {colors['background']}; color: {colors['foreground']};"
+    selected = f"background-color: {colors['selection']}; color: {colors['foreground']};"
+    return "\n".join([
+        "window, .background, dialog, popover, popover contents, menu, menubar, menuitem, toolbar, "
+        "notebook > header, notebook > header > tabs > tab, statusbar, paned > separator, "
+        "button, label, box { " + chrome + " }",
+        "button { background-image: none; }",
+        "entry, searchentry, list, listbox, treeview, treeview.view { " + field + " }",
+        "row:selected, treeview.view:selected, menu menuitem:hover, menubar > menuitem:hover { " + selected + " }",
+        f"textview text {{ {field} }}",
         f"textview border {{ background-color: {colors['gutter_background']}; "
-        f"color: {colors['gutter_foreground']}; }}\n"
-    )
+        f"color: {colors['gutter_foreground']}; }}",
+        "",
+    ])
 
 
 def _linear(channel: int) -> float:

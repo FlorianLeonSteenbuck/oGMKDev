@@ -801,22 +801,59 @@ class EditorWindow(Gtk.Window):
         cursor = buffer.get_iter_at_mark(buffer.get_insert())
         start = cursor.copy()
         while start.backward_char():
-            if not (start.get_char().isalnum() or start.get_char() == "_"):
+            character = start.get_char()
+            if not (character.isalnum() or character in "_-"):
                 start.forward_char()
                 break
         prefix = buffer.get_text(start, cursor, True)
-        detection = page.document.detection
-        matches = self.registry.complete(prefix, detection.template or detection.language, detection.dialect)
+        matches = self._registry_for(page).complete(prefix)
         if not matches:
-            self.status.set_text(f"no template for '{prefix}' in {detection.name}")
+            self.status.set_text(f"no template for '{prefix}' in {page.document.detection.name}")
             return
-        expansion = templates.expand(matches[0])
-        offset = start.get_offset()
+        start_offset, cursor_offset = start.get_offset(), cursor.get_offset()
+        if len(matches) == 1:
+            self._insert_template(page, start_offset, cursor_offset, matches[0])
+        else:
+            self._show_template_popover(page, start_offset, cursor_offset, matches)
+
+    @staticmethod
+    def _registry_for(page: Page) -> templates.TemplateRegistry:
+        detection = page.document.detection
+        return templates.registry_for(detection.language, detection.dialect,
+                                      page.document.settings.custom, detection.template)
+
+    @staticmethod
+    def _insert_template(page: Page, start_offset: int, cursor_offset: int, template) -> None:
+        buffer = page.buffer
+        expansion = templates.expand(template)
         buffer.begin_user_action()
-        buffer.delete(start, cursor)
-        buffer.insert(buffer.get_iter_at_offset(offset), expansion.text)
-        buffer.place_cursor(buffer.get_iter_at_offset(offset + expansion.cursor))
+        buffer.delete(buffer.get_iter_at_offset(start_offset), buffer.get_iter_at_offset(cursor_offset))
+        buffer.insert(buffer.get_iter_at_offset(start_offset), expansion.text)
+        buffer.place_cursor(buffer.get_iter_at_offset(start_offset + expansion.cursor))
         buffer.end_user_action()
+
+    def _show_template_popover(self, page: Page, start_offset: int, cursor_offset: int, matches) -> None:
+        popover = Gtk.Popover(relative_to=page.view)
+        listbox = Gtk.ListBox()
+        for template in matches:
+            row = Gtk.ListBoxRow()
+            row.add(Gtk.Label(label=f"{template.trigger}    {template.description}", xalign=0.0))
+            listbox.add(row)
+
+        def activate(_box, row) -> None:
+            popover.popdown()
+            self._insert_template(page, start_offset, cursor_offset, matches[row.get_index()])
+            page.view.grab_focus()
+        listbox.connect("row-activated", activate)
+        location = page.view.get_iter_location(page.buffer.get_iter_at_offset(cursor_offset))
+        x, y = page.view.buffer_to_window_coords(Gtk.TextWindowType.WIDGET, location.x, location.y)
+        rect = Gdk.Rectangle()
+        rect.x, rect.y, rect.width, rect.height = x, y, 1, location.height
+        popover.set_pointing_to(rect)
+        popover.add(listbox)
+        listbox.show_all()
+        popover.popup()
+        self._popover = popover
 
     def find_next(self) -> None:
         page = self.page

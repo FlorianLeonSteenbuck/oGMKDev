@@ -62,7 +62,7 @@ class EditorWindowTests(unittest.TestCase):
             win.buffer.set_text("fo")
             win.buffer.place_cursor(win.buffer.get_end_iter())
             win._complete()
-            self.assertIn("foreach (items as key => value) {", win._text())
+            self.assertIn("foreach ($items as key => value) {", win._text())
         finally:
             win.destroy()
 

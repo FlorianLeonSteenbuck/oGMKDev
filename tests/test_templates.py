@@ -1,6 +1,7 @@
 import unittest
 
 from ogmkdev import templates as T
+from ogmkdev import languages
 
 
 class TemplateTests(unittest.TestCase):
@@ -15,20 +16,36 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(T.expand(tpl).text, "SELECT ${columns} FROM t")
         self.assertEqual(T.variable_names(tpl.body), ["columns", "table"])
 
+    def test_php_dollar_variables_are_literal(self):
+        tpl = T.Template("t", "php", "$${name:x} = 1;")
+        self.assertEqual(T.expand(tpl).text, "$x = 1;")
+
     def test_completion_filters_by_language_prefix_and_dialect(self):
         reg = T.builtin_registry()
         self.assertEqual([t.trigger for t in reg.complete("fo", "php")], ["foreach"])
-        self.assertEqual([t.trigger for t in reg.complete("", "python")], ["def", "for"])
-        mysql = [t.trigger for t in reg.complete("create", "sql", "mysql")]
-        generic = [t.trigger for t in reg.complete("create", "sql", "oracle")]
-        self.assertEqual(mysql, ["createtable"])
-        self.assertEqual(generic, [])
+        self.assertIn("for", [t.trigger for t in reg.complete("", "python")])
+        self.assertNotIn("foreach", [t.trigger for t in reg.complete("", "python")])
+        self.assertEqual([t.dialect for t in reg.complete("createtable", "sql", "mysql")
+                          if t.dialect], ["mysql"])
 
     def test_create_table_template_carries_engine_variable(self):
         reg = T.builtin_registry()
-        tpl = reg.complete("createtable", "sql", "mysql")[0]
+        tpl = [t for t in reg.complete("createtable", "sql", "mysql") if t.dialect == "mysql"][0]
         self.assertIn("ENGINE=InnoDB", T.expand(tpl).text)
         self.assertIn("ENGINE=MyISAM", T.expand(tpl, {"engine": "MyISAM"}).text)
+
+    def test_every_language_has_templates(self):
+        for language in languages.LANGUAGES:
+            if language == "text":
+                continue
+            dialect = languages.LANGUAGES[language].default_dialect
+            self.assertTrue(T.registry_for(language, dialect, {}).complete(""), language)
+
+    def test_dialect_specific_template_replaces_generic_one(self):
+        generic = T.registry_for("sql", None, {}).complete("createtable")
+        mysql = T.registry_for("sql", "mysql", {}).complete("createtable")
+        self.assertEqual(len(generic), 1)
+        self.assertEqual(mysql[0].dialect, "mysql")
 
 
 if __name__ == "__main__":

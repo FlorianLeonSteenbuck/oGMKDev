@@ -25,6 +25,9 @@ grammar or language server. Every language here is implemented in this repositor
 - Breakpoints (F9) in the gutter, run configurations, and GDB (GDB/MI) and XDebug (DBGp)
   debugging: continue, step over, step into, step out, stop, watch expressions, current-line marker.
 - Find next, undo and redo.
+- Light and dark mode (View menu or `--dark`), and three color schemes: `blend` (JetBrains
+  structure with Eclipse's purple accent, the default), `jetbrains` and `eclipse`
+  (`--scheme NAME`). All colors are checked for WCAG contrast in the tests.
 
 ## Keys
 
@@ -63,7 +66,7 @@ Paragraphs are lines up to the next blank line. Files use the extensions `.bd` a
 
 | Language | Current source | Next step |
 |---|---|---|
-| ECMAScript (JavaScript) | tokenizer ported from KDevelop's QML/JS lexer (`kdevelop/plugins/qmljs`), own highlighting and diagnostics | port the parser (`qmljs.g`) |
+| ECMAScript (JavaScript) | lexer ported from KDevelop's QML/JS lexer, LALR driver over KDevelop's generated tables (`tools/generate_ecmascript_tables.py`), syntax diagnostics, own highlighting | AST and outline on top of the parse tree |
 | BareDown | own tokenizer, parser and HTML renderer | - |
 | SQL (Oracle, Apache Hive, MySQL, MariaDB, MSSQL, PostgreSQL) | lexer rules and keyword list ported from Howl, `ENGINE=` checks, own highlighting | dialect-specific keyword sets |
 | PHP | heredoc and nowdoc scanner, diagnostics; highlighting by GtkSourceView | own parser |
@@ -114,6 +117,31 @@ Run and debug configurations are JetBrains XML under `.run/*.run.xml`. Debug con
 the types `OgmkdevGdbConfigurationType` (options `PROGRAM`, `ARGUMENTS`, `WORKING_DIRECTORY`) and
 `OgmkdevXdebugConfigurationType` (options `SCRIPT_NAME`, `PORT`).
 
+## Templates
+
+Every language has built-in templates (PHP, Python 2/3/PyPy, ECMAScript, TypeScript, TSX, JSX,
+SQL with dialect variants, Markdown, BareDown, HTML, JSON, CSS, Mustache, Twig). Ctrl+Space shows
+the matching templates; a single match is inserted directly.
+
+Templates are configured in EditorConfig as `ogmkdev_template_<trigger>` properties. Escapes
+`\n`, `\t` and `\\` are allowed in the value. Sections select the files, and directories can be
+scoped with globs such as `[legacy/**]` or `[**/templates/**]`:
+
+```ini
+root = true
+
+[*.php]
+ogmkdev_template_fn = fn(${args:$x}) => $0;
+
+[legacy/**]
+ogmkdev_language = php                 # every file under legacy/ is PHP
+ogmkdev_template_todo = // TODO(legacy): $0
+```
+
+A configured template applies to every file its section matches, whatever the language, and
+replaces a built-in template with the same trigger. Template bodies use `${name}`,
+`${name:default}` for variables and `$0` for the cursor.
+
 ## Layout of the repository
 
 | Path | Contents |
@@ -151,7 +179,9 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 
 ## Open items
 
-- Port the ECMAScript parser (`qmljs.g` tables and actions) so the editor gets an AST and outline.
+- Build an AST on top of the ECMAScript parse tree (outline, navigation).
+- PHP and Python highlighting still comes from GtkSourceView's default scheme; the dark mode
+  colors apply to our own languages only. Our own tokenizers for them would fix that.
 - Dialect-specific SQL keyword sets; TypeScript and JSX lexers.
 - Breakpoints do not move when lines are inserted above them.
 - XDebug has no UI test yet; the end-to-end test covers GDB only.
