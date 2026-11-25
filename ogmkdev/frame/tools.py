@@ -12,7 +12,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
 from .. import htmldoc  # noqa: E402
-from .. import languages, organize  # noqa: E402
+from .. import editing, languages, organize  # noqa: E402
 from .classdiagram import ClassDiagram  # noqa: E402
 from ..history import LocalHistory  # noqa: E402
 from ..workspace import workspace_files  # noqa: E402
@@ -107,6 +107,29 @@ class ToolsMixin:
         self.editors.command("buffer-reload")
         self.set_status("imports organised")
 
+    def _apply_save_settings(self, path: str) -> Optional[float]:
+        """The EditorConfig line handling of a saved file (trailing whitespace, final newline, line endings,
+        charset): the file is written again when it differs, and the focused buffer reloads it. Returns the
+        modification time of the rewritten file, None when nothing changed or the file is not UTF-8 text."""
+        try:
+            with open(path, "rb") as handle:
+                raw = handle.read()
+            text = raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+        settings = self._settings_for(path)
+        if settings.charset == "utf-8-bom":
+            text = text.removeprefix("﻿")  # encode_for_save writes the byte order mark itself
+        encoded = editing.encode_for_save(text, settings)
+        if encoded == raw:
+            return None
+        with open(path, "wb") as handle:
+            handle.write(encoded)
+        info = self.editors.status()
+        if info and info["path"] == path:
+            self.editors.command("buffer-reload")
+        return os.path.getmtime(path)
+
     def track_history(self, path: Optional[str]) -> None:
         """Keeps a snapshot of the open file each time it changes on disk (saves), and shows its history."""
         if not path or not os.path.isfile(path):
@@ -122,6 +145,8 @@ class ToolsMixin:
         changed = previous != stamp
         if changed:
             seen[path] = stamp
+            if previous is not None:  # a save: the EditorConfig line handling applies to what was written
+                seen[path] = self._apply_save_settings(path) or stamp
             with open(path, encoding="utf-8", errors="replace") as handle:
                 self.local_history.snapshot(path, handle.read(), "opened" if previous is None else "save")
             # a saved file is indexed again, so definitions and the hierarchy follow the change
@@ -310,7 +335,7 @@ class ToolsMixin:
     def _on_search_activated(self, _view, path, _column) -> None:
         row = self.search_store[self.search_store.get_iter(path)]
         where = row[0]
-        target = row[len(row) - 1]
+        target = row[2]  # the file of the match (the store keeps it in its object column)
         line = int(where.rsplit(":", 1)[1]) if where.rsplit(":", 1)[-1].isdigit() else 1
         self.open_file(target, line, 1)
 

@@ -12,7 +12,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from ogmkdev import filetemplates, index as index_module, markup, newclass, scaffold  # noqa: E402
+from ogmkdev import __version__, filetemplates, index as index_module, markup, newclass, scaffold  # noqa: E402
 from ogmkdev.settings import SettingsStore  # noqa: E402
 from ogmkdev.theme import MODES, SCHEMES  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
@@ -30,6 +30,7 @@ from .structure import StructureMixin  # noqa: E402
 HIDDEN_NAMES = {".git", "node_modules", "__pycache__"}
 LOOSE_LABEL = "Loose files"  # the tree entry for open files the tree does not show
 ICON_THEME = "Humanity"
+APP_ICON = "ogmkdev"       # the logo (packaging/logo.svg) is installed under this name in the hicolor theme
 EDGE_COLUMN_DEFAULT = 120  # the edge line when the file's EditorConfig sets no max_line_length
 AUTOSAVE_SECONDS = 2       # a modified file is saved this long after it was changed (autosave)
 
@@ -80,10 +81,12 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
     _edge_key: Optional[tuple] = None
     _loose_root = None  # the tree entry 'Loose files' (a Gtk.TreeIter) while it exists
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
-                 mode: str = "light", scheme: str = "blend", autosave: Optional[bool] = None) -> None:
+                 mode: str = "light", scheme: str = "blend", autosave: Optional[bool] = None,
+                 clear_index: bool = False) -> None:
         self.mode, self.scheme = mode, scheme
         install_frame_css(mode, scheme)
         super().__init__(application=app, title="oGMKDev")
+        self.set_icon_name(APP_ICON)
         self.add_css_class("ogmkdev-frame")
         self.folder = os.path.abspath(folder)
         self.project_folders = [self.folder]  # the folders of the workspace (File > Add Folder)
@@ -141,6 +144,8 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         root.append(bar)
 
         self._populate_tree()
+        if clear_index:  # --clear-index: the cached index is dropped, the build reads every file again
+            self._remove_index_cache()
         self._ensure_index()  # the project index is built in the background, as the GTK 3 window did
         self.build_left_tabs()
         self.build_bottom_tabs()
@@ -784,6 +789,9 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         self.get_application().quit()
 
     def show_about(self) -> None:
-        about = Gtk.AboutDialog(transient_for=self, modal=True, program_name="oGMKDev", version="0.1.0")
+        about = Gtk.AboutDialog(transient_for=self, modal=True, program_name="oGMKDev", version=__version__,
+                                comments="A lightweight editor: Howl as the editing surface, with a project index "
+                                         "and debugging.")
         about.set_license_type(Gtk.License.GPL_2_0_ONLY)
+        about.set_logo_icon_name(APP_ICON)  # the logo is installed as the icon of the application
         about.present()

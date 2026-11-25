@@ -218,13 +218,18 @@ class PanelsMixin:
         self._search_window("Search Everywhere", None)
 
     def _search_candidates(self) -> list:
+        self._ensure_index()
         candidates = []
         for path in workspace_files(self.workspace):
             candidates.append(search.Candidate("file", os.path.relpath(path, self.folder),
                                                self.workspace.kind(path), ("file", path)))
-        for _title, entries in MENUS:
+        for symbol in self.index.symbols:
+            where = f"{symbol.kind} in {os.path.basename(symbol.file)}:{symbol.line}"
+            candidates.append(search.Candidate("symbol", symbol.name, where,
+                                               ("symbol", symbol.file, symbol.line, symbol.column)))
+        for title, entries in MENUS:
             for label, _name, accelerator, method in entries:
-                candidates.append(search.Candidate("action", label, accelerator, ("action", method)))
+                candidates.append(search.Candidate("action", f"{title}: {label}", accelerator, ("action", method)))
         for setting in settings_module.SCHEMA:
             candidates.append(search.Candidate("setting", setting.label, f"{setting.group}: {setting.key}",
                                                ("setting", setting.group)))
@@ -298,7 +303,9 @@ class PanelsMixin:
         kind = candidate.target[0]
         if kind == "file":
             self.open_file(candidate.target[1])
+        elif kind == "symbol":
+            self.open_file(candidate.target[1], candidate.target[2], candidate.target[3] or 1)
         elif kind == "action":
-            getattr(self, candidate.target[1])()
+            self._run_target(candidate.target[1])  # a method of the window, or a Howl command ("howl:save")
         elif kind == "setting":
-            self.set_status(f"settings group {candidate.target[1]} (the settings dialog is not in the frame yet)")
+            self._settings_window(candidate.target[1])  # the settings dialog, on the group's page

@@ -211,11 +211,15 @@ class AnalysisMixin:
         self._request_index_build("refreshing the index in the background")
 
     def clear_index(self) -> None:
+        self._remove_index_cache()
+        self.index = index_module.ProjectIndex([])
+        self._request_index_build("index cleared, rebuilding in the background")
+
+    def _remove_index_cache(self) -> None:
+        """Deletes the cached index of the folder; the next build reads every file again."""
         path = _cache_path(self.folder)
         if os.path.isfile(path):
             os.remove(path)
-        self.index = index_module.ProjectIndex([])
-        self._request_index_build("index cleared, rebuilding in the background")
 
     def _current_class(self) -> Optional[str]:
         path = self.area.current_path()

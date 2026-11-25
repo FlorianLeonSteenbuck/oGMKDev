@@ -165,9 +165,13 @@ class Application extends PropertyObject
           @window = other.window
           break
     -- gives the keyboard focus to the editor that a container of the frame shows (src/embed.c howl_focus)
+    -- gives the keyboard focus to the editor shown in `box` and makes it the current editor: the focus of the
+    -- embedding window does not reach Howl through the hidden window the editor was created in (src/embed.c)
     _G.HOWL_EMBED_FOCUS = (box) ->
       entry = @_embedded[box]
-      entry.editor\grab_focus! if entry and entry.editor
+      if entry and entry.editor
+        entry.editor\grab_focus!
+        @editor = entry.editor
     -- opens a file (line and column 0 for none) in the editor that has the focus (src/embed.c)
     _G.HOWL_EMBED_OPEN = (path, line, column) ->
       loc = file: File(path)
