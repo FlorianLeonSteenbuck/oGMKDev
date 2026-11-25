@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import Dict, List, Optional
 
-from . import baredown, heredoc, markup, php_features, sql
+from . import baredown, heredoc, markup, php_features, sql, standards
 from .editorconfig import EditorSettings
 from .languages import Detection
 from .lexers import ecmascript_lexer
@@ -118,6 +118,9 @@ def analyze(text: str, detection: Detection, settings: Optional[EditorSettings] 
             else:
                 message = f"ENGINE={clause.name} is a MySQL/MariaDB table option; {dialect} does not support it"
             found.append(Diagnostic(line, column, "warning", f"sql-{clause.problem}", message))
+    if settings is not None:
+        for line, column, code, default, message in standards.problems(text, settings):
+            found.append(Diagnostic(line, column, default, code, message))
     resolved: List[Diagnostic] = []
     for item in found:
         severity = severity_setting(custom, item.code, item.severity)

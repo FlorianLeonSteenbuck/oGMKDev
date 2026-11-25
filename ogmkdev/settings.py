@@ -91,6 +91,16 @@ SCHEMA: Tuple[Setting, ...] = (
             "choice", "warning", SEVERITIES),
     Setting("ogmkdev_diagnostic_css_braces", "Unbalanced braces in CSS, SCSS and LESS", "Diagnostics",
             "choice", "error", SEVERITIES),
+    Setting("ogmkdev_diagnostic_trailing_whitespace", "Trailing spaces and tabs (trim_trailing_whitespace)",
+            "Diagnostics", "choice", "hint", SEVERITIES),
+    Setting("ogmkdev_diagnostic_indent_style", "Indentation against indent_style, or tabs mixed with spaces",
+            "Diagnostics", "choice", "warning", SEVERITIES),
+    Setting("ogmkdev_diagnostic_line_length", "Lines longer than max_line_length", "Diagnostics",
+            "choice", "warning", SEVERITIES),
+    Setting("ogmkdev_diagnostic_line_endings", "Line endings against end_of_line, or mixed endings",
+            "Diagnostics", "choice", "warning", SEVERITIES),
+    Setting("ogmkdev_diagnostic_final_newline", "No newline at the end of the file (insert_final_newline)",
+            "Diagnostics", "choice", "hint", SEVERITIES),
 )
 SETTINGS_BY_KEY: Dict[str, Setting] = {s.key: s for s in SCHEMA}
 

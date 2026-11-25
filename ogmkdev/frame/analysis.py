@@ -92,7 +92,7 @@ class AnalysisMixin:
             self._set_problems([])
             return
         try:
-            with open(path, encoding="utf-8", errors="replace") as handle:
+            with open(path, encoding="utf-8", errors="replace", newline="") as handle:
                 text = handle.read()
         except OSError:
             return
