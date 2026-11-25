@@ -15,6 +15,7 @@ try:
     gi.require_version("Gtk", "4.0")
     from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
+    from ogmkdev import diagram  # noqa: E402
     from ogmkdev.frame.howl import LIBRARY  # noqa: E402
     from ogmkdev.frame.window import Frame  # noqa: E402
 
@@ -68,6 +69,29 @@ class ClassDiagramTests(unittest.TestCase):
         base = next(box for box in self.frame.class_diagram.boxes if box.name == "Base")
         self.frame.class_diagram._activate(base)
         self.assertTrue(_pump_until(lambda: self.frame.area.current_path() == base.file, timeout=10))
+
+    def test_zoom_changes_the_drawing_and_stays_within_its_range(self):
+        self.frame.show_hierarchy()
+        diagram_view = self.frame.class_diagram
+        area = diagram_view.area
+        diagram_view.set_zoom(1.0)
+        normal = area.get_content_width()
+        diagram_view.zoom_in()
+        self.assertGreater(area.get_content_width(), normal)
+        diagram_view.set_zoom(10)
+        self.assertEqual(diagram_view.zoom, diagram.ZOOM_MAX)
+        diagram_view.zoom_out()
+        self.assertLess(diagram_view.zoom, diagram.ZOOM_MAX)
+        diagram_view.zoom_reset()
+        self.assertEqual(area.get_content_width(), normal)
+
+    def test_every_inheritance_edge_is_drawn_as_an_orthogonal_route(self):
+        self.frame.show_hierarchy()
+        diagram_view = self.frame.class_diagram
+        self.assertEqual(len(diagram_view.routes), len(diagram_view.edges))
+        for points, _parent in diagram_view.routes:
+            for start, end in zip(points, points[1:]):
+                self.assertTrue(start[0] == end[0] or start[1] == end[1])
 
 
 @unittest.skipUnless(GTK_AVAILABLE, "needs GTK 4, a display and libhowl.so")

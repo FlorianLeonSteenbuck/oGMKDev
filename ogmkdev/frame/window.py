@@ -255,6 +255,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
             frame.mode, frame.scheme = mode, scheme
             frame._sync_theme_actions()
             frame._refresh_role_colours()
+            frame.class_diagram.set_palette(theme.palette_for(mode, scheme))
         install_frame_css(mode, scheme)
         self._apply_howl_theme()
         self.set_status(f"theme {theme.theme_name(mode, scheme)}")

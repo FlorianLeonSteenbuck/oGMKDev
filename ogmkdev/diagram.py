@@ -82,3 +82,40 @@ def box_at(boxes: List[Box], x: float, y: float) -> Optional[Box]:
         if box.x <= x <= box.x + box.width and box.y <= y <= box.y + box.height:
             return box
     return None
+
+
+ZOOM_MIN = 0.5
+ZOOM_MAX = 2.0
+ZOOM_STEP = 0.1
+MARGIN = 12.0       # the space around the boxes in the drawing, in unzoomed units
+
+
+def clamp_zoom(zoom: float) -> float:
+    """The zoom factor within the range the diagram offers, rounded to a thousandth."""
+    return round(min(ZOOM_MAX, max(ZOOM_MIN, zoom)), 3)
+
+
+def route(edge: Edge, boxes: List[Box]) -> List[Tuple[float, float]]:
+    """The orthogonal line of an inheritance edge: out of the left side of the subclass, across the gap
+    between the columns, and into the right side of the superclass. The subclass is always the right-hand
+    box. Empty when one of the boxes is not in the diagram."""
+    by_name = {box.name: box for box in boxes}
+    child, parent = by_name.get(edge.child), by_name.get(edge.parent)
+    if child is None or parent is None:
+        return []
+    start = (child.x, child.y + child.height / 2)
+    end = (parent.x + parent.width, parent.y + parent.height / 2)
+    middle = (start[0] + end[0]) / 2
+    return [start, (middle, start[1]), (middle, end[1]), end]
+
+
+def arrow_head(parent: Box, size: float = 10.0) -> List[Tuple[float, float]]:
+    """The hollow triangle of an inheritance arrow: its tip touches the right side of the superclass."""
+    tip = (parent.x + parent.width, parent.y + parent.height / 2)
+    return [tip, (tip[0] + size, tip[1] - size * 0.6), (tip[0] + size, tip[1] + size * 0.6)]
+
+
+def content_size(layout_size: Tuple[float, float], zoom: float) -> Tuple[float, float]:
+    """The size of the drawing at a zoom factor, with the margin around the boxes."""
+    width, height = layout_size
+    return width * zoom + 2 * MARGIN, height * zoom + 2 * MARGIN

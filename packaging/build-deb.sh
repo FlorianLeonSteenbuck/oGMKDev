@@ -20,7 +20,7 @@ Section: devel
 Priority: optional
 Architecture: $ARCH
 Maintainer: ogmkdev maintainers <ogmkdev@localhost>
-Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-4.0, libgtk-4-1
+Depends: python3 (>= 3.10), python3-gi, python3-gi-cairo, gir1.2-gtk-4.0, libgtk-4-1
 Recommends: gdb
 Suggests: php-cli, php-xdebug, gcc
 Homepage: https://github.com/FlorianLeonSteenbuck/oGMKDev

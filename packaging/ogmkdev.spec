@@ -7,6 +7,7 @@ URL:            https://github.com/FlorianLeonSteenbuck/oGMKDev
 Source0:        %{name}-%{version}.tar.gz
 Requires:       python3 >= 3.10
 Requires:       python3-gobject
+Requires:       python3-gobject-cairo
 Requires:       typelib-1_0-Gtk-4_0
 Requires:       libgtk-4-1
 Recommends:     gdb

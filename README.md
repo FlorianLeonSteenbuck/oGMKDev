@@ -169,8 +169,10 @@ the types `OgmkdevGdbConfigurationType` (options `PROGRAM`, `ARGUMENTS`, `WORKIN
   sessions (`$XDG_CACHE_HOME/ogmkdev/`).
 - **Type hierarchy** (Project > Show Type Hierarchy, Ctrl+H): supertypes and subtypes, transitive, and
   the dependencies of the class under the cursor. Items navigate to their declaration on activation.
-- **Class diagram**: the Hierarchy panel's "Diagram" tab draws the inheritance levels as columns; each
-  class is a button. Built from GTK widgets, so no drawing library is needed.
+- **Class diagram**: the Hierarchy tab draws the inheritance levels as columns, the class in the middle, the
+  supertypes on the left and the subtypes on the right. An inheritance edge is an orthogonal line that ends in a
+  hollow arrow at the supertype. The diagram zooms with its buttons or with Ctrl and the mouse wheel (50 to 200
+  percent), and a click on a class opens its declaration. The geometry is in `ogmkdev/diagram.py`.
 - **Implementations** (Ctrl+Alt+B): all classes that extend or implement the type under the cursor.
 - **Search in files** (Ctrl+Shift+F): text or regular expression over the project, results in the
   Search panel.
@@ -335,8 +337,8 @@ xvfb-run -a /usr/bin/python3.12 -m unittest discover -s tests -t .    # includes
 /usr/bin/python3.12 -m ogmkdev --folder path/to/project [FILE ...]      # start the editor
 ```
 
-System packages: `python3-gi`, `gir1.2-gtk-4.0`, and an icon theme with the standard action icons
-(Humanity or Adwaita). The integration tests use `gdb`, `gcc`, and
+System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on openSUSE),
+`gir1.2-gtk-4.0`, and an icon theme with the standard action icons (Humanity or Adwaita). The integration tests use `gdb`, `gcc`, and
 `php-cli` with `php-xdebug` when installed; otherwise they are skipped.
 
 ## Open items
@@ -349,7 +351,6 @@ System packages: `python3-gi`, `gir1.2-gtk-4.0`, and an icon theme with the stan
 - Python and JavaScript references are not indexed, only their declarations. Methods of Python classes
   are not in the index, so the HTML export has no page entry for them.
 - Outline and navigation on top of the ECMAScript tree of `ogmkdev/parsers/javascript.py`.
-- The class diagram scrolls but has no zoom and no edge routing yet.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - Dialect-specific SQL keyword sets; PHP and Python syntax colours in the frame.
 - The settings `ogmkdev_syntax_highlight = off`, `ogmkdev_current_line = false`, `ogmkdev_git_colors = off`

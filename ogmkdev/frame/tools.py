@@ -14,6 +14,7 @@ from gi.repository import Gtk  # noqa: E402
 from .. import htmldoc  # noqa: E402
 from .. import editing, languages, organize  # noqa: E402
 from .classdiagram import ClassDiagram  # noqa: E402
+from .theme import palette_for  # noqa: E402
 from ..history import LocalHistory  # noqa: E402
 from ..workspace import workspace_files  # noqa: E402
 from .panels import _scrolled, _text_view  # noqa: E402
@@ -44,6 +45,7 @@ class ToolsMixin:
         box.append(Gtk.Label(label="Place the cursor on a class, then Tools > Show Type Hierarchy.", xalign=0,
                              wrap=True))
         self.class_diagram = ClassDiagram(lambda path, line, column: self.open_file(path, line, column))
+        self.class_diagram.set_palette(palette_for(self.mode, self.scheme))
         paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)  # the tree above, the diagram below
         paned.set_start_child(_scrolled(self.hierarchy_view))
         paned.set_end_child(self.class_diagram)
