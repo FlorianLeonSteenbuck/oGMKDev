@@ -90,20 +90,51 @@ class LocalHistory:
         return self.diff(self.content(older), self.content(newer), f"{older.path} {older.when}",
                          f"{newer.path} {newer.when}")
 
-    def patch_set(self, revisions: Sequence[Revision]) -> str:
-        """One patch: the diffs between consecutive revisions, oldest first."""
+    def patch_set(self, revisions: Sequence[Revision], base_dir: Optional[str] = None) -> str:
+        """One git-style patch: the diffs between consecutive revisions, oldest first.
+
+        Paths are relative to ``base_dir`` (the project folder) when given, so ``git apply`` and
+        ``patch -p1`` accept the result.
+        """
         ordered = sorted(revisions, key=lambda r: r.timestamp)
         parts = []
         for older, newer in zip(ordered, ordered[1:]):
-            parts.append(self.diff_revisions(older, newer))
+            name = patch_name(newer.path, base_dir)
+            parts.append(file_patch(self.content(older), self.content(newer), name))
         return "".join(parts)
 
-    def extract_patch(self, revisions: Sequence[Revision], destination: str) -> str:
-        text = self.patch_set(revisions)
+    def extract_patch(self, revisions: Sequence[Revision], destination: str,
+                      base_dir: Optional[str] = None) -> str:
+        text = self.patch_set(revisions, base_dir)
         os.makedirs(os.path.dirname(os.path.abspath(destination)), exist_ok=True)
         with open(destination, "w", encoding="utf-8") as handle:
             handle.write(text)
         return destination
+
+
+def patch_name(path: str, base_dir: Optional[str] = None) -> str:
+    """The name a file has inside a patch: relative to ``base_dir`` with forward slashes."""
+    if base_dir:
+        try:
+            relative = os.path.relpath(os.path.abspath(path), os.path.abspath(base_dir))
+            if not relative.startswith(os.pardir):
+                return relative.replace(os.sep, "/")
+        except ValueError:
+            pass
+    return os.path.basename(path)
+
+
+def file_patch(old_text: str, new_text: str, name: str) -> str:
+    """A git-style patch for one file (empty when nothing changed)."""
+    old_label = f"a/{name}" if old_text else "/dev/null"
+    new_label = f"b/{name}" if new_text else "/dev/null"
+    lines = []
+    for line in difflib.unified_diff(old_text.splitlines(keepends=True), new_text.splitlines(keepends=True),
+                                     fromfile=old_label, tofile=new_label):
+        lines.append(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n")
+    if not lines:
+        return ""
+    return f"diff --git a/{name} b/{name}\n" + "".join(lines)
 
 
 def changed_lines(old_text: str, new_text: str) -> Dict[int, str]:

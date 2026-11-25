@@ -187,6 +187,13 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
 - **Organise Imports** (Edit > Organize Imports, Ctrl+Alt+O): sorts the top-level PHP `use` statements,
   drops unused ones and keeps `use function` and `use const`. Group imports (`use A\{B, C};`) are left
   alone.
+- **Problems in the editor**: every diagnostic underlines its token (squiggle for errors and warnings,
+  dotted line for hints). Hovering over the underline shows the message, the severity and the check code,
+  as in KDevelop. `ogmkdev_diagnostic_marks = off` removes the underlines and their tooltips.
+- **Search Everywhere** (Edit > Search Everywhere..., Ctrl+Shift+A) filters files, symbols, actions and
+  settings while you type; **Quick Open** (File > Quick Open..., Ctrl+P) lists only files. Up and Down move
+  through the list, Enter opens the entry: a file opens, a symbol is navigated to, an action runs, a setting
+  opens its group in the settings dialog.
 
 ## Workspace and keyboard
 
@@ -197,6 +204,15 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
 - **Keymap**: every action can be rebound with `ogmkdev_key_<action> = <accelerator>` in the global or the
   project EditorConfig; `none` removes the shortcut. Example: `ogmkdev_key_save_current = <Primary>s`.
 - **Current line** is highlighted with the Eclipse color; switch it off with `ogmkdev_current_line = false`.
+- **Colours can be switched off** in EditorConfig (global or project): `ogmkdev_syntax_highlight = off`
+  (no syntax colours), `ogmkdev_current_line = false`, `ogmkdev_change_marks = off` (gutter marks),
+  `ogmkdev_diagnostic_marks = off` (problem underlines), `ogmkdev_git_colors = off` (Git status colours in
+  the tree and the Git panel). The change mark colours are `ogmkdev_change_color_added`, `_modified` and
+  `_deleted` (hex values such as `#3FB950`). The Settings dialog has them in the Colors group.
+- **Git** (Git tab in the left panel, Project > Show Git Changes, Ctrl+Alt+G): lists new, modified and
+  deleted files of the workspace folders with their staged state. Stage and Unstage work on the selected
+  rows, Diff shows the staged and unstaged changes (new files as a new-file patch), Commit... commits the
+  staged files after asking for a message. Tree and list colours follow the change kind.
 
 ## Packaging
 
@@ -212,7 +228,9 @@ builds the openSUSE `.rpm` from `packaging/ogmkdev.spec` (written, not yet built
 - **Local history**: opening a file and every save keep a snapshot in `$XDG_DATA_HOME/ogmkdev/history`,
   outside the project. The History panel lists the revisions, shows the diff against the current text (or
   the patch set of a selection), reverts to a selected revision, and extracts a patch set (`.patch` file) from
-  the selected or from all revisions.
+  the selected or from all revisions. Edit > Export History as Patch... writes the whole local history of
+  the current file as one git-style patch (`diff --git a/<path> b/<path>`), which `git apply` and
+  `patch -p1` accept from the project folder.
 - **Changed lines**: lines added, modified or deleted since the last save are marked in the gutter.
 - **Autosave**: off by default. `--autosave` starts with it on, `--no-autosave` starts with it off; the
   setting `ogmkdev_autosave = on` makes it the default. Autosaves are kept in the local history too.
@@ -281,8 +299,9 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 
 ## Open items
 
-- Git staging and a "changed files" view, a global search for files, symbols, actions and settings
-  (Search Everywhere), quick open of files, and configurable file templates are not built yet.
+- Configurable file templates are not built yet.
+- The editor window is GTK 3 with GtkSourceView 3, not Howl's window (Howl's editor is Lua on LuaJIT with
+  GTK 4 and its own text view). Whether to switch to Howl's window is an open decision.
 - Coding-standard checks (trailing whitespace, indentation style, line length, final newline) are not
   added as diagnostics yet; the diagnostic severities are already configurable per check.
 - The `.rpm` package is written but has not been built on openSUSE.

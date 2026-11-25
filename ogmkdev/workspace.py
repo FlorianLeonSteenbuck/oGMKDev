@@ -88,3 +88,22 @@ class Workspace:
 
     def excluded_predicate(self):
         return self.is_excluded
+
+
+SKIP_NAMES = {".git", "node_modules", "__pycache__"}
+
+
+def workspace_files(workspace: "Workspace", limit: int = 20000) -> List[str]:
+    """Files of the workspace folders, without ignored folders (for quick open and search)."""
+    found: List[str] = []
+    for folder in workspace.folders:
+        for directory, subdirs, names in os.walk(folder):
+            subdirs[:] = [d for d in subdirs if d not in SKIP_NAMES and not workspace.is_excluded(
+                os.path.join(directory, d))]
+            for name in names:
+                path = os.path.join(directory, name)
+                if not workspace.is_excluded(path):
+                    found.append(path)
+                    if len(found) >= limit:
+                        return found
+    return found

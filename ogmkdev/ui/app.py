@@ -36,8 +36,11 @@ from .. import diagnostics, editorconfig, highlight, languages, organize, runcon
 from ..index import ProjectIndex  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
-from ..workspace import Workspace  # noqa: E402
-from ..history import LocalHistory, changed_lines  # noqa: E402
+from ..workspace import Workspace, workspace_files  # noqa: E402
+from ..history import LocalHistory, changed_lines, file_patch  # noqa: E402
+from .. import git as git_module  # noqa: E402
+from .. import search_everywhere as search  # noqa: E402
+from .search_dialog import SearchDialog  # noqa: E402
 from .. import keymap as keymap_module  # noqa: E402
 from .panels import DiagramView, HierarchyView, ResultsView  # noqa: E402
 from .. import __version__  # noqa: E402
@@ -52,6 +55,7 @@ OWN_HIGHLIGHT = frozenset({"ecmascript", "baredown", "sql", "php"})
 MENU_ORDER = ("File", "Edit", "View", "Project", "Settings", "Run", "Debug", "Help")
 CHANGE_CATEGORIES = {"added": "ogmkdev-added", "modified": "ogmkdev-modified", "deleted": "ogmkdev-deleted"}
 CHANGE_COLORS = {"added": "#3FB950", "modified": "#58A6FF", "deleted": "#F85149"}
+DIAGNOSTIC_COLORS = {"error": "#F85149", "warning": "#D29922", "hint": "#8B949E"}
 AUTOSAVE_SECONDS = 2
 # menu, label, icon name, accelerator, method name, shown in toolbar
 ACTIONS = (
@@ -78,6 +82,13 @@ ACTIONS = (
     ("Edit", "Organize Imports", "format-justify-left", "<Control><Alt>o", "organize_imports", False),
     ("Edit", "Local History", "document-open-recent", "<Control><Alt>h", "show_local_history", False),
     ("Edit", "Extract Patch Set...", "", "", "extract_patch_set", False),
+    ("Edit", "Export History as Patch...", "document-save-as", "", "export_history_patch", False),
+    ("File", "Quick Open...", "document-open", "<Control>p", "quick_open", False),
+    ("Edit", "Search Everywhere...", "edit-find", "<Control><Shift>a", "search_everywhere", False),
+    ("Project", "Show Git Changes", "view-refresh", "<Control><Alt>g", "show_git", False),
+    ("Project", "Stage Selected Files", "list-add", "", "git_stage", False),
+    ("Project", "Unstage Selected Files", "list-remove", "", "git_unstage", False),
+    ("Project", "Commit Staged...", "document-save", "", "git_commit", False),
     ("View", "Split Right", "", "<Control><Alt>r", "split_right", False),
     ("View", "Split Down", "", "<Control><Alt>d", "split_down", False),
     ("View", "Split into Four", "", "<Control><Alt>4", "split_four", False),
@@ -93,6 +104,15 @@ ACTIONS = (
     ("Settings", "Preferences...", "preferences-system", "", "open_global_settings", False),
     ("Settings", "Error Hinting...", "dialog-warning", "", "open_diagnostic_settings", False),
 )
+
+
+def _char_at(iterator) -> str:
+    value = iterator.get_char()
+    return value if isinstance(value, str) else chr(value)
+
+
+def _is_word(char: str) -> bool:
+    return char.isalnum() or char == "_"
 
 
 def _tag_props(props):
@@ -118,7 +138,8 @@ def _ui(function, *args) -> None:
 def _mark_attributes(color: str):
     attributes = GtkSource.MarkAttributes()
     rgba = Gdk.RGBA()
-    rgba.parse(color)
+    if not rgba.parse(color):
+        rgba.parse("#888888")
     attributes.set_background(rgba)
     return attributes
 
@@ -132,6 +153,7 @@ class Page:
         self.notebook = None           # the pane (Gtk.Notebook) that shows this page
         self.baseline = document.text  # last saved text; changed lines are marked against it
         self.change_marks: list = []
+        self.diagnostic_tags: Dict[str, str] = {}  # tag name -> tooltip text
         self.autosave_id = 0
         if GtkSource is not None:
             self.buffer = GtkSource.Buffer()
@@ -144,6 +166,8 @@ class Page:
             self.view = Gtk.TextView(buffer=self.buffer)
         self.view.set_monospace(True)
         self.view.set_auto_indent(True)
+        self.view.set_has_tooltip(True)
+        self.view.connect("query-tooltip", self._on_query_tooltip)
         self.exec_tag = self.buffer.create_tag(EXEC_TAG)
         for style in theme.STYLE_NAMES:
             self.buffer.create_tag(f"hl-{style}")
@@ -173,6 +197,7 @@ class Page:
     def apply_language(self) -> None:
         if GtkSource is None:
             return
+        self.buffer.set_highlight_syntax(self.coloring("ogmkdev_syntax_highlight"))
         if self.document.detection.language in OWN_HIGHLIGHT:
             self.buffer.set_language(None)
             return
@@ -191,7 +216,8 @@ class Page:
         if GtkSource is not None:
             self.view.set_mark_attributes(BREAKPOINT_CATEGORY, _mark_attributes(colors["breakpoint"]), 10)
             for kind, category in CHANGE_CATEGORIES.items():
-                self.view.set_mark_attributes(category, _mark_attributes(CHANGE_COLORS[kind]), 9)
+                colour = self.document.settings.custom.get(f"ogmkdev_change_color_{kind}", "") or CHANGE_COLORS[kind]
+                self.view.set_mark_attributes(category, _mark_attributes(colour), 9)
         self.palette = colors
 
     def highlight(self) -> None:
@@ -199,11 +225,12 @@ class Page:
         for style in theme.STYLE_NAMES:
             self.buffer.remove_tag_by_name(f"hl-{style}", start, end)
         language = self.document.detection.language
-        if language in OWN_HIGHLIGHT:
+        if language in OWN_HIGHLIGHT and self.coloring("ogmkdev_syntax_highlight"):
             for style, first, last in highlight.spans(language, self.text()):
                 self.buffer.apply_tag_by_name(f"hl-{style}", self.buffer.get_iter_at_offset(first),
                                               self.buffer.get_iter_at_offset(last))
         self.mark_current_line()
+        self.apply_diagnostics()
 
     def mark_current_line(self) -> None:
         start, end = self.buffer.get_bounds()
@@ -223,18 +250,69 @@ class Page:
         for mark in self.change_marks:
             self.buffer.delete_mark(mark)
         self.change_marks = []
-        if self.document.path is None:
+        if self.document.path is None or not self.coloring("ogmkdev_change_marks"):
             return
         last = max(self.buffer.get_line_count() - 1, 0)
         for line, kind in changed_lines(self.baseline, self.text()).items():
             iterator = self.buffer.get_iter_at_line(min(max(line - 1, 0), last))
             self.change_marks.append(self.buffer.create_source_mark(None, CHANGE_CATEGORIES[kind], iterator))
 
+    def coloring(self, key: str) -> bool:
+        """Colours are on unless the EditorConfig value is ``off``."""
+        return self.document.settings.custom.get(key, "on").strip().lower() != "off"
+
+    def apply_diagnostics(self) -> None:
+        """Underline the problems of the document; the message is the tooltip of the underline."""
+        table = self.buffer.get_tag_table()
+        for name in self.diagnostic_tags:
+            tag = table.lookup(name)
+            if tag is not None:
+                table.remove(tag)
+        self.diagnostic_tags = {}
+        if not self.coloring("ogmkdev_diagnostic_marks"):
+            return
+        for index, item in enumerate(self.document.diagnostics):
+            line = min(max(item.line, 1), self.buffer.get_line_count()) - 1
+            start = self.buffer.get_iter_at_line(line)
+            start.forward_chars(max(item.column, 1) - 1)
+            end = start.copy()
+            while not end.ends_line() and end.get_offset() - start.get_offset() < 80 \
+                    and _is_word(_char_at(end)):
+                end.forward_char()
+            if end.equal(start) and not end.ends_line():
+                end.forward_char()
+            name = f"diag-{index}"
+            tag = self.buffer.create_tag(name)
+            tag.set_property("underline",
+                             Pango.Underline.SINGLE if item.severity == "hint" else Pango.Underline.ERROR)
+            colour = Gdk.RGBA()
+            if not colour.parse(DIAGNOSTIC_COLORS.get(item.severity, DIAGNOSTIC_COLORS["hint"])):
+                colour.parse(DIAGNOSTIC_COLORS["hint"])
+            tag.set_property("underline-rgba", colour)
+            self.buffer.apply_tag(tag, start, end)
+            self.diagnostic_tags[name] = f"{item.severity}: {item.message} ({item.code})"
+
+    def _on_query_tooltip(self, view, x, y, _keyboard, tooltip) -> bool:
+        if not self.diagnostic_tags:
+            return False
+        bx, by = view.window_to_buffer_coords(Gtk.TextWindowType.WIDGET, x, y)
+        found = view.get_iter_at_location(bx, by)
+        position = found[1] if isinstance(found, tuple) else found
+        messages = [self.diagnostic_tags[tag.get_property("name")] for tag in position.get_tags()
+                    if tag.get_property("name") in self.diagnostic_tags]
+        if not messages:
+            return False
+        tooltip.set_text("\n".join(messages))
+        return True
+
     def update_label(self) -> None:
         self.tab_label.set_text(self.document.title + (" *" if self.dirty else ""))
 
 
 class EditorWindow(Gtk.Window):
+    git_colors = True                    # ogmkdev_git_colors: tree and Git panel colours
+    git_all: list = []                   # Change objects of the last Git status
+    git_labels: Dict[str, object] = {}   # absolute path -> Change
     def __init__(self, path: Optional[str] = None, project_dir: Optional[str] = None,
                  mode: str = "light", scheme: str = "blend", autosave: Optional[bool] = None,
                  clear_index: bool = False) -> None:
@@ -311,8 +389,9 @@ class EditorWindow(Gtk.Window):
         left.append_page(run_box, Gtk.Label(label="Run"))
         left.append_page(hierarchy_tabs, Gtk.Label(label="Hierarchy"))
         left.append_page(self._build_history_panel(), Gtk.Label(label="History"))
+        left.append_page(self._build_git_panel(), Gtk.Label(label="Git"))
         self.left = left
-        self.left_pages = {"Files": 0, "Run": 1, "Hierarchy": 2, "History": 3}
+        self.left_pages = {"Files": 0, "Run": 1, "Hierarchy": 2, "History": 3, "Git": 4}
 
         self.console = Gtk.TextView(editable=False, cursor_visible=False, monospace=True)
         self.console_buffer = self.console.get_buffer()
@@ -514,6 +593,7 @@ class EditorWindow(Gtk.Window):
         return self._add_page(Document.open(absolute, self.settings_store.effective_for(absolute)))
 
     def _add_page(self, document: Document) -> Page:
+        document.analyze()
         page = Page(document, self.palette)
 
         def on_mark_set(*_args) -> None:
@@ -594,6 +674,7 @@ class EditorWindow(Gtk.Window):
         page.update_change_marks()
         self._update_status(saved=True)
         self.refresh_history()
+        self.refresh_git()
 
     def open_dialog(self) -> None:
         dialog = Gtk.FileChooserDialog(title="Open", parent=self, action=Gtk.FileChooserAction.OPEN)
@@ -630,7 +711,7 @@ class EditorWindow(Gtk.Window):
                 continue
             if entry.name == "__pycache__" or self.workspace.is_excluded(entry.path):
                 continue
-            color = self._tree_color(self.workspace.kind(entry.path))
+            color = self._node_color(entry.path, self.workspace.kind(entry.path))
             node = self.tree_store.append(parent, [entry.name, entry.path, color])
             if entry.is_dir(follow_symlinks=False):
                 self.tree_store.append(node, ["", "", color])  # placeholder, replaced on expand
@@ -643,11 +724,13 @@ class EditorWindow(Gtk.Window):
                                                  self._tree_color("source")])
             self._populate_tree(node, folder)
             self.tree.expand_row(self.tree_store.get_path(node), False)
+        self.refresh_git()
 
     def _apply_workspace(self) -> None:
         """Workspace and index from the folders and the effective settings (no tree update)."""
         props = self.settings_store.effective_for(os.path.join(self.project_dir, "_"))
         self.workspace = Workspace.from_properties(self.project_folders, props)
+        self.git_colors = props.get("ogmkdev_git_colors", "on") != "off"
         self.index = ProjectIndex(self.workspace.folders, cache_path=self._cache_path(),
                                   excluded=self.workspace.is_excluded)
 
@@ -1253,9 +1336,225 @@ class EditorWindow(Gtk.Window):
             properties = self.settings_store.effective_for(path) if path else self.settings_store.global_properties()
             page.document.settings = editorconfig.settings_from_properties(properties)
             page.apply_settings()
+            page.apply_palette(self.palette)
+            page.apply_language()
             page.document.analyze()
             page.highlight()
+            page.update_change_marks()
+        self.refresh_git()
         self._update_status()
+
+    # ------------------------------------------------------ Git panel
+
+    def _build_git_panel(self) -> Gtk.Widget:
+        self.git_store = Gtk.ListStore(str, str, str, str, object)  # staged, change, path, colour, Change
+        self.git_view = Gtk.TreeView(model=self.git_store)
+        self.git_view.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE)
+        self.git_view.append_column(Gtk.TreeViewColumn("Staged", Gtk.CellRendererText(), text=0))
+        self.git_view.append_column(Gtk.TreeViewColumn("Change", Gtk.CellRendererText(), text=1))
+        self.git_view.append_column(Gtk.TreeViewColumn("Path", Gtk.CellRendererText(), text=2, foreground=3))
+        self.git_diff = Gtk.TextView(editable=False, monospace=True)
+        self.git_diff.set_cursor_visible(False)
+        self.git_view.get_selection().connect("changed", lambda *_: self._show_git_diff())
+        top = Gtk.ScrolledWindow()
+        top.add(self.git_view)
+        bottom = Gtk.ScrolledWindow()
+        bottom.add(self.git_diff)
+        paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        paned.pack1(top, True, False)
+        paned.pack2(bottom, True, False)
+        grid = Gtk.Grid(column_homogeneous=True, column_spacing=4, row_spacing=4)
+        buttons = (("Stage", self.git_stage), ("Unstage", self.git_unstage), ("Diff", self._show_git_diff),
+                   ("Commit...", self.git_commit), ("Refresh", self.refresh_git))
+        for index, (label, handler) in enumerate(buttons):
+            button = Gtk.Button(label=label)
+            button.connect("clicked", lambda _b, h=handler: h())
+            grid.attach(button, index % 3, index // 3, 1, 1)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.pack_start(grid, False, False, 0)
+        box.pack_start(paned, True, True, 0)
+        return box
+
+    def show_git(self) -> None:
+        self.left.set_current_page(self.left_pages["Git"])
+        self.refresh_git()
+
+    def _git_colour(self, change) -> str:
+        if change.label == "new" or change.index == "A":
+            return CHANGE_COLORS["added"]
+        if "D" in (change.index, change.worktree):
+            return CHANGE_COLORS["deleted"]
+        return CHANGE_COLORS["modified"]
+
+    def _node_color(self, path: str, kind: str) -> str:
+        change = self.git_labels.get(path)
+        if change is not None and self.git_colors:
+            return self._git_colour(change)
+        return self._tree_color(kind)
+
+    def _paint_tree_row(self, model, path, iterator, *_data) -> bool:
+        target = model[iterator][1]
+        if target:
+            model[iterator][2] = self._node_color(target, self.workspace.kind(target))
+        return False
+
+    def refresh_git(self) -> None:
+        """Ask git for every workspace folder; updates the Git panel and the tree colours."""
+        found = {}
+        selected = {change.path for change in self._git_selected()} if hasattr(self, "git_view") else set()
+        for folder in self.workspace.folders:
+            try:
+                for change in git_module.status(folder):
+                    found[change.path] = change
+            except (git_module.GitError, OSError):
+                continue
+        self.git_all = [found[path] for path in sorted(found)]
+        self.git_labels = found
+        if hasattr(self, "git_store"):
+            self.git_store.clear()
+            for change in self.git_all:
+                relative = os.path.relpath(change.path, change.root)
+                staged = "" if change.untracked else change.index.strip()
+                colour = self._git_colour(change) if self.git_colors else self.palette["foreground"]
+                iterator = self.git_store.append([staged, change.label, relative, colour, change])
+                if change.path in selected:
+                    self.git_view.get_selection().select_iter(iterator)
+        if hasattr(self, "tree_store"):
+            self.tree_store.foreach(self._paint_tree_row)
+
+    def _git_selected(self) -> list:
+        model, paths = self.git_view.get_selection().get_selected_rows()
+        return [model[path][4] for path in paths]
+
+    def _git_run(self, description: str, action) -> None:
+        try:
+            action()
+        except git_module.GitError as error:
+            self.status.set_text(f"git: {error}")
+        else:
+            self.status.set_text(description)
+        self.refresh_git()
+
+    def git_stage(self) -> None:
+        changes = self._git_selected()
+        if not changes:
+            self.status.set_text("select files in the Git panel first")
+            return
+
+        def action() -> None:
+            for change in changes:
+                git_module.stage(change.root, [change.path])
+        self._git_run(f"staged {len(changes)} file(s)", action)
+
+    def git_unstage(self) -> None:
+        changes = self._git_selected()
+        if not changes:
+            self.status.set_text("select files in the Git panel first")
+            return
+
+        def action() -> None:
+            for change in changes:
+                git_module.unstage(change.root, [change.path])
+        self._git_run(f"unstaged {len(changes)} file(s)", action)
+
+    def _show_git_diff(self) -> None:
+        if not hasattr(self, "git_diff"):
+            return
+        parts = []
+        for change in self._git_selected():
+            relative = os.path.relpath(change.path, change.root)
+            try:
+                if change.untracked:
+                    with open(change.path, encoding="utf-8", errors="replace") as handle:
+                        parts.append(file_patch("", handle.read(), relative))
+                    continue
+                if change.staged:
+                    parts.append(git_module.diff(change.root, change.path, staged=True))
+                if change.worktree.strip():
+                    parts.append(git_module.diff(change.root, change.path, staged=False))
+            except (git_module.GitError, OSError) as error:
+                parts.append(f"{relative}: {error}\n")
+        self.git_diff.get_buffer().set_text("".join(parts))
+
+    def git_commit(self) -> None:
+        staged = [change for change in self.git_all if change.staged]
+        if not staged:
+            self.status.set_text("nothing is staged")
+            return
+        message = self._prompt("Commit", f"Commit message for {len(staged)} staged file(s):").strip()
+        if not message:
+            self.status.set_text("commit cancelled")
+            return
+        roots = sorted({change.root for change in staged})
+
+        def action() -> None:
+            for root in roots:
+                git_module.commit(root, message)
+        self._git_run(f"committed {len(staged)} file(s)", action)
+
+    # ------------------------------------------- Quick Open, Search Everywhere
+
+    def _search_candidates(self) -> list:
+        candidates = []
+        for path in workspace_files(self.workspace):
+            candidates.append(search.Candidate("file", os.path.relpath(path, self.project_dir),
+                                               self.workspace.kind(path), ("file", path)))
+        for symbol in self.index.symbols:
+            where = f"{symbol.kind} in {os.path.basename(symbol.file)}:{symbol.line}"
+            candidates.append(search.Candidate("symbol", symbol.name, where,
+                                               ("symbol", symbol.file, symbol.line, symbol.column)))
+        for menu, label, _icon, accelerator, method, _in_toolbar in ACTIONS:
+            candidates.append(search.Candidate("action", f"{menu}: {label}", accelerator, ("action", method)))
+        for setting in settings_module.SCHEMA:
+            candidates.append(search.Candidate("setting", setting.label, f"{setting.group}: {setting.key}",
+                                               ("setting", setting.group)))
+        return candidates
+
+    def quick_open(self) -> None:
+        self._open_search("Quick Open", ("file",))
+
+    def search_everywhere(self) -> None:
+        self._open_search("Search Everywhere", None)
+
+    def _open_search(self, title: str, categories) -> None:
+        dialog = SearchDialog(self, title, self._search_candidates(), categories, self.activate_candidate)
+        dialog.show_all()
+        dialog.entry.grab_focus()
+
+    def activate_candidate(self, candidate) -> None:
+        kind = candidate.target[0]
+        if kind == "file":
+            self.open_path(candidate.target[1])
+        elif kind == "symbol":
+            self.navigate(candidate.target[1], candidate.target[2], candidate.target[3])
+        elif kind == "action":
+            getattr(self, candidate.target[1])()
+        elif kind == "setting":
+            self._settings_dialog("global", tab=candidate.target[1])
+
+    # ------------------------------------------------- history as patch
+
+    def export_history_patch(self) -> None:
+        """The whole local history of the current file as one git-style patch (apply with git apply)."""
+        page = self.page
+        if page is None or page.document.path is None:
+            self.status.set_text("the file has no history yet")
+            return
+        revisions = self.history.revisions(page.document.path)
+        if len(revisions) < 2:
+            self.status.set_text("the history has no change to export yet")
+            return
+        dialog = Gtk.FileChooserDialog(title="Export History as Patch", parent=self,
+                                       action=Gtk.FileChooserAction.SAVE)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Save", Gtk.ResponseType.OK)
+        dialog.set_current_name(page.document.title + ".patch")
+        dialog.set_current_folder(self.project_dir)
+        response = dialog.run()
+        filename = dialog.get_filename()
+        dialog.destroy()
+        if response == Gtk.ResponseType.OK and filename:
+            self.history.extract_patch(revisions, filename, self.project_dir)
+            self.status.set_text(f"history patch with {len(revisions) - 1} change(s) written to {filename}")
 
     # ------------------------------------------------------- panes (split)
 
@@ -1386,6 +1685,7 @@ class EditorWindow(Gtk.Window):
         paned.pack2(bottom, True, False)
         buttons = Gtk.Box(spacing=4)
         for label, handler in (("Extract patch set...", self.extract_patch_set),
+                               ("Export history as patch...", self.export_history_patch),
                                ("Revert to selected", self.revert_to_selected)):
             button = Gtk.Button(label=label)
             button.connect("clicked", lambda _b, h=handler: h())
@@ -1427,7 +1727,7 @@ class EditorWindow(Gtk.Window):
             text = self.history.diff(self.history.content(selected[0]), page.text(),
                                      f"revision {selected[0].when}", "current")
         else:
-            text = self.history.patch_set(selected)
+            text = self.history.patch_set(selected, self.project_dir)
         self.history_diff.get_buffer().set_text(text or "no differences")
 
     def show_local_history(self) -> None:
@@ -1451,7 +1751,7 @@ class EditorWindow(Gtk.Window):
         filename = dialog.get_filename()
         dialog.destroy()
         if response == Gtk.ResponseType.OK and filename:
-            self.history.extract_patch(revisions, filename)
+            self.history.extract_patch(revisions, filename, self.project_dir)
             self.status.set_text(f"patch set of {len(revisions)} revision(s) written to {filename}")
 
     def revert_to_selected(self) -> None:
