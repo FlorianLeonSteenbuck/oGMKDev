@@ -24,7 +24,7 @@ import gi
 
 gi.require_version("Gdk", "3.0")
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango  # noqa: E402
 
 try:
     gi.require_version("GtkSource", "3.0")
@@ -37,11 +37,13 @@ from ..index import ProjectIndex  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
 from ..workspace import Workspace  # noqa: E402
+from .. import keymap as keymap_module  # noqa: E402
 from .panels import DiagramView, HierarchyView, ResultsView  # noqa: E402
 from .. import __version__  # noqa: E402
 from ..debug import DebuggerError, Exited, GdbMiDebugger, Output, Stopped, XdebugDebugger  # noqa: E402
 from ..document import Document  # noqa: E402
 
+LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.svg")
 BREAKPOINT_CATEGORY = "ogmkdev-breakpoint"
 EXEC_TAG = "ogmkdev-exec"
 # Languages highlighted by our own tokenizers (see ogmkdev/highlight.py), not by GtkSourceView.
@@ -186,6 +188,8 @@ class Page:
     def mark_current_line(self) -> None:
         start, end = self.buffer.get_bounds()
         self.buffer.remove_tag_by_name("hl-current-line", start, end)
+        if self.document.settings.custom.get("ogmkdev_current_line", "true") == "false":
+            return
         cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
         line_start = self.buffer.get_iter_at_line(cursor.get_line())
         line_end = line_start.copy()
@@ -201,6 +205,7 @@ class EditorWindow(Gtk.Window):
                  mode: str = "light", scheme: str = "blend") -> None:
         super().__init__(title="ogmkdev")
         self.set_default_size(1280, 820)
+        self._set_logo()
         self.mode = mode
         self.scheme = scheme
         self.palette = theme.palette(mode, scheme)
@@ -214,6 +219,7 @@ class EditorWindow(Gtk.Window):
         self.run_configs: List[runconfig.RunConfiguration] = runconfig.discover(self.project_dir)
         self.settings_store = SettingsStore(self.project_dir)
         self.project_folders: List[str] = [self.project_dir]
+        self._apply_keymap()
         self._apply_workspace()
         self.connect("destroy", self._save_index)
         self.debugger = None
@@ -355,10 +361,15 @@ class EditorWindow(Gtk.Window):
         for menu, label, icon, accel, method, in_toolbar in ACTIONS:
             if not in_toolbar:
                 continue
-            if previous_menu is not None and menu != previous_menu:
+            if menu == "Run" and previous_menu != "Run":
+                spacer = Gtk.SeparatorToolItem()  # run and debug controls sit at the right edge
+                spacer.set_draw(False)
+                spacer.set_expand(True)
+                bar.insert(spacer, -1)
+            elif previous_menu is not None and menu != previous_menu:
                 bar.insert(Gtk.SeparatorToolItem(), -1)
             previous_menu = menu
-            image = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR)
+            image = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.SMALL_TOOLBAR)
             button = Gtk.ToolButton(icon_widget=image, label=label)
             button.set_tooltip_text(f"{label}  ({accel})" if accel else label)
             button.connect("clicked", lambda _button, m=method: getattr(self, m)())
@@ -384,11 +395,21 @@ class EditorWindow(Gtk.Window):
             page.apply_palette(self.palette)
         self._update_status()
 
+    def _set_logo(self) -> None:
+        try:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(LOGO_PATH, 64, 64)
+            self.set_icon(pixbuf)
+        except GLib.Error:
+            pass
+
     def focus_find(self) -> None:
         self.find_entry.grab_focus()
 
     def continue_debugging(self) -> None:
-        self.debug_op("run")
+        if self.debugger is None:
+            self.debug_selected()
+        else:
+            self.debug_op("run")
 
     def step_over(self) -> None:
         self.debug_op("step_over")
@@ -1125,6 +1146,7 @@ class EditorWindow(Gtk.Window):
         self.status.set_text(f"{'preferences' if scope == 'global' else 'project settings'} saved")
 
     def _refresh_settings_all(self) -> None:
+        self._apply_keymap()
         self._apply_workspace()
         for page in self.pages:
             path = page.document.path
@@ -1188,47 +1210,20 @@ class EditorWindow(Gtk.Window):
         ]
         self.status.set_text(" · ".join(parts))
 
-    def _on_key(self, _widget, event: Gdk.EventKey) -> bool:
-        ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
-        shift = bool(event.state & Gdk.ModifierType.SHIFT_MASK)
-        alt = bool(event.state & Gdk.ModifierType.MOD1_MASK)
-        key = event.keyval
-        if ctrl and key in (Gdk.KEY_s, Gdk.KEY_S):
-            self.save_current()
-        elif ctrl and shift and key in (Gdk.KEY_f, Gdk.KEY_F):
-            self.search_in_files()
-        elif ctrl and shift and key in (Gdk.KEY_o, Gdk.KEY_O):
-            self.open_folder()
-        elif ctrl and alt and key in (Gdk.KEY_b, Gdk.KEY_B):
-            self.find_implementations()
-        elif ctrl and key in (Gdk.KEY_h, Gdk.KEY_H):
-            self.show_hierarchy()
-        elif ctrl and key in (Gdk.KEY_n, Gdk.KEY_N):
-            self.new_document()
-        elif ctrl and key in (Gdk.KEY_o, Gdk.KEY_O):
-            self.open_dialog()
-        elif ctrl and key in (Gdk.KEY_w, Gdk.KEY_W):
-            self.close_page()
-        elif ctrl and key in (Gdk.KEY_f, Gdk.KEY_F):
-            self.find_entry.grab_focus()
-        elif ctrl and key == Gdk.KEY_space:
-            self._complete()
-        elif ctrl and key in (Gdk.KEY_z, Gdk.KEY_Z) and not shift:
-            self._undo()
-        elif ctrl and (key in (Gdk.KEY_y, Gdk.KEY_Y) or (shift and key in (Gdk.KEY_z, Gdk.KEY_Z))):
-            self._redo()
-        elif key == Gdk.KEY_F9:
-            self.toggle_breakpoint()
-        elif key == Gdk.KEY_F5:
-            self.debug_op("run") if self.debugger is not None else self.debug_selected()
-        elif key == Gdk.KEY_F10:
-            self.debug_op("step_over")
-        elif key == Gdk.KEY_F11:
-            self.debug_op("step_out" if shift else "step_into")
-        else:
-            return False
-        return True
+    def _apply_keymap(self) -> None:
+        defaults = {method: accelerator for _m, _l, _i, accelerator, method, _t in ACTIONS if accelerator}
+        properties = self.settings_store.effective_for(os.path.join(self.project_dir, "_"))
+        self.bindings = keymap_module.resolve(defaults, properties)
+        self.key_actions = keymap_module.by_accelerator(self.bindings)
 
+    def _on_key(self, _widget, event: Gdk.EventKey) -> bool:
+        mask = (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK | Gdk.ModifierType.MOD1_MASK)
+        accelerator = keymap_module.canonical(Gtk.accelerator_name(event.keyval, event.state & mask))
+        method = self.key_actions.get(accelerator) if accelerator else None
+        if method is None:
+            return False
+        getattr(self, method)()
+        return True
 
 def main(argv: List[str]) -> int:
     """Usage: python -m ogmkdev [--dark|--light] [--scheme blend|jetbrains|eclipse] [file-or-folder]"""

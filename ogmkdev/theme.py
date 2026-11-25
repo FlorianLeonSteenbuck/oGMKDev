@@ -20,7 +20,7 @@ BASE: Dict[str, Dict[str, str]] = {
         "background": "#FFFFFF", "foreground": "#1E1B26",
         "chrome": "#F4F3F6", "chrome_text": "#1E1B26", "chrome_border": "#D6D2DE",
         "gutter_background": "#F7F5FA", "gutter_foreground": "#8E86A0",
-        "current_line": "#F5F0FC", "selection": "#DCCBF2", "accent": "#7A2EC0",
+        "current_line": "#E8F2FE", "selection": "#DCCBF2", "accent": "#7A2EC0",
         "error_background": "#FBD5DA",
         "keyword": "#7A2EC0", "string": "#067D17", "comment": "#6B7280", "number": "#1750EB",
         "regexp": "#B3267A", "operator": "#1E1B26", "engine": "#0E6F86", "heading": "#1750EB",
@@ -34,7 +34,7 @@ BASE: Dict[str, Dict[str, str]] = {
         "background": "#2B2B2D", "foreground": "#BCBEC4",
         "chrome": "#3C3F41", "chrome_text": "#BCBEC4", "chrome_border": "#515457",
         "gutter_background": "#313335", "gutter_foreground": "#6F737A",
-        "current_line": "#323236", "selection": "#3D3152", "accent": "#B983E0",
+        "current_line": "#2F3340", "selection": "#3D3152", "accent": "#B983E0",
         "error_background": "#4A2226",
         "keyword": "#B983E0", "string": "#6AAB73", "comment": "#9499A2", "number": "#6897BB",
         "regexp": "#E07A8F", "operator": "#BCBEC4", "engine": "#4FC1C9", "heading": "#6897BB",
@@ -115,6 +115,8 @@ def css(colors: Dict[str, str]) -> str:
     field = f"background-color: {colors['background']}; color: {colors['foreground']};"
     selected = f"background-color: {colors['selection']}; color: {colors['foreground']};"
     return "\n".join([
+        "scrolledwindow, viewport, grid { " + chrome + " }",
+        "toolbar button, button { border-radius: 0; box-shadow: none; min-height: 0; padding: 2px 6px; }",
         "window, .background, dialog, popover, popover contents, menu, menubar, menuitem, toolbar, "
         "notebook > header, notebook > header > tabs > tab, statusbar, paned > separator, "
         "button, label, box { " + chrome + " }",
