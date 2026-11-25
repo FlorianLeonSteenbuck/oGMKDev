@@ -1,6 +1,7 @@
 import unittest
 
 from ogmkdev import highlight as H
+from ogmkdev import theme
 
 
 class HighlightTests(unittest.TestCase):
@@ -28,7 +29,7 @@ class HighlightTests(unittest.TestCase):
         for language, text in (("ecmascript", "a = /x/ // c\n'q'"), ("sql", "SELECT 1 -- c"),
                                ("baredown", "= t\n- b\n+ o\n> q\n%% c\n----\n~~~\nx\n~~~\n**b** //i// |c| [[l]]")):
             produced |= {style for style, _, _ in H.spans(language, text)}
-        self.assertLessEqual(produced, set(H.TAG_STYLES), produced - set(H.TAG_STYLES))
+        self.assertLessEqual(produced, set(theme.STYLE_NAMES), produced - set(theme.STYLE_NAMES))
 
 
 if __name__ == "__main__":

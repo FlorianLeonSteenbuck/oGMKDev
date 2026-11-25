@@ -13,6 +13,7 @@ from typing import List, Optional
 
 from . import baredown, heredoc, sql
 from .lexers import ecmascript_lexer
+from .parsers import ecmascript as jsparser
 from .editorconfig import EditorSettings
 from .languages import Detection
 
@@ -40,8 +41,14 @@ def analyze(text: str, detection: Detection, settings: Optional[EditorSettings] 
             line, column = _position(text, error.offset)
             found.append(Diagnostic(line, column, "error", f"heredoc-{error.code}", error.message))
     if detection.language == "ecmascript":
-        for line, column, message in ecmascript_lexer.problems(text):
-            found.append(Diagnostic(line, column, "error", "js-syntax", message))
+        lexical = ecmascript_lexer.problems(text)
+        for line, column, message in lexical:
+            found.append(Diagnostic(line, column, "error", "js-lexical", message))
+        if not lexical:
+            try:
+                jsparser.parse(text)
+            except jsparser.ParseError as error:
+                found.append(Diagnostic(error.line, error.column, "error", "js-syntax", error.message))
     if detection.language == "baredown":
         for line, message in baredown.problems(text):
             found.append(Diagnostic(line, 1, "warning", "baredown-fence", message))

@@ -159,6 +159,39 @@ class ChromeAndHighlightTests(unittest.TestCase):
         self.assertIn("hl-comment", [t.get_property("name") for t in comment.get_tags()])
 
 
+@unittest.skipUnless(GTK_AVAILABLE, "PyGObject/GTK 3 and a display are required")
+class ThemeTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.win = EditorWindow(None, project_dir=self._tmp.name)
+
+    def tearDown(self):
+        self.win.destroy()
+        self._tmp.cleanup()
+
+    def test_dark_mode_recolors_existing_tags_and_breakpoint_marks(self):
+        from ogmkdev import theme
+        self.win.new_document()
+        self.win.set_theme("dark", "jetbrains")
+        table = self.win.buffer.get_tag_table()
+        keyword = table.lookup("hl-keyword")
+        self.assertTrue(keyword.get_property("foreground-set"))
+        self.assertEqual(self.win.mode, "dark")
+        self.assertEqual(self.win.palette, theme.palette("dark", "jetbrains"))
+        self.assertIsNotNone(table.lookup("hl-current-line"))
+        self.win.set_theme("light", "eclipse")
+        self.assertEqual(self.win.palette, theme.palette("light", "eclipse"))
+
+    def test_view_menu_offers_dark_theme_and_schemes(self):
+        labels = []
+        for item in self.win.menubar.get_children():
+            if item.get_label() == "View":
+                labels = [child.get_label() for child in item.get_submenu().get_children()
+                          if hasattr(child, "get_label") and child.get_label()]
+        self.assertIn("Dark Theme", labels)
+        self.assertIn("Color scheme: Eclipse", labels)
+
+
 @unittest.skipUnless(GTK_AVAILABLE and shutil.which("gdb") and shutil.which("gcc"),
                      "GTK, gdb and gcc are required")
 class DebugEndToEndTests(unittest.TestCase):

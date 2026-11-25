@@ -30,7 +30,7 @@ try:
 except (ImportError, ValueError):
     GtkSource = None
 
-from .. import diagnostics, highlight, languages, runconfig, templates  # noqa: E402
+from .. import diagnostics, highlight, languages, runconfig, templates, theme  # noqa: E402
 from .. import __version__  # noqa: E402
 from ..debug import DebuggerError, Exited, GdbMiDebugger, Output, Stopped, XdebugDebugger  # noqa: E402
 from ..document import Document  # noqa: E402
@@ -39,7 +39,7 @@ BREAKPOINT_CATEGORY = "ogmkdev-breakpoint"
 EXEC_TAG = "ogmkdev-exec"
 # Languages highlighted by our own tokenizers (see ogmkdev/highlight.py), not by GtkSourceView.
 OWN_HIGHLIGHT = frozenset({"ecmascript", "baredown", "sql"})
-MENU_ORDER = ("File", "Edit", "Run", "Debug", "Help")
+MENU_ORDER = ("File", "Edit", "View", "Run", "Debug", "Help")
 # menu, label, icon name, accelerator, method name, shown in toolbar
 ACTIONS = (
     ("File", "New", "document-new", "<Control>n", "new_document", True),
@@ -82,10 +82,18 @@ def _ui(function, *args) -> None:
     GLib.idle_add(run_once)
 
 
+def _mark_attributes(color: str):
+    attributes = GtkSource.MarkAttributes()
+    rgba = Gdk.RGBA()
+    rgba.parse(color)
+    attributes.set_background(rgba)
+    return attributes
+
+
 class Page:
     """One open document together with its editor widgets."""
 
-    def __init__(self, document: Document) -> None:
+    def __init__(self, document: Document, colors) -> None:
         self.document = document
         self.dirty = False
         if GtkSource is not None:
@@ -93,18 +101,16 @@ class Page:
             self.view = GtkSource.View.new_with_buffer(self.buffer)
             self.view.set_show_line_numbers(True)
             self.view.set_show_line_marks(True)
-            self.view.set_highlight_current_line(True)
-            attributes = GtkSource.MarkAttributes()
-            attributes.set_background(Gdk.RGBA(0.9, 0.2, 0.2, 0.9))
-            self.view.set_mark_attributes(BREAKPOINT_CATEGORY, attributes, 10)
+            self.view.set_highlight_current_line(False)  # drawn by the current-line tag instead
         else:
             self.buffer = Gtk.TextBuffer()
             self.view = Gtk.TextView(buffer=self.buffer)
         self.view.set_monospace(True)
         self.view.set_auto_indent(True)
-        self.exec_tag = self.buffer.create_tag(EXEC_TAG, background="#ffe27a")
-        for style, props in highlight.TAG_STYLES.items():
-            self.buffer.create_tag(f"hl-{style}", **_tag_props(props))
+        self.exec_tag = self.buffer.create_tag(EXEC_TAG)
+        for style in theme.STYLE_NAMES:
+            self.buffer.create_tag(f"hl-{style}")
+        self.apply_palette(colors)
         self.buffer.set_text(document.text)
         self.scroller = Gtk.ScrolledWindow()
         self.scroller.add(self.view)
@@ -137,25 +143,51 @@ class Page:
         manager = GtkSource.LanguageManager.get_default()
         self.buffer.set_language(manager.get_language(gtk_id) if gtk_id else None)
 
+    def apply_palette(self, colors) -> None:
+        table = self.buffer.get_tag_table()
+        for style, props in theme.tag_properties(colors).items():
+            tag = table.lookup(f"hl-{style}")
+            if tag is not None:
+                for key, value in _tag_props(props).items():
+                    tag.set_property(key, value)
+        self.exec_tag.set_property("background", colors["execution"])
+        if GtkSource is not None:
+            self.view.set_mark_attributes(BREAKPOINT_CATEGORY, _mark_attributes(colors["breakpoint"]), 10)
+        self.palette = colors
+
     def highlight(self) -> None:
         start, end = self.buffer.get_bounds()
-        for style in highlight.TAG_STYLES:
+        for style in theme.STYLE_NAMES:
             self.buffer.remove_tag_by_name(f"hl-{style}", start, end)
         language = self.document.detection.language
-        if language not in OWN_HIGHLIGHT:
-            return
-        for style, first, last in highlight.spans(language, self.text()):
-            self.buffer.apply_tag_by_name(f"hl-{style}", self.buffer.get_iter_at_offset(first),
-                                          self.buffer.get_iter_at_offset(last))
+        if language in OWN_HIGHLIGHT:
+            for style, first, last in highlight.spans(language, self.text()):
+                self.buffer.apply_tag_by_name(f"hl-{style}", self.buffer.get_iter_at_offset(first),
+                                              self.buffer.get_iter_at_offset(last))
+        self.mark_current_line()
+
+    def mark_current_line(self) -> None:
+        start, end = self.buffer.get_bounds()
+        self.buffer.remove_tag_by_name("hl-current-line", start, end)
+        cursor = self.buffer.get_iter_at_mark(self.buffer.get_insert())
+        line_start = self.buffer.get_iter_at_line(cursor.get_line())
+        line_end = line_start.copy()
+        line_end.forward_line()
+        self.buffer.apply_tag_by_name("hl-current-line", line_start, line_end)
 
     def update_label(self) -> None:
         self.tab_label.set_text(self.document.title + (" *" if self.dirty else ""))
 
 
 class EditorWindow(Gtk.Window):
-    def __init__(self, path: Optional[str] = None, project_dir: Optional[str] = None) -> None:
+    def __init__(self, path: Optional[str] = None, project_dir: Optional[str] = None,
+                 mode: str = "light", scheme: str = "blend") -> None:
         super().__init__(title="ogmkdev")
         self.set_default_size(1280, 820)
+        self.mode = mode
+        self.scheme = scheme
+        self.palette = theme.palette(mode, scheme)
+        self._css_provider = None
         self.project_dir = os.path.abspath(project_dir or os.getcwd())
         self.registry = templates.builtin_registry()
         self.pages: List[Page] = []
@@ -234,6 +266,7 @@ class EditorWindow(Gtk.Window):
         outer.pack_start(self.status, False, False, 2)
         self.add(outer)
         self.connect("key-press-event", self._on_key)
+        self.set_theme(self.mode, self.scheme)
 
         if path:
             self.open_path(path)
@@ -260,6 +293,20 @@ class EditorWindow(Gtk.Window):
             entry.add(accel_label)
             entry.connect("activate", lambda _item, m=method: getattr(self, m)())
             menus[menu].append(entry)
+        view_menu = menus["View"]
+        dark = Gtk.CheckMenuItem(label="Dark Theme")
+        dark.set_active(self.mode == "dark")
+        dark.connect("toggled", lambda item: self.set_theme("dark" if item.get_active() else "light"))
+        view_menu.append(dark)
+        view_menu.append(Gtk.SeparatorMenuItem())
+        group = None
+        for scheme_name in theme.SCHEMES:
+            radio = Gtk.RadioMenuItem.new_with_label_from_widget(group, f"Color scheme: {scheme_name.capitalize()}")
+            radio.set_active(scheme_name == self.scheme)
+            radio.connect("toggled", lambda item, name=scheme_name: self.set_theme(self.mode, name)
+                          if item.get_active() else None)
+            view_menu.append(radio)
+            group = radio
         about = Gtk.MenuItem(label="About ogmkdev")
         about.connect("activate", lambda _item: self.show_about())
         menus["Help"].append(about)
@@ -281,6 +328,25 @@ class EditorWindow(Gtk.Window):
             button.connect("clicked", lambda _button, m=method: getattr(self, m)())
             bar.insert(button, -1)
         return bar
+
+    def set_theme(self, mode: str, scheme: Optional[str] = None) -> None:
+        """Switch between light and dark mode and between color schemes; no config file involved."""
+        self.mode = mode
+        self.scheme = scheme or self.scheme
+        self.palette = theme.palette(self.mode, self.scheme)
+        settings = Gtk.Settings.get_default()
+        if settings is not None:
+            settings.set_property("gtk-application-prefer-dark-theme", self.mode == "dark")
+        provider = Gtk.CssProvider()
+        provider.load_from_data(theme.css(self.palette).encode("utf-8"))
+        screen = Gdk.Screen.get_default()
+        if self._css_provider is not None:
+            Gtk.StyleContext.remove_provider_for_screen(screen, self._css_provider)
+        Gtk.StyleContext.add_provider_for_screen(screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self._css_provider = provider
+        for page in self.pages:
+            page.apply_palette(self.palette)
+        self._update_status()
 
     def focus_find(self) -> None:
         self.find_entry.grab_focus()
@@ -340,9 +406,13 @@ class EditorWindow(Gtk.Window):
         return self._add_page(Document.open(absolute))
 
     def _add_page(self, document: Document) -> Page:
-        page = Page(document)
+        page = Page(document, self.palette)
+
+        def on_mark_set(*_args) -> None:
+            page.mark_current_line()
+            self._update_status()
         page.buffer.connect("changed", lambda *_: self._on_changed(page))
-        page.buffer.connect("mark-set", lambda *_: self._update_status())
+        page.buffer.connect("mark-set", on_mark_set)
         self.pages.append(page)
         self.notebook.append_page(page.scroller, page.tab_label)
         self.notebook.set_tab_reorderable(page.scroller, True)
@@ -835,11 +905,28 @@ class EditorWindow(Gtk.Window):
 
 
 def main(argv: List[str]) -> int:
-    target = os.path.abspath(argv[0]) if argv else None
+    """Usage: python -m ogmkdev [--dark|--light] [--scheme blend|jetbrains|eclipse] [file-or-folder]"""
+    mode, scheme, paths = "light", "blend", []
+    args = list(argv)
+    while args:
+        arg = args.pop(0)
+        if arg == "--dark":
+            mode = "dark"
+        elif arg == "--light":
+            mode = "light"
+        elif arg == "--scheme" and args:
+            scheme = args.pop(0)
+        else:
+            paths.append(arg)
+    if scheme not in theme.SCHEMES:
+        print(f"unknown color scheme {scheme!r}; choose from {', '.join(theme.SCHEMES)}")
+        return 2
+    target = os.path.abspath(paths[0]) if paths else None
     if target and os.path.isdir(target):
-        window = EditorWindow(None, project_dir=target)
+        window = EditorWindow(None, project_dir=target, mode=mode, scheme=scheme)
     else:
-        window = EditorWindow(target, project_dir=os.path.dirname(target) if target else None)
+        window = EditorWindow(target, project_dir=os.path.dirname(target) if target else None,
+                              mode=mode, scheme=scheme)
     window.connect("destroy", Gtk.main_quit)
     window.show_all()
     Gtk.main()
