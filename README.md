@@ -26,12 +26,10 @@ Screenshots (sample data in `samples/shop`):
 
 ![Problems and hierarchy](samples/shop/screenshots/problems-hierarchy.png)
 
-Open: the debugger UI and breakpoints, the class diagram,
-templates and file templates, organise imports, keymap configuration, the colour switches for the
-editor, and custom highlighting from the settings (the Howl bundle `ogmkdev` has it for now).
+Open items are listed at the end of this file.
 
 
-A lightweight code editor written in Python with GTK 3 (PyGObject and GtkSourceView 3).
+A lightweight code editor written in Python with GTK 4 (PyGObject), with the Howl editor embedded.
 The window follows the layout of KDevelop: menu bar, icon toolbar, tool panels around a tabbed
 editor, and a status bar. The product is the editor; its base is the KDevelop source tree in
 `kdevelop/`, which is rewritten into Python module by module, plus the Python modules in `ogmkdev/`.
@@ -40,6 +38,9 @@ Pure source: no build system beyond `pyproject.toml`, no service, no plugin host
 grammar or language server. Every language here is implemented in this repository.
 
 ## The editor
+
+*These features belong to the GTK 3 window (`ogmkdev/ui`), which the frame above replaces. The window
+is removed once its features are in the frame (see Open items).*
 
 - Menu bar (File, Edit, Run, Debug, Help) and icon toolbar, both generated from one action table
   (`ACTIONS` in `ogmkdev/ui/app.py`).
@@ -65,17 +66,17 @@ grammar or language server. Every language here is implemented in this repositor
 | Key | Action |
 |---|---|
 | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+W | new / open / save / close tab |
-| Ctrl+F | focus the find bar; Enter for next match |
-| Ctrl+Space | expand the template whose trigger precedes the cursor |
-| Ctrl+Z / Ctrl+Y | undo / redo |
+| Ctrl+F | search forward in the editor (Howl's search); Enter for the next match |
+| Ctrl+Space | Howl's completion; code templates in the frame are still open |
+| Ctrl+Z / Ctrl+Shift+Z | undo / redo |
 | Alt+click | put an extra caret where the mouse is, or take it away |
 | Ctrl+Alt+Up / Ctrl+Alt+Down | add a caret above the topmost / below the bottommost caret |
 | Ctrl+Alt+J | select the word at the cursor, then each next occurrence of the selection |
 | Ctrl+Shift+Alt+J | select all occurrences of the selection, or of the word at the cursor |
 | Escape | end the extra carets, the cursor stays |
 | F9 | toggle breakpoint on the cursor line |
-| F5 | run the selected configuration, or continue when debugging |
-| F10 / F11 / Shift+F11 | step over / step into / step out |
+| F5 | run the selected configuration (the debugger is not wired into the frame yet) |
+| F10 / F11 / Shift+F11 | step over / step into / step out (not wired into the frame yet) |
 
 ## BareDown: our own markup language
 
@@ -335,23 +336,20 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 
 ## Open items
 
-- Configurable file templates are not built yet.
-- The editor window is GTK 3 with GtkSourceView 3, not Howl's window (Howl's editor is Lua on LuaJIT with
-  GTK 4 and its own text view). Whether to switch to Howl's window is an open decision.
+- The frame does not drive the debugger yet: GDB (GDB/MI) and XDebug (DBGp) are implemented in
+  `ogmkdev/debug`, but stepping and breakpoints are not sent to them from the frame, and there is no
+  variables view. XDebug has no UI test; the end-to-end test covers GDB only.
+- File templates (a template per file extension, a new file from it) and the new class command
+  (namespace, class name and imports from a template).
+- Code templates with Ctrl+Space in the frame, and a background index with a file watcher.
 - Coding-standard checks (trailing whitespace, indentation style, line length, final newline) are not
-  added as diagnostics yet; the diagnostic severities are already configurable per check.
-- The `.rpm` package is written but has not been built on openSUSE.
+  diagnostics yet; the severity of each check is already configurable.
 - Change marks colour the whole line; gutter stripes and a diff view per pane are not built yet.
-
+- Python and JavaScript references are not indexed, only their declarations. Methods of Python classes
+  are not in the index, so the HTML export has no page entry for them.
 - Build an AST on top of the ECMAScript parse tree (outline, navigation).
-- The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
-- Python and JavaScript references are not indexed; only their declarations are.
 - The class diagram scrolls but has no zoom and no edge routing yet.
-- The settings dialog covers the editor, PHP version and error hinting keys; the theme keys are
-  still set from the View menu and command-line options.
-- PHP and Python highlighting still comes from GtkSourceView's default scheme; the dark mode
-  colors apply to our own languages only. Our own tokenizers for them would fix that.
-- Dialect-specific SQL keyword sets; TypeScript and JSX lexers.
-- Breakpoints do not move when lines are inserted above them.
-- XDebug has no UI test yet; the end-to-end test covers GDB only.
-- The debug console shows raw engine output; there is no structured variables view.
+- The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
+- Dialect-specific SQL keyword sets; TypeScript and JSX lexers; PHP and Python syntax colours in the frame.
+- The GTK 3 window still has its own settings dialog, theme keys and highlighting through GtkSourceView.
+- The `.rpm` package is written but has not been built on openSUSE.
