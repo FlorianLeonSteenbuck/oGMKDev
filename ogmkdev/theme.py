@@ -28,6 +28,7 @@ BASE: Dict[str, Dict[str, str]] = {
         "rule": "#6B7280", "fence": "#6B7280", "code": "#0F766E", "code_background": "#F3F1F8",
         "code_inline": "#0F766E", "link": "#1750EB",
         "breakpoint": "#E53935", "execution": "#FFE27A",
+        "variable": "#9A4A00", "attribute": "#5E6B00",
     },
     "dark": {
         "background": "#2B2B2D", "foreground": "#BCBEC4",
@@ -41,6 +42,7 @@ BASE: Dict[str, Dict[str, str]] = {
         "rule": "#9499A2", "fence": "#9499A2", "code": "#8FD0A0", "code_background": "#353338",
         "code_inline": "#8FD0A0", "link": "#6897BB",
         "breakpoint": "#E5534B", "execution": "#4B4424",
+        "variable": "#D4A574", "attribute": "#C5C86E",
     },
 }
 
@@ -98,6 +100,8 @@ def tag_properties(colors: Dict[str, str]) -> Dict[str, Dict[str, object]]:
         "bold": {"weight": 700},
         "italic": {"style": "italic"},
         "link": {"foreground": colors["link"], "underline": True},
+        "variable": {"foreground": colors["variable"]},
+        "attribute": {"foreground": colors["attribute"]},
         "current-line": {"background": colors["current_line"]},
     }
 

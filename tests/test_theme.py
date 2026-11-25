@@ -24,7 +24,7 @@ class ThemeTests(unittest.TestCase):
                 colors = theme.palette(mode, scheme)
                 background = colors["background"]
                 for key in ("foreground", "keyword", "string", "number", "regexp", "operator",
-                            "engine", "heading", "marker", "bullet", "ordered", "link", "code",
+                            "engine", "heading", "marker", "bullet", "ordered", "link", "code", "variable", "attribute",
                             "code_inline", "quote", "rule", "fence"):
                     ratio = theme.contrast_ratio(colors[key], background)
                     self.assertGreaterEqual(ratio, 4.5, f"{mode}/{scheme} {key}: {ratio:.2f}")

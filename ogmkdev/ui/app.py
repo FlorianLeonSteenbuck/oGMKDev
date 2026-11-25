@@ -38,7 +38,7 @@ from ..document import Document  # noqa: E402
 BREAKPOINT_CATEGORY = "ogmkdev-breakpoint"
 EXEC_TAG = "ogmkdev-exec"
 # Languages highlighted by our own tokenizers (see ogmkdev/highlight.py), not by GtkSourceView.
-OWN_HIGHLIGHT = frozenset({"ecmascript", "baredown", "sql"})
+OWN_HIGHLIGHT = frozenset({"ecmascript", "baredown", "sql", "php"})
 MENU_ORDER = ("File", "Edit", "View", "Run", "Debug", "Help")
 # menu, label, icon name, accelerator, method name, shown in toolbar
 ACTIONS = (

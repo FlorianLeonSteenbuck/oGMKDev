@@ -42,7 +42,7 @@ LANGUAGES: Dict[str, Language] = {
     lang.id: lang
     for lang in (
         Language("php", "PHP", ("php", "phtml", "php5"),
-                 ("7.4", "8.0", "8.1", "8.2", "8.3", "8.4"), "8.4", "php"),
+                 ("7.4", "8.0", "8.1", "8.2", "8.3", "8.4", "8.5", "8.6"), "8.6", "php"),
         # Python 2 and 3 share the grammar; the dialect selects the interpreter family.
         Language("python", "Python", ("py", "pyw", "pyi"), ("2", "3"), "3", "python3"),
         Language("pypy", "PyPy", (), ("2", "3"), "3", "python3"),

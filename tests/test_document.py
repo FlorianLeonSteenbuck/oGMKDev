@@ -20,7 +20,7 @@ class DocumentTests(unittest.TestCase):
             doc.save(target)
             self.assertEqual(doc.path, target)
             self.assertEqual(doc.detection.dialect, "postgresql")
-            self.assertEqual([d.code for d in doc.diagnostics], ["not_supported"])
+            self.assertEqual([d.code for d in doc.diagnostics], ["sql-not_supported"])
             with open(target, encoding="utf-8") as h:
                 self.assertEqual(h.read(), "CREATE TABLE t (i INT) ENGINE=InnoDB;\n")
 

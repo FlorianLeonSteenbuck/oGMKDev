@@ -23,9 +23,9 @@ class DiagnosticsTests(unittest.TestCase):
     def test_sql_engine_checks_follow_dialect(self):
         text = "CREATE TABLE t (id INT) ENGINE=Btrfs;\nCREATE TABLE u (id INT) ENGINE=InnoDB;\n"
         mysql = D.analyze(text, Detection("sql", "mysql", None, "compound"))
-        self.assertEqual([d.code for d in mysql], ["unknown_engine"])
+        self.assertEqual([d.code for d in mysql], ["sql-unknown_engine"])
         pg = D.analyze(text, Detection("sql", "postgresql", None, "compound"))
-        self.assertEqual([d.code for d in pg], ["not_supported"])
+        self.assertEqual([d.code for d in pg], ["sql-not_supported"])
         self.assertIn("InnoDB", "".join(d.message for d in pg))
 
     def test_summary(self):
