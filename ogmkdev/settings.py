@@ -82,6 +82,15 @@ SCHEMA: Tuple[Setting, ...] = (
             "choice", "warning", SEVERITIES),
     Setting("ogmkdev_diagnostic_sql_not_supported", "ENGINE on a dialect without it", "Diagnostics",
             "choice", "warning", SEVERITIES),
+    Setting("ogmkdev_markup_inspection", "XML and HTML inspection: structure, selectors, id and file references "
+            "(never in PHP files)", "Languages", "choice", "on", ("on", "off")),
+    Setting("ogmkdev_diagnostic_json_syntax", "JSON syntax errors", "Diagnostics", "choice", "error", SEVERITIES),
+    Setting("ogmkdev_diagnostic_xml_syntax", "XML and SVG well-formedness", "Diagnostics", "choice", "error",
+            SEVERITIES),
+    Setting("ogmkdev_diagnostic_duplicate_id", "Duplicate id values in XML, SVG and HTML", "Diagnostics",
+            "choice", "warning", SEVERITIES),
+    Setting("ogmkdev_diagnostic_css_braces", "Unbalanced braces in CSS, SCSS and LESS", "Diagnostics",
+            "choice", "error", SEVERITIES),
 )
 SETTINGS_BY_KEY: Dict[str, Setting] = {s.key: s for s in SCHEMA}
 

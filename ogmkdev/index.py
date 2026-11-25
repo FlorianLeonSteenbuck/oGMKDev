@@ -20,14 +20,14 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from . import diagnostics, editorconfig, languages, organize
+from . import diagnostics, editorconfig, languages, markup, organize
 from .lexers import php_lexer
 
 SKIP_DIRS = frozenset({".git", "__pycache__", "node_modules"})
 PHP_EXTENSIONS = frozenset({".php", ".phtml"})
 PYTHON_EXTENSIONS = frozenset({".py"})
 SCRIPT_EXTENSIONS = frozenset({".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"})
-INDEXED = PHP_EXTENSIONS | PYTHON_EXTENSIONS | SCRIPT_EXTENSIONS
+INDEXED = PHP_EXTENSIONS | PYTHON_EXTENSIONS | SCRIPT_EXTENSIONS | markup.MARKUP_EXTENSIONS
 
 
 @dataclass(frozen=True)
@@ -265,7 +265,15 @@ def extract(path: str, source: str) -> List[Symbol]:
         return _extract_python(source, path)
     if extension in SCRIPT_EXTENSIONS:
         return _extract_script(source, path)
+    if extension in markup.MARKUP_EXTENSIONS:
+        return _extract_markup(source, path)
     return []
+
+
+def _extract_markup(source: str, path: str) -> List[Symbol]:
+    """The id attributes of XML, SVG and HTML documents: each id is a declaration named by its value."""
+    return [Symbol(name=name, kind="id", file=path, line=line, column=column)
+            for name, line, column, _tag in markup.id_positions(source) if name]
 
 
 # ----------------------------------------------------------------------- index

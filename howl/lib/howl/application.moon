@@ -156,6 +156,10 @@ class Application extends PropertyObject
       editor = @editor
       if editor and line and line > 0 and editor.buffer.file == File(path)
         editor\reveal_line line
+        -- the column of a definition or a search hit (1-based, clamped to the line)
+        if column and column > 0
+          text_line = editor.buffer.lines[line]
+          editor.cursor.column = math.min column, text_line.size + 1 if text_line
     -- runs a Howl command, e.g. "save" (src/embed.c howl_command)
     _G.HOWL_EMBED_COMMAND = (name) -> howl.timer.asap -> howl.command.run name
     -- "path<TAB>line:column<TAB>mode<TAB>modified" of the editor that has the focus (src/embed.c howl_status)
@@ -199,7 +203,10 @@ class Application extends PropertyObject
 
     -- Ctrl+click in an editor leaves the word there for the frame (src/embed.c howl_take_click)
     pending_click = nil
-    howl.signal.connect 'editor-ctrl-click', (args) -> pending_click = args.word
+    -- the word, the column (1-based, 0 when unknown) and the text of the line, tab separated
+    howl.signal.connect 'editor-ctrl-click', (args) ->
+      text = (args.line_text or '')\gsub('[\t\n]', ' ')
+      pending_click = "#{args.word}\t#{args.column or 0}\t#{text}"
     _G.HOWL_EMBED_TAKE_CLICK = ->
       word = pending_click or ''
       pending_click = nil

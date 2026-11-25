@@ -7,6 +7,9 @@ Checks and their default severities:
   library functions and classes (``php-function``, ``php-class``, warning);
 * ECMAScript lexical and syntax errors (``js-lexical``, ``js-syntax``, error);
 * BareDown unclosed code blocks (``baredown-fence``, warning);
+* JSON syntax (``json-syntax``, error); XML well-formedness for XML and SVG (``xml-syntax``, error);
+  duplicate ``id`` values in XML, SVG and HTML (``duplicate-id``, warning); unbalanced braces in CSS,
+  SCSS and LESS (``css-braces``, error);
 * SQL ``ENGINE`` checks (``sql-unknown_engine`` warning, ``sql-not_supported`` warning).
 
 Severities are configurable per check in EditorConfig: ``ogmkdev_diagnostic_<code>`` with the
@@ -21,7 +24,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import Dict, List, Optional
 
-from . import baredown, heredoc, php_features, sql
+from . import baredown, heredoc, markup, php_features, sql
 from .editorconfig import EditorSettings
 from .languages import Detection
 from .lexers import ecmascript_lexer
@@ -88,6 +91,19 @@ def analyze(text: str, detection: Detection, settings: Optional[EditorSettings] 
                 jsparser.parse(text)
             except jsparser.ParseError as error:
                 found.append(Diagnostic(error.line, error.column, "error", "js-syntax", error.message))
+    if detection.template is None:  # templated files (Mustache, Twig) are not checked as plain markup
+        if detection.language == "json":
+            for line, column, message in markup.json_problems(text):
+                found.append(Diagnostic(line, column, "error", "json-syntax", message))
+        if detection.language in ("xml", "svg"):
+            for line, column, message in markup.xml_problems(text):
+                found.append(Diagnostic(line, column, "error", "xml-syntax", message))
+        if detection.language in ("xml", "svg", "html"):
+            for line, column, message in markup.duplicate_id_problems(text):
+                found.append(Diagnostic(line, column, "warning", "duplicate-id", message))
+        if detection.language in ("css", "scss", "less"):
+            for line, column, message in markup.braces_problems(text, line_comments=detection.language != "css"):
+                found.append(Diagnostic(line, column, "error", "css-braces", message))
     if detection.language == "baredown":
         for line, message in baredown.problems(text):
             found.append(Diagnostic(line, 1, "warning", "baredown-fence", message))

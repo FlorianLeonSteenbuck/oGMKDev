@@ -960,7 +960,8 @@ class Editor extends PropertyObject
       pos = @_pos_from_coordinates(event.x, event.y)
       word = pos and @_word_at(pos)
       if word
-        signal.emit 'editor-ctrl-click', editor: self, word: word
+        line = @buffer.lines\at_pos pos
+        signal.emit 'editor-ctrl-click', {editor: self, :word, line_text: line.text, column: pos - line.start_pos + 1}
         return true
 
     if event.button == 1

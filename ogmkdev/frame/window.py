@@ -11,6 +11,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
+from ogmkdev import markup  # noqa: E402
 from ogmkdev.settings import SettingsStore  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from . import theme  # noqa: E402
@@ -21,6 +22,7 @@ from .panels import PanelsMixin  # noqa: E402
 from .tabs import TabsMixin  # noqa: E402
 from .tools import ToolsMixin  # noqa: E402
 from .analysis import AnalysisMixin  # noqa: E402
+from .structure import StructureMixin  # noqa: E402
 
 HIDDEN_NAMES = {".git", "node_modules", "__pycache__"}
 LOOSE_LABEL = "Loose files"  # the tree entry for open files the tree does not show
@@ -65,7 +67,7 @@ def install_frame_css(mode: str, scheme: str) -> None:
     _frame_provider.load_from_string(theme.frame_css(mode, scheme))
 
 
-class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
+class Frame(AnalysisMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
     _edge_key: Optional[tuple] = None
     _loose_root = None  # the tree entry 'Loose files' (a Gtk.TreeIter) while it exists
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
@@ -82,6 +84,7 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         self.set_default_size(1500, 900)
         self._install_actions()
         self._install_context_menu()
+        self._install_xml_menu()
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_child(root)
@@ -139,6 +142,7 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
     def build_left_tabs(self) -> None:
         self._build_run()
         self._build_hierarchy()
+        self._build_structure()
         self._build_history()
         self._build_git()
 
@@ -243,7 +247,10 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         click.connect("pressed", self._on_context_pressed)
         self.area.root.add_controller(click)
 
-    def _on_context_pressed(self, _gesture, _n_press, x, y) -> None:
+    def _on_context_pressed(self, gesture, _n_press, x, y) -> None:
+        if gesture.get_current_event_state() & Gdk.ModifierType.CONTROL_MASK:
+            self.show_xml_menu(x, y)  # Ctrl+right-click: the element menu of XML, SVG and HTML
+            return
         rect = Gdk.Rectangle()
         rect.x, rect.y, rect.width, rect.height = int(x), int(y), 1, 1
         self._context_popover.set_pointing_to(rect)
@@ -467,10 +474,29 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         self.track_history(path)
         self._follow_focus(path)
         self._sync_loose()
-        word = self.editors.take_click()
-        if word:
-            self._go_to_word(word)
+        self._follow_structure(path)
+        click = self.editors.take_click()
+        if click:
+            self._follow_click(*click)
         return True
+
+    def _follow_click(self, word: str, column: int, line: str) -> None:
+        """Ctrl+click: a file reference (href, src, url(...)) opens its file; anything else goes to the
+        definition of the word."""
+        value = markup.reference_at(line, column) if column and self._markup_enabled(self.area.current_path()) \
+            else None
+        if value and not value.startswith("#") and "://" not in value and not value.startswith("mailto:"):
+            target = value.split("#", 1)[0].split("?", 1)[0]
+            current = self.area.current_path()
+            base = os.path.dirname(current) if current else self.folder
+            path = os.path.normpath(os.path.join(base, target))
+            if os.path.isfile(path):
+                self.open_file(path)
+                self.set_status(f"opened the reference {value}")
+            else:
+                self.set_status(f"the reference {value} is not a file next to this one")
+            return
+        self._go_to_word(word)
 
     def _follow_focus(self, path: Optional[str]) -> None:
         """The edge line of the editors of a file: the column of its EditorConfig max_line_length."""
@@ -481,12 +507,18 @@ class Frame(AnalysisMixin, ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWi
         self.editors.set_edge(path, self._settings_for(path).max_line_length or EDGE_COLUMN_DEFAULT)
 
     def _go_to_word(self, word: str) -> None:
-        """Ctrl+click in the Howl editor: the definition of the word."""
+        """Ctrl+click in the Howl editor: the definition of the word. The ids of XML, SVG and HTML documents
+        are definitions only where the inspection applies (not in PHP files)."""
         self._ensure_index()
-        if not self.index.definitions(word):
+        here = self._markup_enabled(self.area.current_path())
+        symbols = [s for s in self.index.definitions(word) if s.kind != "id" or here]
+        if not symbols:
             self.set_status(f"no definition of {word} in the folder")
             return
-        self._definitions_of(word)
+        if len(symbols) == 1:
+            self.open_file(symbols[0].file, symbols[0].line, symbols[0].column or 1)
+        else:
+            self._show_symbols(f"definition(s) of {word}", symbols)
 
     # ---------------------------------------------------- menu actions
 

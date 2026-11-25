@@ -4,7 +4,7 @@
 mode_reg =
   name: 'css'
   aliases: 'scss'
-  extensions: {'css', 'scss'}
+  extensions: {'css', 'scss', 'sass', 'less'}
   create: -> bundle_load('css_mode')!
   parent: 'curly_mode'
 

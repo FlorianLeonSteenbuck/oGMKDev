@@ -370,7 +370,7 @@ common_auto_pairs = {
     }
 
   xml:
-    extensions: { 'dtd', 'svg', 'xml', 'xsd', 'xsl', 'xslt', 'xul' }
+    extensions: { 'dtd', 'iml', 'svg', 'xml', 'xsd', 'xsl', 'xslt', 'xul' }
     comment_syntax: { '<!--', '-->' }
     auto_pairs: {
         '(': ')'

@@ -87,12 +87,17 @@ class Editors:
                  for line, start, end, kind, message in rows]
         return self._lib.howl_inspect(os.path.abspath(path).encode(), "\n".join(lines).encode("utf-8")) == 0
 
-    def take_click(self) -> Optional[str]:
-        """The word of the last Ctrl+click in a Howl editor, taken once (None if there was none)."""
-        buffer = ctypes.create_string_buffer(512)
+    def take_click(self):
+        """The last Ctrl+click in a Howl editor, taken once: (word, column, line text), or None."""
+        buffer = ctypes.create_string_buffer(8192)
         if self._lib.howl_take_click(buffer, len(buffer)) != 0:
             return None
-        return buffer.value.decode("utf-8", "replace") or None
+        text = buffer.value.decode("utf-8", "replace")
+        word, _, rest = text.partition("\t")
+        column, _, line = rest.partition("\t")
+        if not word:
+            return None
+        return word, int(column) if column.isdigit() else 0, line
 
     def set_edge(self, path: str, column: int) -> bool:
         """The edge line at ``column`` in the editors that show ``path`` (0 for none)."""
