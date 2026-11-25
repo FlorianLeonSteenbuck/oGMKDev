@@ -37,7 +37,7 @@ class ConfigValue
   -- represents value at a specific scope and layer for a configuration value
   new: (@def, @config_proxy, @scope_alias, @description) =>
     -- The scope_alias is an optional short name for the scope and layer,
-    -- to be displayed. E.g. for a project it could be 'project'.
+    -- to be displayed.
     -- When not provided, the displayed text is the full scope followed by the
     -- layer in square brackets.
     -- The config_proxy is an instance of config.proxy
@@ -127,19 +127,6 @@ configuration_values = (def, buffer) ->
   append items, ConfigValue(
     def, layer_config, "global[#{mode_layer}]",
     "For all buffers with mode #{mode_name}")
-
-  if buffer.file
-    -- include project scopes, when within a project
-    project = howl.Project.for_file buffer.file
-    if project
-      append items, ConfigValue(
-        def, project.config, 'project',
-        "For all files under #{project.root.short_path}")
-
-      project_layer_config = project.config.for_layer(mode_layer)
-      append items, ConfigValue(
-        def, project_layer_config, "project[#{mode_layer}]",
-        "For all files under #{project.root.short_path} with mode #{mode_name}", options)
 
   append items, ConfigValue(
     def, buffer.config, 'buffer',

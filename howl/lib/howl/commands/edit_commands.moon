@@ -145,146 +145,16 @@ command.register
   input: interact.select_clipboard_item
   handler: (clip) -> app.editor\paste :clip
 
-command.register
-  name: 'show-doc-at-cursor',
-  description: 'Show documentation for symbol at cursor, if available'
-  handler: ->
-    ctx = app.editor.current_context
-    buffer = app.editor.buffer
-    m = buffer\mode_at ctx.pos
-    doc_buf = require('howl.lsp.hover').doc_for buffer, ctx.pos
-    -- the server's response might arrive after switching to another buffer
-    return if app.editor.buffer != buffer
-
-    if not doc_buf and m.show_doc
-      doc_buf = m\show_doc app.editor, ctx
-    else if not doc_buf and m.api and m.resolve_type
-      node = m.api
-      path, parts = m\resolve_type ctx
-
-      if path
-        node = node[k] for k in *parts when node
-
-      node = node[ctx.word.text] if node
-
-      if node and node.description
-        doc_buf = ActionBuffer!
-        doc_buf\append markup.markdown(node.description)
-
-    if doc_buf
-      app.editor\show_popup BufferPopup doc_buf, scrollable: true, css_class: 'action-popup'
-    else
-     log.info "No documentation found for '#{ctx.word}'"
 
 -- goes to the language server's locations from method for the symbol at the
 -- cursor, letting you pick one if there are several, or calls fallback without
 -- a language server's answer
-goto_locations = (method, title, fallback) ->
-  editor = app.editor
-  buffer = editor.buffer
-  locations = require('howl.lsp.definition').locations_for buffer, editor.cursor.pos, method
-  -- the server's response might arrive after switching to another buffer
-  return if app.editor.buffer != buffer
 
-  unless locations
-    fallback!
-    return
 
-  loc = if #locations == 1
-    locations[1]
-  else
-    interact.select_location
-      title: "#{title} of '#{editor.current_context.word}'"
-      items: locations
 
-  app\open loc if loc
 
-command.register
-  name: 'goto-definition',
-  description: 'Go to the definition of the symbol at cursor'
-  handler: ->
-    goto_locations 'definition', 'Definitions', ->
-      log.info "No definition found for '#{app.editor.current_context.word}'"
 
-command.register
-  name: 'goto-declaration',
-  description: 'Go to the declaration of the symbol at cursor'
-  handler: ->
-    goto_locations 'declaration', 'Declarations', -> command.run 'goto-definition'
 
-command.register
-  name: 'goto-type-definition',
-  description: 'Go to the definition of the type of the symbol at cursor'
-  handler: ->
-    goto_locations 'typeDefinition', 'Type definitions', ->
-      log.info "No type definition found for '#{app.editor.current_context.word}'"
-
-command.register
-  name: 'goto-implementation',
-  description: 'Go to an implementation of the symbol at cursor'
-  handler: ->
-    goto_locations 'implementation', 'Implementations', ->
-      log.info "No implementation found for '#{app.editor.current_context.word}'"
-
-command.register
-  name: 'goto-reference',
-  description: 'Go to a reference to the symbol at cursor'
-  handler: ->
-    editor = app.editor
-    buffer = editor.buffer
-    locations, at_cursor = require('howl.lsp.references').locations_for buffer, editor.cursor.pos
-    -- the server's response might arrive after switching to another buffer
-    return if app.editor.buffer != buffer
-
-    -- without a language server's answer, search the project for the word
-    unless locations
-      log.info "No reference found for '#{editor.current_context.word}'"
-      return
-
-    loc = interact.select_location
-      title: "#{#locations} references to '#{editor.current_context.word}'"
-      items: locations
-      selection: at_cursor
-
-    app\open loc if loc
-
-command.register
-  name: 'rename-symbol',
-  description: 'Rename the symbol at cursor, using the language server'
-  handler: ->
-    editor = app.editor
-    buffer = editor.buffer
-    pos = editor.cursor.pos
-    rename = require 'howl.lsp.rename'
-    name, err = rename.prepare buffer, pos
-    -- the server's response might arrive after switching to another buffer
-    return if app.editor.buffer != buffer
-    unless name
-      log.warn err
-      return
-
-    new_name = require('howl.lsp.rename_view').read_name
-      title: "Rename '#{name}'"
-      text: name
-      load: -> rename.preview_locations buffer, pos, name
-    return if not new_name or new_name.is_blank or new_name == name
-
-    -- the edits would otherwise move the cursor to the end of the new name
-    {:line, :column} = editor.cursor
-    result, err = rename.rename buffer, pos, new_name
-    unless result
-      log.warn "Could not rename '#{name}': #{err}"
-      return
-
-    editor.cursor\move_to :line, :column if editor.buffer == buffer
-
-    nr_files = #result.buffers + #result.written
-    files = nr_files == 1 and '1 file' or "#{nr_files} files"
-    msg = "Renamed '#{name}' to '#{new_name}' in #{files}"
-    nr_unsaved = #result.buffers - #result.saved
-    if nr_unsaved > 0
-      msg ..= " (#{nr_unsaved} with other changes left unsaved)"
-    log.info msg
 
 -- the targets offered by `goto`, with the server capability each needs. The
 -- icons are named after the commands.
@@ -302,37 +172,6 @@ icon.define_default 'goto-type-definition', 'nerd-cod-symbol-class'
 icon.define_default 'goto-implementation', 'nerd-cod-type-hierarchy-sub'
 icon.define_default 'goto-reference', 'nerd-cod-references'
 
-command.register
-  name: 'goto',
-  description: 'Choose where to go for the symbol at cursor'
-  handler: ->
-    editor = app.editor
-    buffer = editor.buffer
-    state = require('howl.lsp').attach buffer
-    unless state
-      log.warn "No LSP server available for '#{buffer.title}'"
-      return
-
-    if editor.current_context.word.empty
-      log.warn 'Please position the cursor on a symbol'
-      return
-
-    -- a server that's still starting hasn't told us what it supports yet
-    client = state.client
-    items = for t in *goto_targets
-      continue if client.initialized and not client.capabilities[t.provider]
-      { t.label, icon: t.cmd, cmd: t.cmd }
-
-    if #items == 0
-      log.warn "The LSP server for '#{buffer.title}' supports no goto requests"
-      return
-
-    -- the command runs once the menu has closed, as it may open the command panel
-    run_target = (item) ->
-      timer.asap -> command.run item.cmd
-      true
-
-    editor\show_popup MenuPopup items, run_target, css_class: 'action-popup'
 
 command.register
   name: 'buffer-mode',

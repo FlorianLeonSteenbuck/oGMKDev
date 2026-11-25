@@ -1,21 +1,9 @@
 -- Copyright 2012-2015 The Howl Developers
 -- License: MIT (see LICENSE.md at the top-level directory of the distribution)
 
-{:app, :command, :mode, :interact, :Buffer, :Project} = howl
+{:app, :command, :mode, :interact, :Buffer} = howl
 {:File} = howl.io
 
-with_vc = (f) ->
-  buffer = app.editor.buffer
-  unless buffer.file
-    log.error "No file associated with buffer '#{buffer}'"
-    return
-
-  project = Project.for_file buffer.file
-  unless project and project.vc
-    log.error "No VC found for buffer '#{buffer}'"
-    return
-
-  f project.vc, buffer, project
 
 show_diff_buffer = (title, contents) ->
   buffer = Buffer mode.by_name 'diff'
@@ -142,27 +130,7 @@ command.register
 
 command.alias 'buffer-close', 'close'
 
-command.register
-  name: 'vc-diff-file',
-  description: 'Show a diff against the VC for the current file'
-  handler: ->
-    with_vc (vc, buffer) ->
-      diff = vc\diff buffer.file
-      if diff
-        show_diff_buffer "[#{vc.name}] #{buffer.file.basename}", diff
-      else
-        log.info "VC: No differences found for #{buffer.file.basename}"
 
-command.register
-  name: 'vc-diff',
-  description: 'Show a diff against the VC for the current project'
-  handler: ->
-    with_vc (vc, buffer, project) ->
-      diff = vc\diff!
-      if diff
-        show_diff_buffer "[#{vc.name}]: #{vc.root}", diff
-      else
-        log.info "VC: No differences found for #{project.root}"
 
 command.register
   name: 'diff-buffer-against-saved',

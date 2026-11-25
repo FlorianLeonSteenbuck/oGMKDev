@@ -26,18 +26,9 @@ def _table(headings) -> tuple:
 
 
 class TabsMixin:
-    """Window methods for the tabs; uses ``left``, ``bottom``, ``project_dir``, ``log``, ``set_status``."""
+    """Window methods for the tabs; uses ``left``, ``bottom``, ``folder``, ``log``, ``set_status``."""
 
     # ------------------------------------------------------------- tabs
-
-    def build_left_tabs(self) -> None:
-        self._build_run()
-
-    def build_bottom_tabs(self) -> None:
-        self.problems_store, self.problems_view = _table(("Severity", "Message", "Where"))
-        self.bottom.append_page(_scrolled(self.problems_view), Gtk.Label(label="Problems"))
-        self.search_store, self.search_view = _table(("Where", "Text"))
-        self.bottom.append_page(_scrolled(self.search_view), Gtk.Label(label="Search"))
 
     # -------------------------------------------------------------- Run
 
@@ -63,7 +54,7 @@ class TabsMixin:
     def refresh_run(self) -> None:
         self.run_store.clear()
         try:
-            configs = runconfig.discover(self.project_dir)
+            configs = runconfig.discover(self.folder)
         except OSError as error:
             self.set_status(f"run configurations: {error}")
             return
@@ -87,7 +78,7 @@ class TabsMixin:
             self.set_status("a process is still running (Run > Stop Process)")
             return
         try:
-            spec = config.to_process(self.project_dir)
+            spec = config.to_process(self.folder)
         except runconfig.RunConfigError as error:
             self.set_status(str(error))
             return

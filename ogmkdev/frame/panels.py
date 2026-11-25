@@ -192,7 +192,7 @@ class PanelsMixin:
         self.bottom.append_page(self.todo_box, Gtk.Label(label="TODO"))
 
     def _keywords(self) -> list:
-        store = SettingsStore(self.project_dir)
+        store = SettingsStore(self.folder)
         return todos.parse_keywords(store.value("ogmkdev_todo_keywords") or settings_module.SETTINGS_BY_KEY[
             "ogmkdev_todo_keywords"].default)
 
@@ -201,7 +201,7 @@ class PanelsMixin:
         found = todos.todos_in_files(workspace_files(self.workspace), keywords)
         self.todo_store.clear()
         for todo in found:
-            where = f"{os.path.relpath(todo.path, self.project_dir)}:{todo.line}"
+            where = f"{os.path.relpath(todo.path, self.folder)}:{todo.line}"
             self.todo_store.append([f"P{todo.priority}", todo.keyword, where, todo.text, todo])
         self.set_status(f"{len(found)} TODO(s) in comments")
 
@@ -220,7 +220,7 @@ class PanelsMixin:
     def _search_candidates(self) -> list:
         candidates = []
         for path in workspace_files(self.workspace):
-            candidates.append(search.Candidate("file", os.path.relpath(path, self.project_dir),
+            candidates.append(search.Candidate("file", os.path.relpath(path, self.folder),
                                                self.workspace.kind(path), ("file", path)))
         for _title, entries in MENUS:
             for label, _name, accelerator, method in entries:

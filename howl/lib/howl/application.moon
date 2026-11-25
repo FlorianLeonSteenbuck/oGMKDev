@@ -154,13 +154,33 @@ class Application extends PropertyObject
       @open loc, (@editor)
     -- runs a Howl command, e.g. "save" (src/embed.c howl_command)
     _G.HOWL_EMBED_COMMAND = (name) -> howl.timer.asap -> howl.command.run name
+    -- "path<TAB>line:column<TAB>mode<TAB>modified" of the editor that has the focus (src/embed.c howl_status)
+    -- registers a Howl theme file under a name and selects it (src/embed.c howl_theme)
+    _G.HOWL_EMBED_THEME = (name, path) ->
+      howl.ui.theme.register name, File(path)
+      howl.config.theme = name
+
+    _G.HOWL_EMBED_STATUS = ->
+      editor = @editor
+      buffer = editor and editor.buffer
+      return '' unless buffer
+      path = buffer.file and buffer.file.path or buffer.title
+      mode_name = buffer.mode and buffer.mode.name or ''
+      state = buffer.modified and 'modified' or 'saved'
+      "#{path}\t#{editor.cursor.line}:#{editor.cursor.column}\t#{mode_name}\t#{state}"
     @window
 
   -- one more window with its own editor, its content moved into `container`
   embed_window: (container, file) =>
     window = @new_window!
-    editor = @new_editor window: window
-    @open_file File(file), editor if file and file != ''
+    buffer = nil
+    if file and file != ''
+      path = File file
+      buffer = @_buffer_for_file path
+      unless buffer
+        buffer = @new_buffer mode.for_file path
+        buffer.file = path
+    editor = @new_editor window: window, buffer: buffer
     @_move_content window, container
 
   _move_content: (window, container) =>
@@ -657,8 +677,6 @@ class Application extends PropertyObject
     require 'howl.ui.icons.nerd_fonts'
     require 'howl.completion.in_buffer_completer'
     require 'howl.completion.api_completer'
-    require 'howl.lsp.completer'
-    require 'howl.lsp.document_highlight'
     require 'howl.interactions.basic'
     require 'howl.interactions.buffer_selection'
     require 'howl.interactions.buffer_search'
@@ -729,8 +747,6 @@ signal.register 'file-opened',
     buffer: 'The buffer that the file was opened into'
     file: 'The file that was opened'
 
--- finding the project of an opened file loads the project's configuration
-signal.connect 'file-opened', (args) -> howl.Project.for_file args.file
 
 signal.register 'buffer-closed',
   description: 'Signaled right after a buffer was closed',

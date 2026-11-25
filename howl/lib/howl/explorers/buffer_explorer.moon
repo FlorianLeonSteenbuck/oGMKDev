@@ -1,7 +1,7 @@
 -- Copyright 2019 The Howl Developers
 -- License: MIT (see LICENSE.md at the top-level directory of the distribution)
 
-{:app, :config, :Project} = howl
+{:app, :config} = howl
 {:File} = howl.io
 {:icon} = howl.ui
 {:buffer_status_icon} = howl.ui.buffer_icon
@@ -31,11 +31,6 @@ make_title = (buffer, opts={}) ->
         parent = parent.parent
       else
         break
-
-  if opts.project
-    project = Project.for_file file
-    if project
-      title = "#{title} [#{project.root.basename}]"
 
   return title
 
@@ -102,11 +97,9 @@ class BufferExplorer
       continue if #buffer_group == 1
 
       options_list = {
-        { project: true }
-        { project: false, parents: 1 }
-        { project: true, parents: 1 }
-        { project: false, parents: 2 }
-        { project: true, parents: 2 }
+        { parents: 0 }
+        { parents: 1 }
+        { parents: 2 }
       }
 
       titles = nil

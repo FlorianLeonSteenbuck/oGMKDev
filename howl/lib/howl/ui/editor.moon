@@ -152,6 +152,8 @@ class Editor extends PropertyObject
     @completion_popup = CompletionPopup self
 
     @header = IndicatorBar 'header'
+    -- ogmkdev: the editor shows no title bar (the frame's tabs show the file name)
+    @header.box.visible = false
     @footer = IndicatorBar 'footer'
     content_box = ContentBox 'editor', @view\to_gobject!, {
       header: @header\to_gobject!,

@@ -2,7 +2,6 @@
 -- License: MIT (see LICENSE.md at the top-level directory of the distribution)
 
 import command, mode, interact from howl
-bundle_load 'nrepl_port_input'
 nrepl = bundle_load 'nrepl'
 parser = bundle_load 'clojure_parser'
 
@@ -14,7 +13,6 @@ register_mode = ->
     parent: 'lisp'
 
   mode.register mode_reg
-  howl.lsp.register_server name: 'clojure-lsp', command: 'clojure-lsp', modes: 'clojure'
 
 register_commands = ->
 
@@ -42,7 +40,6 @@ register_commands!
 
 unload = ->
   mode.unregister 'clojure'
-  howl.lsp.unregister_server 'clojure-lsp'
   command.unregister 'nrepl-connect'
   command.unregister 'nrepl-eval'
 

@@ -1,26 +1,11 @@
 -- Copyright 2012-2015 The Howl Developers
 -- License: MIT (see LICENSE.md at the top-level directory of the distribution)
 
-{:app, :activities, :breadcrumbs, :Buffer, :command, :config, :bindings, :bundle, :interact, :signal, :mode, :Project} = howl
+{:app, :activities, :breadcrumbs, :Buffer, :command, :config, :bindings, :bundle, :interact, :signal, :mode} = howl
 {:ActionBuffer, :JournalBuffer, :ProcessBuffer, :ProcessListBuffer, :BufferPopup, :StyledText} = howl.ui
 {:Process} = howl.io
 
 serpent = require 'serpent'
-
-get_project_root = ->
-  buffer = app.editor and app.editor.buffer
-  file = buffer.file or buffer.directory
-  error "No file associated with the current view" unless file
-  project = Project.get_for_file file
-  error "No project associated with #{file}" unless project
-  return project.root
-
-belongs_to_project = (buffer, project_root) ->
-  file = buffer.file or buffer.directory
-  return false unless file
-  project = Project.for_file file
-  return false unless project
-  return project.root == project_root
 
 get_buffer_dir = (buffer) ->
   return unless buffer
@@ -364,9 +349,9 @@ command.register
     to_item = (crumb, i) ->
       {:buffer_marker, :file} = crumb
       buffer = buffer_marker and buffer_marker.buffer
-      project = file and Project.for_file(file)
-      where = if project
-        file\relative_to_parent(project.root)
+      folder = file and file.parent
+      where = if folder
+        file\relative_to_parent(folder)
       elseif file
           file.path
       else
@@ -375,7 +360,7 @@ command.register
       pos = breadcrumbs.crumb_pos crumb
       {
         i,
-        project and project.root.basename or ''
+        folder and folder.basename or ''
         "#{where}@#{pos}"
         :buffer, :file, :pos
       }
@@ -395,7 +380,7 @@ command.register
       selection: items[breadcrumbs.location] or items[breadcrumbs.location - 1]
       columns: {
         { header: 'Position', style: 'number' },
-        { header: 'Project', style: 'key' },
+        { header: 'Folder', style: 'key' },
         { header: 'Path', style: 'string' }
       }
 
@@ -537,16 +522,6 @@ launch_cmd = (working_directory, cmd, env) ->
   editor.cursor\eof!
   buffer\pump!
 
-get_project = ->
-  buffer = app.editor and app.editor.buffer
-  file = buffer.file or buffer.directory
-  error "No file associated with the current view" unless file
-  project = Project.get_for_file file
-  error "No project associated with #{file}" unless project
-  return project
-
-
-
 command.register
   name: 'exec',
   description: 'Run an external command'
@@ -562,12 +537,6 @@ command.register
   handler: ->
     config.save_config!
     log.info 'Configuration saved'
-
-config.define
-  name: 'project_build_command'
-  description: 'The command to execute when project-build is run'
-  default: 'make'
-  type_of: 'string'
 
 -----------------------------------------------------------------------
 -- File search commands
@@ -712,7 +681,7 @@ get_search_params = (opts) ->
   directory, search, whole_word
 
 -- Common input handler for search commands displaying results
--- in a pop-up panel. E.g. project-file-search and folder-search
+-- in a pop-up panel. E.g. folder-search
 search_input = (opts) ->
   directory, search, whole_word = get_search_params opts
 
@@ -732,7 +701,7 @@ search_input = (opts) ->
       items: locations
 
 -- Common input handler for search commands displaying results
--- in a buffer. E.g. project-file-search-list and folder-search-list
+-- in a buffer. E.g. folder-search-list
 search_input_list = (opts) ->
   directory, search, whole_word = get_search_params opts
 

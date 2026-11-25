@@ -25,7 +25,8 @@ MENUS = (
         ("Split Right", "split-right", "", "split_right"),
         ("Close Pane", "close-pane", "", "close_active_pane"),
     )),
-    ("Project", (
+    ("Tools", (
+        ("Search in Files...", "search-in-files", "<Control><Shift>f", "focus_find"),
         ("Show Git Changes", "show-git", "<Control><Alt>g", "show_git"),
         ("Show TODOs", "show-todos", "<Control><Alt>t", "show_todos"),
     )),

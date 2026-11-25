@@ -22,13 +22,8 @@ mode_reg =
   shebangs: '[/ ]ruby.*$'
   create: -> bundle_load('ruby_mode')
 
-lsp_servers = {
-  { name: 'ruby-lsp', command: 'ruby-lsp', modes: 'ruby' },
-  { name: 'solargraph', command: 'solargraph stdio', modes: 'ruby' }
-}
 
 howl.mode.register mode_reg
-howl.lsp.register_server s for s in *lsp_servers
 howl.inspection.register {
   name: 'ruby',
   factory: (buffer) ->
@@ -37,7 +32,6 @@ howl.inspection.register {
 
 unload = ->
   howl.mode.unregister 'ruby'
-  howl.lsp.unregister_server s.name for s in *lsp_servers
   howl.inspection.unregister 'ruby'
 
 return {

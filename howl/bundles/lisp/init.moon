@@ -4,7 +4,6 @@ mode_reg =
     'cl', -- common lisp
     'el', -- emacs lisp
     'lisp',
-    'lsp',
     'hy', -- hylang
     'sch', -- scheme
     'scm',  -- scheme

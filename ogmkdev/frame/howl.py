@@ -32,6 +32,10 @@ class Editors:
         self._lib.howl_open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]
         self._lib.howl_command.restype = ctypes.c_int
         self._lib.howl_command.argtypes = [ctypes.c_char_p]
+        self._lib.howl_theme.restype = ctypes.c_int
+        self._lib.howl_theme.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self._lib.howl_status.restype = ctypes.c_int
+        self._lib.howl_status.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._root = root.encode()
         self.count = 0
 
@@ -50,3 +54,24 @@ class Editors:
     def command(self, name: str) -> bool:
         """Runs a Howl command ("save", "editor-undo", ...) in the editor that has the focus."""
         return self._lib.howl_command(name.encode()) == 0
+
+    def status(self) -> Optional[dict]:
+        """The focused Howl editor: path, line, column, mode and whether it is modified (None if none)."""
+        buffer = ctypes.create_string_buffer(4096)
+        if self._lib.howl_status(buffer, len(buffer)) != 0:
+            return None
+        fields = buffer.value.decode("utf-8", "replace").split("\t")
+        if len(fields) != 4 or not fields[0]:
+            return None
+        line, _, column = fields[1].partition(":")
+        return {
+            "path": fields[0],
+            "line": int(line) if line.isdigit() else 1,
+            "column": int(column) if column.isdigit() else 1,
+            "mode": fields[2],
+            "modified": fields[3] == "modified",
+        }
+
+    def theme(self, name: str, path: str) -> bool:
+        """Registers the Howl theme file ``path`` under ``name`` and selects it."""
+        return self._lib.howl_theme(name.encode(), os.path.abspath(path).encode()) == 0

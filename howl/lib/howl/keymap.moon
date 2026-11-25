@@ -65,7 +65,6 @@
     ctrl_x:            'editor-cut'
     ctrl_z:            'editor-undo'
     ctrl_Z:            'editor-redo'
-    ctrl_q:            'show-doc-at-cursor'
     ctrl_space:        'editor-complete'
     ctrl_slash:        'editor-toggle-comment'
 
@@ -77,8 +76,6 @@
 
     alt_s:             'buffer-structure'
     alt_q:             'editor-reflow-paragraph'
-    alt_period:        'goto-definition'
-    alt_comma:         'goto-reference'
 
     ctrl_left:         'cursor-word-left'
     ctrl_right:        'cursor-word-right-end'
@@ -148,7 +145,6 @@
         meta_shift_return: 'editor-newline-above'
         'meta_<':          'navigate-go-to'
 
-        ctrl_meta_d:       'show-doc-at-cursor'
 
         ctrl_shift_s:      'buffer-structure'
         ctrl_q:            'editor-reflow-paragraph'

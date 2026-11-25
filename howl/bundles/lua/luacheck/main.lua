@@ -198,7 +198,7 @@ Otherwise, the pattern matches warning code.]])
          parser:option("--default-config", ([[
 Path to configuration file to use if
 --[no-]config is not used and
-project-specific %s is not found.
+%s is not found.
 (default: %s)]]):format(config.default_path, default_global_path or "could not detect"))
             :default(default_global_path)
             :show_default(false),

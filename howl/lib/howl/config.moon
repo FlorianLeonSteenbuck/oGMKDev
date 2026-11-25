@@ -32,7 +32,7 @@ watchers = {}
 
 -- The global scope is saved as `system/config.json` in the settings
 -- directory. Other scopes are saved only once loaded with load_scope, such as
--- those of projects. This maps such a scope to its `file`, and the JSON it
+-- mode scopes. This maps such a scope to its `file`, and the JSON it
 -- `saved` or loaded, so that unchanged files aren't rewritten.
 scope_files = {}
 

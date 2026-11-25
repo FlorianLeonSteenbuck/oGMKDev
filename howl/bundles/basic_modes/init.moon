@@ -6,21 +6,6 @@ definitions = bundle_load 'mode_definitions'
 registered = {}
 
 -- language servers, registered along with their modes
-lsp_servers = {
-  bash: { name: 'bash-language-server', command: 'bash-language-server start', modes: 'bash' }
-  caml: { name: 'ocamllsp', command: 'ocamllsp', modes: 'caml' }
-  haskell: {
-    name: 'haskell-language-server'
-    command: 'haskell-language-server-wrapper --lsp'
-    modes: 'haskell'
-  }
-  java: { name: 'jdtls', command: 'jdtls', modes: 'java' }
-  json: {
-    name: 'vscode-json-language-server'
-    command: 'vscode-json-language-server --stdio'
-    modes: 'json'
-  }
-}
 
 create = (name) ->
   def = definitions[name]
@@ -45,13 +30,11 @@ register = ->
       mode_reg[k] = v for k, v in pairs properties
       mode.register mode_reg
       registered[name] = true
-      howl.lsp.register_server lsp_servers[name] if lsp_servers[name]
 
 unload = ->
   for name in pairs definitions
     if registered[name]
       howl.mode.unregister name
-      howl.lsp.unregister_server lsp_servers[name].name if lsp_servers[name]
 
 register!
 

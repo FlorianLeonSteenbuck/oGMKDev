@@ -7,11 +7,9 @@ mode_reg =
   create: -> bundle_load('terraform_mode')!
 
 howl.mode.register mode_reg
-howl.lsp.register_server name: 'terraform-ls', command: 'terraform-ls serve', modes: 'terraform'
 
 unload = ->
   howl.mode.unregister 'terraform'
-  howl.lsp.unregister_server 'terraform-ls'
 
 return {
   info:

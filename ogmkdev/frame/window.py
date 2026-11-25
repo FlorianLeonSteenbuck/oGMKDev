@@ -1,99 +1,143 @@
-"""The frame window (GTK 4): menu bar, tabs, workspace tree, Howl editors and the bottom panel."""
+"""The frame window (GTK 4): menu bar, toolbar, tabs, editor area with Howl editors, bottom panel,
+find field and status line."""
 
 from __future__ import annotations
 
 import os
-from typing import Sequence
+from typing import Optional, Sequence
 
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from ogmkdev.workspace import Workspace  # noqa: E402
+from . import theme  # noqa: E402
+from .editors import EditorArea  # noqa: E402
 from .howl import Editors  # noqa: E402
 from .menus import MENUS, PENDING  # noqa: E402
 from .panels import PanelsMixin  # noqa: E402
 from .tabs import TabsMixin  # noqa: E402
+from .tools import ToolsMixin  # noqa: E402
 
 HIDDEN_NAMES = {".git", "node_modules", "__pycache__"}
+ICON_THEME = "Humanity"
 
-# Howl's editor and the frame share the display; the frame sets its own colours with a higher priority.
-FRAME_CSS = """
-.ogmkdev-frame, .ogmkdev-frame menubar, .ogmkdev-frame menu, .ogmkdev-frame popover {
-  background-color: #f6f5f4;
-  color: #2e3436;
-}
-.ogmkdev-frame label, .ogmkdev-frame treeview, .ogmkdev-frame menuitem label,
-.ogmkdev-frame menubar > menuitem, .ogmkdev-frame textview text {
-  color: #2e3436;
-  background-color: transparent;
-}
-.ogmkdev-frame textview text { background-color: #ffffff; }
-.ogmkdev-frame treeview { background-color: #ffffff; }
-.ogmkdev-frame .ogmkdev-statusbar { background-color: #e8e6e3; padding: 3px 8px; }
-"""
-_css_installed = False
+# Toolbar: icon, tooltip, target (None for a separator)
+TOOLBAR = (
+    ("document-new", "New Editor", "add_editor"),
+    ("document-open", "Open", "open_dialog"),
+    ("document-save", "Save", "howl:save"),
+    None,
+    ("edit-undo", "Undo", "howl:editor-undo"),
+    ("edit-redo", "Redo", "howl:editor-redo"),
+    ("edit-find", "Find", "focus_find"),
+    None,
+    ("media-playback-start", "Run", "run_selected"),
+    ("system-run", "Run configurations", "show_run_tab"),
+    ("media-record", "Toggle breakpoint", "toggle_breakpoint"),
+    ("go-next", "Step over", "step_over"),
+    ("go-down", "Step into", "step_into"),
+    ("go-up", "Step out", "step_out"),
+    ("media-playback-stop", "Stop", "stop_process"),
+    None,
+    ("dialog-warning", "Inspect folder", "inspect_project"),
+)
 
-
-def install_frame_css() -> None:
-    global _css_installed
-    if _css_installed:
-        return
-    provider = Gtk.CssProvider()
-    provider.load_from_string(FRAME_CSS)
-    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
-                                              Gtk.STYLE_PROVIDER_PRIORITY_USER)
-    _css_installed = True
+_frame_provider: Optional[Gtk.CssProvider] = None
 
 
-class Frame(TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
-    def __init__(self, app: Gtk.Application, project_dir: str, files: Sequence[str] = ()) -> None:
-        install_frame_css()
+def install_frame_css(mode: str, scheme: str) -> None:
+    """The frame's colours from the palette of ``mode`` and ``scheme`` (ogmkdev/theme.py)."""
+    global _frame_provider
+    display = Gdk.Display.get_default()
+    if _frame_provider is None:
+        _frame_provider = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(display, _frame_provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+        Gtk.Settings.get_for_display(display).set_property("gtk-icon-theme-name", ICON_THEME)
+    _frame_provider.load_from_string(theme.frame_css(mode, scheme))
+
+
+class Frame(ToolsMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
+    def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
+                 mode: str = "light", scheme: str = "blend") -> None:
+        self.mode, self.scheme = mode, scheme
+        install_frame_css(mode, scheme)
         super().__init__(application=app, title="oGMKDev")
         self.add_css_class("ogmkdev-frame")
-        self.project_dir = os.path.abspath(project_dir)
-        self.workspace = Workspace.from_properties([self.project_dir], {})
+        self.folder = os.path.abspath(folder)
+        self.workspace = Workspace.from_properties([self.folder], {})
         self.editors = Editors()
-        self.set_default_size(1400, 860)
+        cache = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "ogmkdev", "themes")
+        self.editors.theme(theme.theme_name(mode, scheme), theme.write_howl_theme(mode, scheme, cache))
+        self.area = EditorArea(self)
+        self.set_default_size(1500, 900)
         self._install_actions()
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_child(root)
         root.append(self._menubar(app))
+        root.append(self._toolbar())
+
+        right = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        right.set_start_child(self.area.root)
+        right.set_resize_start_child(True)
+        right.set_end_child(self._bottom())
+        right.set_resize_end_child(False)
+        right.set_position(600)
 
         main = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         main.set_start_child(self._left())
         main.set_resize_start_child(False)
         main.set_shrink_start_child(False)
         main.set_position(380)
-        main.set_vexpand(True)
-
-        right = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
-        right.set_start_child(self._editor_area())
-        right.set_resize_start_child(True)
-        right.set_end_child(self._bottom())
-        right.set_resize_end_child(False)
-        right.set_position(600)
         main.set_end_child(right)
+        main.set_vexpand(True)
         root.append(main)
 
-        self.status = Gtk.Label(xalign=0)
+        self.find_entry = Gtk.SearchEntry(placeholder_text="Find in files (Enter)")
+        self.find_entry.connect("activate", lambda *_: self.search_in_files())
+        self.find_entry.set_margin_start(6)
+        self.find_entry.set_margin_end(6)
+        self.find_entry.set_margin_top(4)
+        self.find_entry.set_margin_bottom(4)
+        root.append(self.find_entry)
+
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         bar.add_css_class("ogmkdev-statusbar")
+        self.status = Gtk.Label(xalign=0)
+        self.status.set_hexpand(True)
+        self.position = Gtk.Label(xalign=1)
         bar.append(self.status)
+        bar.append(self.position)
         root.append(bar)
 
         self._populate_tree()
         self.build_left_tabs()
-        self._build_git()
         self.build_bottom_tabs()
-        self._build_todos()
         if not files:
             self.add_editor(None)
         for path in files:
             self.open_file(path)
-        self.set_status(f"project {self.project_dir}")
+        self.set_status(f"folder {self.folder}")
+        GLib.timeout_add(500, self._poll)
+
+    # ------------------------------------------------------ tabs setup
+
+    def build_left_tabs(self) -> None:
+        self._build_run()
+        self._build_hierarchy()
+        self._build_history()
+        self._build_git()
+
+    def build_bottom_tabs(self) -> None:
+        self._build_watches()
+        self._build_problems()
+        self._build_search()
+        self._build_todos()
+
+    def show_run_tab(self) -> None:
+        self.left.set_current_page(self.left.page_num(self.run_box))
 
     # ------------------------------------------------------------ menus
 
@@ -108,6 +152,24 @@ class Frame(TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
             menu.append_submenu(title, submenu)
         return Gtk.PopoverMenuBar.new_from_model(menu)
 
+    def _toolbar(self) -> Gtk.Widget:
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        bar.add_css_class("ogmkdev-toolbar")
+        for item in TOOLBAR:
+            if item is None:
+                separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+                separator.set_margin_start(4)
+                separator.set_margin_end(4)
+                bar.append(separator)
+                continue
+            icon, tooltip, target = item
+            button = Gtk.Button.new_from_icon_name(icon)
+            button.set_tooltip_text(tooltip)
+            button.add_css_class("flat")
+            button.connect("clicked", lambda _b, t=target: self._run_target(t))
+            bar.append(button)
+        return bar
+
     def _install_actions(self) -> None:
         for _title, entries in MENUS:
             for _label, name, _accelerator, target in entries:
@@ -117,13 +179,14 @@ class Frame(TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
 
     def _run_target(self, target: str) -> None:
         if target.startswith("howl:"):
-            if not self.editors.command(target[len("howl:"):]):
-                self.set_status(f"{target[len('howl:'):]}: no Howl editor has the focus")
+            command = target[len("howl:"):]
+            if not self.editors.command(command):
+                self.set_status(f"{command}: no Howl editor has the focus")
             return
         getattr(self, target)()
 
     def __getattr__(self, name: str):
-        # menu entries whose feature is not wired yet report that instead of failing
+        # entries and buttons whose feature is not wired yet report that instead of failing
         if name in PENDING:
             return lambda *_args: self.set_status(f"{PENDING[name]} is not wired in the frame yet")
         raise AttributeError(name)
@@ -178,36 +241,29 @@ class Frame(TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
 
     # ----------------------------------------------------------- editors
 
-    def _editor_area(self) -> Gtk.Widget:
-        self.editor_area = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        self.editor_area.set_homogeneous(True)
-        self.editor_area.set_vexpand(True)
-        return self.editor_area
-
-    def add_editor(self, path=None) -> bool:
-        """A new Howl editor in its own column of the editor area, with ``path`` if given."""
-        column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        column.set_hexpand(True)
-        column.set_vexpand(True)
-        self.editor_area.append(column)
-        if not self.editors.add(column, path):
+    def add_editor(self, path: Optional[str] = None) -> bool:
+        """A new Howl editor in a tab of the active pane, with ``path`` if given."""
+        page = self.area.open(path)
+        if page is None:
             self.set_status("the Howl editor could not be started")
             return False
-        self.set_status(f"{self.editors.count} editor(s)" + (f" · {path}" if path else ""))
+        self.set_status(f"{self.area.count()} editor(s)" + (f" · {path}" if path else ""))
         return True
 
     def open_file(self, path: str, line: int = 0, column: int = 0) -> None:
-        """Opens a file in the Howl editor that has the focus; the first file starts an editor."""
-        if self.editors.count == 0:
-            self.add_editor(path)
-            return
-        if self.editors.open(path, line, column):
-            self.set_status(f"opened {path}")
-        else:
+        """Shows a file in its tab (opened in a new Howl editor if needed) and moves to a line."""
+        if self.area.open(path) is None:
             self.set_status(f"could not open {path}")
+            return
+        if line:
+            self.editors.open(path, line, column)
+        self.set_status(f"opened {path}")
 
     def new_editor(self) -> None:
         self.add_editor(None)
+
+    def close_tab(self) -> None:
+        self.editors.command("buffer-close")
 
     # ------------------------------------------------------ bottom panel
 
@@ -228,11 +284,23 @@ class Frame(TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
     def set_status(self, text: str) -> None:
         self.status.set_text(text)
 
+    # ------------------------------------------------- live status, history
+
+    def _poll(self) -> bool:
+        info = self.editors.status()
+        path = info["path"] if info else self.area.current_path()
+        if info:
+            state = "modified" if info["modified"] else "saved"
+            self.position.set_text(f"{os.path.basename(info['path'])}   {info['line']}:{info['column']}"
+                                   f"   {info['mode']}   {state}")
+        self.track_history(path)
+        return True
+
     # ---------------------------------------------------- menu actions
 
     def open_dialog(self) -> None:
         self._native = Gtk.FileChooserNative.new("Open", self, Gtk.FileChooserAction.OPEN, "Open", "Cancel")
-        self._native.set_current_folder(Gio.File.new_for_path(self.project_dir))
+        self._native.set_current_folder(Gio.File.new_for_path(self.folder))
         self._native.connect("response", self._on_open_response)
         self._native.show()
 
@@ -247,6 +315,3 @@ class Frame(TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
         about = Gtk.AboutDialog(transient_for=self, modal=True, program_name="oGMKDev", version="0.1.0")
         about.set_license_type(Gtk.License.GPL_2_0_ONLY)
         about.present()
-
-    def close_tab(self) -> None:
-        self.editors.command("buffer-close")
