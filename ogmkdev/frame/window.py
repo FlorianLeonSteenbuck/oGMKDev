@@ -134,6 +134,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         root.append(bar)
 
         self._populate_tree()
+        self._ensure_index()  # the project index is built in the background, as the GTK 3 window did
         self.build_left_tabs()
         self.build_bottom_tabs()
         if not files:

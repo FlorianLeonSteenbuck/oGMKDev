@@ -249,6 +249,7 @@ class AnalysisMixin:
         add(root, tree.get("up", []), "supertype")
         add(root, tree.get("down", []), "subtype")
         self.hierarchy_view.expand_all()
+        self.class_diagram.show(tree)
         self.left.set_current_page(self.left.page_num(self.hierarchy_box))
         self.set_status(f"hierarchy of {name}")
 

@@ -13,6 +13,7 @@ from gi.repository import Gtk  # noqa: E402
 
 from .. import htmldoc  # noqa: E402
 from .. import languages, organize  # noqa: E402
+from .classdiagram import ClassDiagram  # noqa: E402
 from ..history import LocalHistory  # noqa: E402
 from ..workspace import workspace_files  # noqa: E402
 from .panels import _scrolled, _text_view  # noqa: E402
@@ -42,7 +43,13 @@ class ToolsMixin:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         box.append(Gtk.Label(label="Place the cursor on a class, then Tools > Show Type Hierarchy.", xalign=0,
                              wrap=True))
-        box.append(_scrolled(self.hierarchy_view))
+        self.class_diagram = ClassDiagram(lambda path, line, column: self.open_file(path, line, column))
+        paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)  # the tree above, the diagram below
+        paned.set_start_child(_scrolled(self.hierarchy_view))
+        paned.set_end_child(self.class_diagram)
+        paned.set_position(240)
+        paned.set_vexpand(True)
+        box.append(paned)
         self.hierarchy_box = box
         self.left.append_page(box, Gtk.Label(label="Hierarchy"))
 
