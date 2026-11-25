@@ -318,13 +318,18 @@ class AnalysisMixin:
     def open_global_settings(self) -> None:
         self._settings_window(None)
 
+    def open_project_settings(self) -> None:
+        self._settings_window(None, scope="project")
+
     def open_diagnostic_settings(self) -> None:
         self._settings_window("Diagnostics")
 
-    def _settings_window(self, only_group: Optional[str]) -> None:
+    def _settings_window(self, only_group: Optional[str], scope: str = "global") -> None:
+        """The settings of one scope: global (Preferences) or project (the .editorconfig of the project)."""
         store = SettingsStore(self.folder)
-        values = store.global_properties()
-        window = Gtk.Window(title="Preferences", transient_for=self, modal=True)
+        values = store.global_properties() if scope == "global" else store.read(scope)
+        window = Gtk.Window(title="Preferences" if scope == "global" else "Project Settings",
+                            transient_for=self, modal=True)
         window.set_default_size(560, 520)
         grid = Gtk.Grid(column_spacing=12, row_spacing=6)
         grid.set_margin_start(12)
@@ -357,7 +362,7 @@ class AnalysisMixin:
 
         def apply_values(*_args) -> None:
             new = {key: self._widget_value(setting, widget) for key, (setting, widget) in widgets.items()}
-            store.apply("global", new)
+            store.apply(scope, new)
             window.destroy()
             for open_path in self.editors.files():
                 self.publish_templates(open_path)

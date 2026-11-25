@@ -12,7 +12,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from ogmkdev import filetemplates, markup, newclass, scaffold  # noqa: E402
+from ogmkdev import filetemplates, index as index_module, markup, newclass, scaffold  # noqa: E402
 from ogmkdev.settings import SettingsStore  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from . import theme  # noqa: E402
@@ -80,6 +80,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         super().__init__(application=app, title="oGMKDev")
         self.add_css_class("ogmkdev-frame")
         self.folder = os.path.abspath(folder)
+        self.project_folders = [self.folder]  # the folders of the workspace (File > Add Folder)
         # Autosave saves a modified file AUTOSAVE_SECONDS after it was changed: the flag, or the setting
         self.autosave_enabled = autosave if autosave is not None else (
             SettingsStore(self.folder).value("ogmkdev_autosave") == "on")
@@ -643,6 +644,53 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
             self._show_symbols(f"definition(s) of {word}", symbols)
 
     # ---------------------------------------------------- menu actions
+
+    # ------------------------------------------------------------ project
+
+    def open_folder(self) -> None:
+        """File > Open Folder: the folder becomes the project, with its tree, run configurations, settings
+        and index."""
+        self._choose_folder("Open Folder", "Open", self.set_project)
+
+    def add_folder_to_workspace(self) -> None:
+        """File > Add Folder to Workspace: another folder joins the tree and the index of the project."""
+        self._choose_folder("Add Folder to Workspace", "Add", self._add_workspace_folder)
+
+    def _choose_folder(self, title: str, accept: str, on_chosen) -> None:
+        native = Gtk.FileChooserNative.new(title, self, Gtk.FileChooserAction.SELECT_FOLDER, accept, "Cancel")
+        self._folder_native = native  # kept until the dialog answers
+        native.connect("response", lambda dialog, response: self._on_folder_chosen(dialog, response, on_chosen))
+        native.show()
+
+    def _on_folder_chosen(self, native, response, on_chosen) -> None:
+        if response == Gtk.ResponseType.ACCEPT and native.get_file() is not None:
+            on_chosen(native.get_file().get_path())
+        self._folder_native = None
+
+    def set_project(self, folder: str) -> None:
+        """The folder becomes the project: its tree, its run configurations, its settings and its index."""
+        self.folder = os.path.abspath(folder)
+        self.project_folders = [self.folder]
+        self._reload_project()
+        self.set_status(f"project {self.folder}")
+
+    def _add_workspace_folder(self, folder: str) -> None:
+        folder = os.path.abspath(folder)
+        if folder not in self.project_folders:
+            self.project_folders.append(folder)
+        self._reload_project()
+        self.set_status(f"workspace: {len(self.project_folders)} folder(s)")
+
+    def _reload_project(self) -> None:
+        """Rebuilds what depends on the project folders: the workspace, the tree, the run list and the index
+        (built in the background; the index is empty until then)."""
+        self.workspace = Workspace.from_properties(
+            self.project_folders, SettingsStore(self.folder).effective_for(os.path.join(self.folder, "_")))
+        self.tree_store.clear()
+        self._populate_tree()
+        self.refresh_run()
+        self.index = index_module.ProjectIndex([])
+        self._request_index_build("building the index in the background")
 
     def open_dialog(self) -> None:
         self._native = Gtk.FileChooserNative.new("Open", self, Gtk.FileChooserAction.OPEN, "Open", "Cancel")

@@ -7,6 +7,8 @@ MENUS = (
         ("New File from Template...", "new-file-template", "", "new_file_from_template"),
         ("New Class...", "new-class", "", "new_class"),
         ("Open...", "open", "", "open_dialog"),
+        ("Open Folder...", "open-folder", "<Control><Shift>o", "open_folder"),
+        ("Add Folder to Workspace...", "add-folder", "", "add_folder_to_workspace"),
         ("Quick Open...", "quick-open", "<Control>p", "quick_open"),
         ("Save", "save", "", "howl:save"),
         ("Save As...", "save-as", "", "howl:save-as"),
@@ -51,6 +53,7 @@ MENUS = (
     )),
     ("Settings", (
         ("Preferences...", "preferences", "", "open_global_settings"),
+        ("Project Settings...", "project-settings", "", "open_project_settings"),
         ("Error Hinting...", "error-hinting", "", "open_diagnostic_settings"),
     )),
     ("Run", (

@@ -42,8 +42,9 @@ def _read(path):
         return handle.read()
 
 
-@unittest.skipUnless(GTK_AVAILABLE, "needs GTK 4, a display and libhowl.so")
-class ProjectCommandTests(unittest.TestCase):
+class ProjectTestCase(unittest.TestCase):
+    """A temporary project folder, a GTK application and the frames that the test opens (closed afterwards)."""
+
     def setUp(self):
         self._directory = tempfile.TemporaryDirectory()
         self.folder = self._directory.name
@@ -69,6 +70,8 @@ class ProjectCommandTests(unittest.TestCase):
             handle.write(text)
         return path
 
+@unittest.skipUnless(GTK_AVAILABLE, "needs GTK 4, a display and libhowl.so")
+class ProjectCommandTests(ProjectTestCase):
     def test_organize_imports_merges_sorts_and_drops_unused_uses(self):
         path = self._write("svc.php", "<?php\nnamespace App;\nuse Zeta\\B;\nuse Alpha\\A;\nuse Zeta\\B;\n"
                                       "class C { public function f(): A { return new A(); } }\n")
@@ -109,3 +112,37 @@ class ProjectCommandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(GTK_AVAILABLE, "needs GTK 4, a display and libhowl.so")
+class ProjectFolderTests(ProjectTestCase):
+    """File > Open Folder, File > Add Folder to Workspace and Project Settings change the frame's project."""
+
+    def test_open_folder_makes_it_the_project(self):
+        other = os.path.join(self.folder, "other")
+        os.mkdir(other)
+        with open(os.path.join(other, "x.txt"), "w", encoding="utf-8") as handle:
+            handle.write("x\n")
+        frame = self._frame([])
+        frame.set_project(other)
+        self.assertEqual(frame.folder, other)
+        self.assertEqual(frame.workspace.folders, [other])
+        self.assertEqual(frame.tree_store[0][0], "other")  # the tree shows the new project's root
+        self.assertEqual(frame.tree_store.iter_n_children(None), 1)
+        self.assertIn("project", frame.status.get_text())
+
+    def test_add_folder_adds_a_root_to_the_tree_and_the_workspace(self):
+        second = os.path.join(self.folder, "second")
+        os.mkdir(second)
+        frame = self._frame([])
+        frame._add_workspace_folder(second)
+        self.assertEqual(frame.tree_store.iter_n_children(None), 2)
+        self.assertIn(os.path.abspath(second), frame.workspace.folders)
+        frame._add_workspace_folder(second)  # adding it again changes nothing
+        self.assertEqual(frame.tree_store.iter_n_children(None), 2)
+
+    def test_project_settings_open_their_own_window(self):
+        frame = self._frame([])
+        frame.open_project_settings()
+        titles = [window.get_title() for window in Gtk.Window.get_toplevels()]
+        self.assertIn("Project Settings", titles)
