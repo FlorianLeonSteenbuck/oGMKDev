@@ -1,0 +1,9 @@
+[project]
+name = "ogmkdev"
+version = "0.1.0"
+description = "Lightweight IDE core in Python/GTK: EditorConfig, language detection, JetBrains run configs, GDB/XDebug debugging."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+gui = []   # PyGObject with GTK 3 and GtkSourceView 3 come from the OS packages (python3-gi, gir1.2-gtksource-3.0)
