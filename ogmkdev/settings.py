@@ -44,6 +44,8 @@ SCHEMA: Tuple[Setting, ...] = (
     Setting("trim_trailing_whitespace", "Trim trailing whitespace", "Editor", "bool", "false"),
     Setting("insert_final_newline", "Final newline", "Editor", "bool", "true"),
     Setting("ogmkdev_current_line", "Highlight the current line", "Editor", "bool", "true"),
+    Setting("ogmkdev_autosave", "Autosave while typing (--autosave starts it on)", "Editor", "choice", "off",
+            ("on", "off")),
     Setting("ogmkdev_dialect", "PHP version", "Languages", "choice", "8.6", PHP_VERSIONS, section="*.php"),
     Setting("ogmkdev_source_roots", "Source folders (comma separated)", "Workspace", "text", ""),
     Setting("ogmkdev_test_roots", "Test folders (comma separated)", "Workspace", "text", "tests,test,spec"),

@@ -37,6 +37,7 @@ from ..index import ProjectIndex  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
 from ..workspace import Workspace  # noqa: E402
+from ..history import LocalHistory, changed_lines  # noqa: E402
 from .. import keymap as keymap_module  # noqa: E402
 from .panels import DiagramView, HierarchyView, ResultsView  # noqa: E402
 from .. import __version__  # noqa: E402
@@ -49,6 +50,9 @@ EXEC_TAG = "ogmkdev-exec"
 # Languages highlighted by our own tokenizers (see ogmkdev/highlight.py), not by GtkSourceView.
 OWN_HIGHLIGHT = frozenset({"ecmascript", "baredown", "sql", "php"})
 MENU_ORDER = ("File", "Edit", "View", "Project", "Settings", "Run", "Debug", "Help")
+CHANGE_CATEGORIES = {"added": "ogmkdev-added", "modified": "ogmkdev-modified", "deleted": "ogmkdev-deleted"}
+CHANGE_COLORS = {"added": "#3FB950", "modified": "#58A6FF", "deleted": "#F85149"}
+AUTOSAVE_SECONDS = 2
 # menu, label, icon name, accelerator, method name, shown in toolbar
 ACTIONS = (
     ("File", "New", "document-new", "<Control>n", "new_document", True),
@@ -72,6 +76,14 @@ ACTIONS = (
     ("Project", "Find Implementations", "go-down", "<Control><Alt>b", "find_implementations", True),
     ("Project", "Go to Definition", "go-jump", "<Control>b", "go_to_definition", True),
     ("Edit", "Organize Imports", "format-justify-left", "<Control><Alt>o", "organize_imports", False),
+    ("Edit", "Local History", "document-open-recent", "<Control><Alt>h", "show_local_history", False),
+    ("Edit", "Extract Patch Set...", "", "", "extract_patch_set", False),
+    ("View", "Split Right", "", "<Control><Alt>r", "split_right", False),
+    ("View", "Split Down", "", "<Control><Alt>d", "split_down", False),
+    ("View", "Split into Four", "", "<Control><Alt>4", "split_four", False),
+    ("View", "Split into Six", "", "<Control><Alt>6", "split_six", False),
+    ("View", "Close Pane", "window-close", "<Control><Alt>w", "close_active_pane", False),
+    ("Project", "Clear Index and Rebuild", "view-refresh", "", "clear_index", False),
     ("Project", "Show Type Hierarchy", "go-jump", "<Control>h", "show_hierarchy", True),
     ("Project", "Inspect Project", "dialog-warning", "", "inspect_project", True),
     ("Project", "Refresh Index", "view-refresh", "", "refresh_index", False),
@@ -117,6 +129,10 @@ class Page:
     def __init__(self, document: Document, colors) -> None:
         self.document = document
         self.dirty = False
+        self.notebook = None           # the pane (Gtk.Notebook) that shows this page
+        self.baseline = document.text  # last saved text; changed lines are marked against it
+        self.change_marks: list = []
+        self.autosave_id = 0
         if GtkSource is not None:
             self.buffer = GtkSource.Buffer()
             self.view = GtkSource.View.new_with_buffer(self.buffer)
@@ -174,6 +190,8 @@ class Page:
         self.exec_tag.set_property("background", colors["execution"])
         if GtkSource is not None:
             self.view.set_mark_attributes(BREAKPOINT_CATEGORY, _mark_attributes(colors["breakpoint"]), 10)
+            for kind, category in CHANGE_CATEGORIES.items():
+                self.view.set_mark_attributes(category, _mark_attributes(CHANGE_COLORS[kind]), 9)
         self.palette = colors
 
     def highlight(self) -> None:
@@ -198,13 +216,28 @@ class Page:
         line_end.forward_line()
         self.buffer.apply_tag_by_name("hl-current-line", line_start, line_end)
 
+    def update_change_marks(self) -> None:
+        """Gutter marks for lines added, modified or deleted since the last save."""
+        if GtkSource is None:
+            return
+        for mark in self.change_marks:
+            self.buffer.delete_mark(mark)
+        self.change_marks = []
+        if self.document.path is None:
+            return
+        last = max(self.buffer.get_line_count() - 1, 0)
+        for line, kind in changed_lines(self.baseline, self.text()).items():
+            iterator = self.buffer.get_iter_at_line(min(max(line - 1, 0), last))
+            self.change_marks.append(self.buffer.create_source_mark(None, CHANGE_CATEGORIES[kind], iterator))
+
     def update_label(self) -> None:
         self.tab_label.set_text(self.document.title + (" *" if self.dirty else ""))
 
 
 class EditorWindow(Gtk.Window):
     def __init__(self, path: Optional[str] = None, project_dir: Optional[str] = None,
-                 mode: str = "light", scheme: str = "blend") -> None:
+                 mode: str = "light", scheme: str = "blend", autosave: Optional[bool] = None,
+                 clear_index: bool = False) -> None:
         super().__init__(title="ogmkdev")
         self.set_default_size(1280, 820)
         self._set_logo()
@@ -215,13 +248,20 @@ class EditorWindow(Gtk.Window):
         self.project_dir = os.path.abspath(project_dir or os.getcwd())
         self.registry = templates.builtin_registry()
         self.pages: List[Page] = []
+        self.history = LocalHistory()
+        self._autosave_flag = autosave
+        self.autosave = bool(autosave)
         self.breakpoints: Dict[str, Set[int]] = {}
         self.status = Gtk.Label(xalign=0)  # created first: list signals may fire during setup
         self.status.set_selectable(True)
         self.run_configs: List[runconfig.RunConfiguration] = runconfig.discover(self.project_dir)
         self.settings_store = SettingsStore(self.project_dir)
         self.project_folders: List[str] = [self.project_dir]
+        if self._autosave_flag is None:
+            self.autosave = self.settings_store.value("ogmkdev_autosave") == "on"
         self._apply_keymap()
+        if clear_index:
+            self._remove_index_cache()
         self._apply_workspace()
         self.connect("destroy", self._save_index)
         self.debugger = None
@@ -229,8 +269,10 @@ class EditorWindow(Gtk.Window):
         self._session_bps: Dict[Tuple[str, int], int] = {}
         self._exec_line: Optional[Tuple[Page, int]] = None
 
-        self.notebook = Gtk.Notebook(scrollable=True)
-        self.notebook.connect("switch-page", lambda *_: _ui(self._update_status))
+        self.editor_area = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.notebooks: List[Gtk.Notebook] = []
+        self.active_notebook = self._new_notebook()
+        self.editor_area.pack_start(self.active_notebook, True, True, 0)
 
         self.tree_store = Gtk.TreeStore(str, str, str)
         self.tree = Gtk.TreeView(model=self.tree_store)
@@ -268,8 +310,9 @@ class EditorWindow(Gtk.Window):
         left.append_page(files_scroll, Gtk.Label(label="Files"))
         left.append_page(run_box, Gtk.Label(label="Run"))
         left.append_page(hierarchy_tabs, Gtk.Label(label="Hierarchy"))
+        left.append_page(self._build_history_panel(), Gtk.Label(label="History"))
         self.left = left
-        self.left_pages = {"Files": 0, "Run": 1, "Hierarchy": 2}
+        self.left_pages = {"Files": 0, "Run": 1, "Hierarchy": 2, "History": 3}
 
         self.console = Gtk.TextView(editable=False, cursor_visible=False, monospace=True)
         self.console_buffer = self.console.get_buffer()
@@ -296,7 +339,7 @@ class EditorWindow(Gtk.Window):
         self.toolbar = self._build_toolbar()
 
         center = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
-        center.pack1(self.notebook, True, False)
+        center.pack1(self.editor_area, True, False)
         center.pack2(self.bottom, False, False)
         main = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         main.pack1(left, False, False)
@@ -433,8 +476,12 @@ class EditorWindow(Gtk.Window):
 
     @property
     def page(self) -> Optional[Page]:
-        index = self.notebook.get_current_page()
-        return self.pages[index] if 0 <= index < len(self.pages) else None
+        widget = self.active_notebook.get_nth_page(self.active_notebook.get_current_page())
+        return next((p for p in self.pages if p.scroller is widget), None)
+
+    @property
+    def notebook(self) -> Gtk.Notebook:
+        return self.active_notebook
 
     @property
     def view(self):
@@ -458,9 +505,11 @@ class EditorWindow(Gtk.Window):
 
     def open_path(self, path: str) -> Page:
         absolute = os.path.abspath(path)
-        for index, page in enumerate(self.pages):
+        for page in self.pages:
             if page.document.path == absolute:
-                self.notebook.set_current_page(index)
+                notebook = page.notebook
+                notebook.set_current_page(notebook.page_num(page.scroller))
+                self._activate_notebook(notebook)
                 return page
         return self._add_page(Document.open(absolute, self.settings_store.effective_for(absolute)))
 
@@ -473,12 +522,18 @@ class EditorWindow(Gtk.Window):
         page.buffer.connect("changed", lambda *_: self._on_changed(page))
         page.buffer.connect("mark-set", on_mark_set)
         self.pages.append(page)
-        self.notebook.append_page(page.scroller, page.tab_label)
-        self.notebook.set_tab_reorderable(page.scroller, True)
-        self.notebook.show_all()
-        self.notebook.set_current_page(len(self.pages) - 1)
+        notebook = self.active_notebook
+        notebook.append_page(page.scroller, page.tab_label)
+        notebook.set_tab_reorderable(page.scroller, True)
+        notebook.set_tab_detachable(page.scroller, True)
+        notebook.show_all()
+        notebook.set_current_page(notebook.page_num(page.scroller))
+        page.notebook = notebook
         for line in self.breakpoints.get(document.path or "", ()):
             self._add_breakpoint_mark(page, line)
+        page.update_change_marks()
+        if document.path:
+            self.history.snapshot(document.path, document.text, "opened")  # keeps external edits too
         self._update_status()
         return page
 
@@ -488,7 +543,9 @@ class EditorWindow(Gtk.Window):
         page.document.analyze()
         page.highlight()
         page.update_label()
+        page.update_change_marks()
         self._update_status()
+        self._schedule_autosave(page)
 
     def save(self) -> None:
         self.save_current()
@@ -524,15 +581,19 @@ class EditorWindow(Gtk.Window):
             page.document.save(filename)
             self._after_save(page)
 
-    def _after_save(self, page: Page) -> None:
+    def _after_save(self, page: Page, label: str = "save") -> None:
         if page.document.path:
             self.index.invalidate(page.document.path)
+            self.history.snapshot(page.document.path, page.text(), label)
+        page.baseline = page.text()
         page.dirty = False
         page.apply_settings()
         page.apply_language()
         page.highlight()
         page.update_label()
+        page.update_change_marks()
         self._update_status(saved=True)
+        self.refresh_history()
 
     def open_dialog(self) -> None:
         dialog = Gtk.FileChooserDialog(title="Open", parent=self, action=Gtk.FileChooserAction.OPEN)
@@ -544,13 +605,14 @@ class EditorWindow(Gtk.Window):
             self.open_path(filename)
 
     def close_page(self) -> None:
-        index = self.notebook.get_current_page()
-        if not 0 <= index < len(self.pages):
+        page = self.page
+        if page is None:
             return
-        page = self.pages.pop(index)
+        notebook = page.notebook
+        self.pages.remove(page)
         if self._exec_line and self._exec_line[0] is page:
             self._exec_line = None
-        self.notebook.remove_page(index)
+        notebook.remove_page(notebook.page_num(page.scroller))
         self._update_status()
 
     # -------------------------------------------------------- file tree
@@ -1182,6 +1244,8 @@ class EditorWindow(Gtk.Window):
         self.status.set_text(f"{'preferences' if scope == 'global' else 'project settings'} saved")
 
     def _refresh_settings_all(self) -> None:
+        if self._autosave_flag is None:
+            self.autosave = self.settings_store.value("ogmkdev_autosave") == "on"
         self._apply_keymap()
         self._apply_workspace()
         for page in self.pages:
@@ -1192,6 +1256,245 @@ class EditorWindow(Gtk.Window):
             page.document.analyze()
             page.highlight()
         self._update_status()
+
+    # ------------------------------------------------------- panes (split)
+
+    def _new_notebook(self) -> Gtk.Notebook:
+        notebook = Gtk.Notebook(scrollable=True)
+        notebook.set_group_name("ogmkdev-editor")  # tabs can be dragged from one pane to another
+        notebook.connect("switch-page", lambda *_: self._on_pane_switched(notebook))
+        notebook.connect("button-press-event", lambda *_: self._activate_notebook(notebook))
+        notebook.connect("page-added", lambda nb, child, _n: self._owner_changed(nb, child))
+        close = Gtk.Button.new_from_icon_name("window-close", Gtk.IconSize.MENU)
+        close.set_relief(Gtk.ReliefStyle.NONE)
+        close.set_tooltip_text("Close this pane")
+        close.connect("clicked", lambda _b: self.close_pane(notebook))
+        notebook.set_action_widget(close, Gtk.PackType.END)
+        close.show()
+        self.notebooks.append(notebook)
+        return notebook
+
+    def _on_pane_switched(self, notebook: Gtk.Notebook) -> None:
+        self._activate_notebook(notebook)
+        _ui(self._update_status)
+        _ui(self.refresh_history)
+
+    def _activate_notebook(self, notebook: Gtk.Notebook) -> bool:
+        self.active_notebook = notebook
+        return False
+
+    def _owner_changed(self, notebook: Gtk.Notebook, child) -> None:
+        for page in self.pages:
+            if page.scroller is child:
+                page.notebook = notebook
+
+    def _replace_widget(self, old, new) -> None:
+        parent = old.get_parent()
+        if isinstance(parent, Gtk.Paned):
+            first = parent.get_child1() is old
+            parent.remove(old)
+            (parent.pack1 if first else parent.pack2)(new, True, False)
+        else:
+            parent.remove(old)
+            parent.pack_start(new, True, True, 0)
+
+    def _split_notebook(self, notebook: Gtk.Notebook, orientation) -> Gtk.Notebook:
+        new = self._new_notebook()
+        paned = Gtk.Paned(orientation=orientation)
+        self._replace_widget(notebook, paned)
+        paned.pack1(notebook, True, False)
+        paned.pack2(new, True, False)
+        paned.show_all()
+        self._activate_notebook(new)
+        return new
+
+    def split_right(self) -> None:
+        self._split_notebook(self.active_notebook, Gtk.Orientation.HORIZONTAL)
+
+    def split_down(self) -> None:
+        self._split_notebook(self.active_notebook, Gtk.Orientation.VERTICAL)
+
+    def split_four(self) -> None:
+        self._grid(2, 2)
+
+    def split_six(self) -> None:
+        self._grid(2, 3)
+
+    def _grid(self, rows: int, cols: int) -> None:
+        first = self.active_notebook
+        columns = [first]
+        for _ in range(cols - 1):
+            columns.append(self._split_notebook(columns[-1], Gtk.Orientation.HORIZONTAL))
+        for column in columns:
+            bottom = column
+            for _ in range(rows - 1):
+                bottom = self._split_notebook(bottom, Gtk.Orientation.VERTICAL)
+        self._activate_notebook(first)
+        self.status.set_text(f"{rows} x {cols} panes")
+
+    def _first_leaf(self, widget) -> Gtk.Notebook:
+        return self._first_leaf(widget.get_child1()) if isinstance(widget, Gtk.Paned) else widget
+
+    def close_active_pane(self) -> None:
+        self.close_pane(self.active_notebook)
+
+    def close_pane(self, notebook: Optional[Gtk.Notebook] = None) -> None:
+        """Close a pane: its tabs move to the neighbouring pane, and the split shrinks."""
+        notebook = notebook or self.active_notebook
+        if len(self.notebooks) <= 1:
+            self.status.set_text("the last pane cannot be closed")
+            return
+        paned = notebook.get_parent()
+        if not isinstance(paned, Gtk.Paned):
+            return
+        sibling = paned.get_child2() if paned.get_child1() is notebook else paned.get_child1()
+        target = self._first_leaf(sibling)
+        for page in [p for p in self.pages if p.notebook is notebook]:
+            notebook.remove_page(notebook.page_num(page.scroller))
+            page.tab_label = Gtk.Label(label=page.document.title)
+            target.append_page(page.scroller, page.tab_label)
+            target.set_tab_reorderable(page.scroller, True)
+            target.set_tab_detachable(page.scroller, True)
+            page.notebook = target
+            page.update_label()
+        paned.remove(notebook)
+        paned.remove(sibling)
+        self._replace_widget(paned, sibling)
+        self.notebooks.remove(notebook)
+        notebook.destroy()
+        self._activate_notebook(target)
+        self._update_status()
+
+    # ------------------------------------------------------------- history
+
+    def _build_history_panel(self) -> Gtk.Widget:
+        self.history_store = Gtk.ListStore(str, str, str, str)  # label, when, size, revision id
+        self.history_view = Gtk.TreeView(model=self.history_store)
+        selection = self.history_view.get_selection()
+        selection.set_mode(Gtk.SelectionMode.MULTIPLE)
+        for index, title in enumerate(("Label", "When", "Size")):
+            self.history_view.append_column(Gtk.TreeViewColumn(title, Gtk.CellRendererText(), text=index))
+        selection.connect("changed", lambda *_: self._show_history_diff())
+        self.history_diff = Gtk.TextView(editable=False, monospace=True)
+        self.history_diff.set_cursor_visible(False)
+        top = Gtk.ScrolledWindow()
+        top.add(self.history_view)
+        bottom = Gtk.ScrolledWindow()
+        bottom.add(self.history_diff)
+        paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        paned.pack1(top, True, False)
+        paned.pack2(bottom, True, False)
+        buttons = Gtk.Box(spacing=4)
+        for label, handler in (("Extract patch set...", self.extract_patch_set),
+                               ("Revert to selected", self.revert_to_selected)):
+            button = Gtk.Button(label=label)
+            button.connect("clicked", lambda _b, h=handler: h())
+            buttons.pack_start(button, True, True, 0)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.pack_start(buttons, False, False, 0)
+        box.pack_start(paned, True, True, 0)
+        return box
+
+    def _selected_revisions(self) -> list:
+        page = self.page
+        if page is None or page.document.path is None:
+            return []
+        _model, paths = self.history_view.get_selection().get_selected_rows()
+        chosen = {self.history_store[path][3] for path in paths}
+        return [r for r in self.history.revisions(page.document.path) if r.id in chosen]
+
+    def refresh_history(self) -> None:
+        if not hasattr(self, "history_store"):
+            return
+        page = self.page
+        self.history_store.clear()
+        if page is None or page.document.path is None:
+            self.history_diff.get_buffer().set_text("")
+            return
+        for revision in self.history.revisions(page.document.path):
+            self.history_store.append([revision.label, revision.when, str(revision.size), revision.id])
+        if len(self.history_store):
+            self.history_view.get_selection().select_path(Gtk.TreePath.new_first())
+        self._show_history_diff()
+
+    def _show_history_diff(self) -> None:
+        page = self.page
+        selected = self._selected_revisions()
+        if page is None or not selected:
+            self.history_diff.get_buffer().set_text("")
+            return
+        if len(selected) == 1:
+            text = self.history.diff(self.history.content(selected[0]), page.text(),
+                                     f"revision {selected[0].when}", "current")
+        else:
+            text = self.history.patch_set(selected)
+        self.history_diff.get_buffer().set_text(text or "no differences")
+
+    def show_local_history(self) -> None:
+        self.left.set_current_page(self.left_pages["History"])
+        self.refresh_history()
+
+    def extract_patch_set(self) -> None:
+        page = self.page
+        if page is None or page.document.path is None:
+            self.status.set_text("the file has no history yet")
+            return
+        revisions = self._selected_revisions() or self.history.revisions(page.document.path)
+        if not revisions:
+            self.status.set_text("no revisions to extract")
+            return
+        dialog = Gtk.FileChooserDialog(title="Extract Patch Set", parent=self, action=Gtk.FileChooserAction.SAVE)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Save", Gtk.ResponseType.OK)
+        dialog.set_current_name(page.document.title + ".patch")
+        dialog.set_current_folder(self.project_dir)
+        response = dialog.run()
+        filename = dialog.get_filename()
+        dialog.destroy()
+        if response == Gtk.ResponseType.OK and filename:
+            self.history.extract_patch(revisions, filename)
+            self.status.set_text(f"patch set of {len(revisions)} revision(s) written to {filename}")
+
+    def revert_to_selected(self) -> None:
+        selected = self._selected_revisions()
+        page = self.page
+        if page is None or len(selected) != 1:
+            self.status.set_text("select exactly one revision to revert to")
+            return
+        page.buffer.set_text(self.history.content(selected[0]))
+        self.status.set_text(f"reverted to {selected[0].when} (not saved yet)")
+
+    # ------------------------------------------------------ autosave, index
+
+    def _schedule_autosave(self, page: Page) -> None:
+        if not self.autosave or page.document.path is None:
+            return
+        if page.autosave_id:
+            GLib.source_remove(page.autosave_id)
+        page.autosave_id = GLib.timeout_add_seconds(AUTOSAVE_SECONDS, self._autosave, page)
+
+    def _autosave(self, page: Page) -> bool:
+        page.autosave_id = 0
+        if page in self.pages and page.dirty and page.document.path:
+            page.document.text = page.text()
+            try:
+                page.document.save()
+            except OSError as error:
+                self.status.set_text(f"autosave failed: {error}")
+                return False
+            self._after_save(page, "autosave")
+            self.status.set_text(f"autosaved {page.document.title}")
+        return False
+
+    def _remove_index_cache(self) -> None:
+        try:
+            os.remove(self._cache_path())
+        except OSError:
+            pass
+
+    def clear_index(self) -> None:
+        self._remove_index_cache()
+        self._apply_workspace()
+        self.status.set_text("index cleared and rebuilt")
 
     def find_next(self) -> None:
         page = self.page
@@ -1264,6 +1567,8 @@ class EditorWindow(Gtk.Window):
 def main(argv: List[str]) -> int:
     """Usage: python -m ogmkdev [--dark|--light] [--scheme blend|jetbrains|eclipse] [file-or-folder]"""
     mode, scheme, paths = "light", "blend", []
+    autosave: Optional[bool] = None
+    clear_index = False
     args = list(argv)
     while args:
         arg = args.pop(0)
@@ -1273,6 +1578,12 @@ def main(argv: List[str]) -> int:
             mode = "light"
         elif arg == "--scheme" and args:
             scheme = args.pop(0)
+        elif arg == "--autosave":
+            autosave = True
+        elif arg == "--no-autosave":
+            autosave = False
+        elif arg == "--clear-index":
+            clear_index = True
         else:
             paths.append(arg)
     if scheme not in theme.SCHEMES:
@@ -1280,10 +1591,11 @@ def main(argv: List[str]) -> int:
         return 2
     target = os.path.abspath(paths[0]) if paths else None
     if target and os.path.isdir(target):
-        window = EditorWindow(None, project_dir=target, mode=mode, scheme=scheme)
+        window = EditorWindow(None, project_dir=target, mode=mode, scheme=scheme, autosave=autosave,
+                              clear_index=clear_index)
     else:
         window = EditorWindow(target, project_dir=os.path.dirname(target) if target else None,
-                              mode=mode, scheme=scheme)
+                              mode=mode, scheme=scheme, autosave=autosave, clear_index=clear_index)
     window.connect("destroy", Gtk.main_quit)
     window.show_all()
     Gtk.main()
