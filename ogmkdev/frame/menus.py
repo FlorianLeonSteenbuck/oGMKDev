@@ -24,6 +24,9 @@ MENUS = (
         ("Search Everywhere...", "search-everywhere", "<Control><Shift>a", "search_everywhere"),
         ("Generate Doc Comment", "generate-doc", "<Control><Alt>d", "generate_doc_comment"),
         ("Organize Imports", "organize-imports", "<Control><Alt>o", "organize_imports"),
+        ("Local History", "local-history", "", "show_local_history"),
+        ("Extract Patch Set...", "extract-patch-set", "", "extract_patch_set"),
+        ("Export History as Patch...", "export-history-patch", "", "export_history_patch"),
     )),
     ("View", (
         ("Split Right", "split-right", "", "split_right"),

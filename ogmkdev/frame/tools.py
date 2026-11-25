@@ -189,6 +189,29 @@ class ToolsMixin:
             self.local_history.extract_patch(revisions, filename, self.folder)
             self.set_status(f"patch set of {len(revisions)} revision(s) written to {filename}")
 
+    def show_local_history(self) -> None:
+        """Edit > Local History: the History tab of the left panel, with the revisions of the open file."""
+        self._history_path = self.area.current_path()
+        self.refresh_history()
+        self.left.set_current_page(self.left.page_num(self.history_box))
+
+    def export_history_patch(self) -> None:
+        """Edit > Export History as Patch: every revision of the open file's local history, as one patch."""
+        path = self.area.current_path()
+        if not path:
+            self.set_status("the file has no history yet")
+            return
+        revisions = self.local_history.revisions(path)
+        if len(revisions) < 2:
+            self.set_status("the history has no change to export yet")
+            return
+        self._patch_native = Gtk.FileChooserNative.new("Export History as Patch", self,
+                                                       Gtk.FileChooserAction.SAVE, "Save", "Cancel")
+        self._patch_native.set_current_name(os.path.basename(path) + ".patch")
+        self._patch_native.connect("response", lambda native, response: self._write_patch(native, response,
+                                                                                         revisions))
+        self._patch_native.show()
+
     def export_documentation(self) -> None:
         """Asks for a folder and writes the declarations of the index with their doc comments there as HTML."""
         self._ensure_index()
