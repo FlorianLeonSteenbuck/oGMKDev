@@ -176,6 +176,9 @@ class EditorArea:
         notebook.set_tab_reorderable(page, True)
         notebook.set_current_page(notebook.page_num(page))
         self.pages[page] = path
+        if path:
+            # the state the file is opened in is the baseline: a save that comes before the next poll is still seen
+            self.frame.track_history(path)
         return page
 
     def _notebook_of(self, page: Gtk.Widget) -> Optional[Gtk.Notebook]:
@@ -205,6 +208,13 @@ class EditorArea:
         if notebook.get_n_pages() == 0 and len(self.panes) > 1:
             self.active = notebook
             self.close_active_pane()
+
+    def current_page(self) -> Optional[Gtk.Widget]:
+        """The tab that is shown in the active pane (its page widget), None when there is none."""
+        notebook = self.active
+        if notebook is None or notebook.get_n_pages() == 0:
+            return None
+        return notebook.get_nth_page(notebook.get_current_page())
 
     def current_path(self) -> Optional[str]:
         notebook = self.active

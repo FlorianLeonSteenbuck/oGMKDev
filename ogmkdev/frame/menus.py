@@ -12,7 +12,7 @@ MENUS = (
         ("Quick Open...", "quick-open", "<Control>p", "quick_open"),
         ("Save", "save", "", "howl:save"),
         ("Save As...", "save-as", "", "howl:save-as"),
-        ("Close Tab", "close-tab", "", "howl:buffer-close"),
+        ("Close Tab", "close-tab", "", "close_tab"),
         ("Quit", "quit", "<Control>q", "quit_frame"),
     )),
     ("Edit", (

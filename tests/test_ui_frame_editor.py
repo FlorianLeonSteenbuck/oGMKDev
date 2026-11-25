@@ -35,14 +35,15 @@ class EditorTests(FrameTestCase):
         self.assertIn(source, frame.editors.files())
         self.assertIn(notes, frame.editors.files())
 
-    def test_a_new_editor_is_untitled_and_closing_the_tab_returns_to_the_file(self):
+    def test_a_new_editor_is_an_untitled_tab_and_close_tab_releases_that_tab(self):
         source = write(self.folder, "gdb_target.c", read(FIXTURE))
         frame = self.frame([source])
         frame.new_editor()
-        self.assertTrue(pump_until(lambda: (frame.editors.status() or {}).get("path") == "untitled"),
-                        frame.editors.status())
+        self.assertEqual(len(frame.area.pages), 2)
+        self.assertIsNone(frame.area.current_path())  # the untitled tab is the one shown: it has no file
         frame.close_tab()
-        self.assertTrue(pump_until(lambda: (frame.editors.status() or {}).get("path") == source))
+        self.assertEqual(len(frame.area.pages), 1)
+        self.assertTrue(pump_until(lambda: frame.area.current_path() == source))
 
     def test_breakpoint_toggles_gutter_mark_and_session_state(self):
         source = write(self.folder, "gdb_target.c", read(FIXTURE))

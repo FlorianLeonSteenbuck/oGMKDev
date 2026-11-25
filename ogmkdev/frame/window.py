@@ -626,7 +626,13 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         self.add_editor(None)
 
     def close_tab(self) -> None:
-        self.editors.command("buffer-close")
+        """Closes the tab that is shown. Its own editor is released, not the focused one: Howl's focus may still be
+        on another file, while the shown tab is the one the user closes."""
+        page = self.area.current_page()
+        if page is None:
+            self.set_status("no tab to close")
+            return
+        self.area._close_page(page)
 
     # ------------------------------------------------------ bottom panel
 
