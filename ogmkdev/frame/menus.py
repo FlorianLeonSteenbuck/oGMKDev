@@ -17,6 +17,7 @@ MENUS = (
         ("Undo", "undo", "", "howl:editor-undo"),
         ("Redo", "redo", "", "howl:editor-redo"),
         ("Find...", "find", "", "howl:buffer-search-forward"),
+        ("Find Usages...", "find-usages", "<Shift>F12", "find_usages"),
         ("Fold or Unfold Block", "toggle-fold", "<Control>period", "howl:fold-toggle"),
         ("Search Everywhere...", "search-everywhere", "<Control><Shift>a", "search_everywhere"),
         ("Generate Doc Comment", "generate-doc", "<Control><Alt>d", "generate_doc_comment"),

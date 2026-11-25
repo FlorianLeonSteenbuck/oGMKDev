@@ -75,6 +75,7 @@ is removed once its features are in the frame (see Open items).*
 | Shift+F9 | debug the selected run configuration (GDB or XDebug type) |
 | F5 / F8 / F7 / Shift+F7 | while debugging: continue / step over / step into / step out |
 | Shift+F5 | stop debugging |
+| Shift+F12 | Find Usages: the occurrences of a name in the Python and JavaScript files, listed in the Search tab |
 | Ctrl+Alt+J | select the word at the cursor, then each next occurrence of the selection |
 | Ctrl+Shift+Alt+J | select all occurrences of the selection, or of the word at the cursor |
 | Escape | end the extra carets, the cursor stays |

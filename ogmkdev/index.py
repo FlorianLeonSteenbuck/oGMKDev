@@ -17,10 +17,13 @@ import fnmatch
 import json
 import os
 import re
+import ast
+import bisect
 from dataclasses import asdict, dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from . import diagnostics, editorconfig, languages, markup, organize
+from .lexers import ecmascript_lexer as js_lexer
 from .lexers import php_lexer
 
 SKIP_DIRS = frozenset({".git", "__pycache__", "node_modules"})
@@ -58,6 +61,14 @@ class FileEntry:
     mtime_ns: int
     size: int
     symbols: List[Symbol] = field(default_factory=list)
+    references: List["Reference"] = field(default_factory=list)
+
+
+# Occurrence of an identifier: name, line and column (both 1-based, column in characters)
+Reference = Tuple[str, int, int]
+# Version of the index cache: a cache of another version is ignored and rebuilt
+CACHE_VERSION = 2
+REFERENCE_SCRIPT_EXTENSIONS = frozenset({".js", ".mjs", ".cjs"})
 
 
 @dataclass(frozen=True)
@@ -270,6 +281,63 @@ def extract(path: str, source: str) -> List[Symbol]:
     return []
 
 
+def _char_column(line: str, byte_offset: int) -> int:
+    """The 1-based column in characters for a column the ast module gives in UTF-8 bytes."""
+    return len(line.encode("utf-8")[:byte_offset].decode("utf-8", errors="replace")) + 1
+
+
+def _references_python(source: str) -> List[Reference]:
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+    lines = source.split("\n")
+    found: List[Reference] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            line = lines[node.lineno - 1]
+            found.append((node.id, node.lineno, _char_column(line, node.col_offset)))
+        elif isinstance(node, ast.Attribute):
+            # the attribute name ends the expression: `value.name`
+            line = lines[node.end_lineno - 1]
+            column = _char_column(line, node.end_col_offset) - len(node.attr)
+            found.append((node.attr, node.end_lineno, column))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            line = lines[node.lineno - 1]
+            start = line.find(node.name, _char_column(line, node.col_offset) - 1)
+            if start >= 0:
+                found.append((node.name, node.lineno, start + 1))
+        elif isinstance(node, ast.arg):
+            line = lines[node.lineno - 1]
+            found.append((node.arg, node.lineno, _char_column(line, node.col_offset)))
+        elif isinstance(node, ast.alias) and "." not in node.name and getattr(node, "lineno", None):
+            line = lines[node.lineno - 1]
+            found.append((node.name, node.lineno, _char_column(line, node.col_offset)))
+    return found
+
+
+def _references_script(source: str) -> List[Reference]:
+    starts = [0] + [index + 1 for index, char in enumerate(source) if char == "\n"]
+    found: List[Reference] = []
+    for token in js_lexer.tokenize(source):
+        if token.kind != "identifier":
+            continue
+        line = bisect.bisect_right(starts, token.start)
+        found.append((source[token.start:token.end], line, token.start - starts[line - 1] + 1))
+    return found
+
+
+def extract_references(path: str, source: str) -> List[Reference]:
+    """Identifier occurrences of a Python or JavaScript file. Comments and strings hold none; keywords are
+    not identifiers. Other languages give no references yet."""
+    extension = os.path.splitext(path)[1].lower()
+    if extension in PYTHON_EXTENSIONS:
+        return _references_python(source)
+    if extension in REFERENCE_SCRIPT_EXTENSIONS:
+        return _references_script(source)
+    return []
+
+
 XSD_DECLARATIONS = frozenset({"element", "complexType", "simpleType", "group", "attributeGroup", "attribute"})
 XSLT_DECLARATIONS = frozenset({"template", "variable", "param", "attribute-set", "key", "function"})
 
@@ -366,13 +434,16 @@ class ProjectIndex:
     def _index_file(self, path: str, mtime: int, size: int) -> None:
         with open(path, encoding="utf-8", errors="replace") as handle:
             source = handle.read()
-        self.files[path] = FileEntry(mtime, size, extract(path, source))
+        self.files[path] = FileEntry(mtime, size, extract(path, source), extract_references(path, source))
 
     def _rebuild(self) -> None:
         self._by_name = {}
         self._subtypes = {}
         self._members = {}
-        for entry in self.files.values():
+        self._refs = {}
+        for path, entry in self.files.items():
+            for name, line, column in entry.references:
+                self._refs.setdefault(name, []).append((path, line, column))
             for symbol in entry.symbols:
                 self._by_name.setdefault(symbol.name.lower(), []).append(symbol)
                 if symbol.container:
@@ -392,6 +463,10 @@ class ProjectIndex:
 
     def find(self, name: str) -> List[Symbol]:
         return [s for s in self._by_name.get(name.lower(), []) if s.container is None]
+
+    def references(self, name: str) -> List[Reference]:
+        """Every occurrence of an identifier with exactly this name, as (file, line, column), in file order."""
+        return sorted(self._refs.get(name, []))
 
     def definitions(self, name: str) -> List[Symbol]:
         """Declarations a name can refer to: classes, functions, and members with that name.
@@ -574,20 +649,22 @@ class ProjectIndex:
         if target is None:
             raise ValueError("no cache path")
         os.makedirs(os.path.dirname(os.path.abspath(target)), exist_ok=True)
-        data = {path_: {"mtime_ns": e.mtime_ns, "size": e.size, "symbols": [asdict(s) for s in e.symbols]}
+        data = {path_: {"mtime_ns": e.mtime_ns, "size": e.size, "symbols": [asdict(s) for s in e.symbols],
+                        "references": [list(r) for r in e.references]}
                 for path_, e in self.files.items()}
         with open(target, "w", encoding="utf-8") as handle:
-            json.dump({"roots": self.roots, "files": data}, handle)
+            json.dump({"version": CACHE_VERSION, "roots": self.roots, "files": data}, handle)
 
     def load_cache(self, path: str) -> None:
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
-        if data.get("roots") != self.roots:
+        if data.get("version") != CACHE_VERSION or data.get("roots") != self.roots:
             return
         self.files = {}
         for file_path, entry in data.get("files", {}).items():
             symbols = [Symbol(s["name"], s["kind"], s["file"], s["line"], s["column"],
                               tuple(s["supertypes"]), tuple(s["traits"]), s["container"],
                               tuple(s["references"]), s.get("abstract", False)) for s in entry["symbols"]]
-            self.files[file_path] = FileEntry(entry["mtime_ns"], entry["size"], symbols)
+            references = [(r[0], r[1], r[2]) for r in entry.get("references", [])]
+            self.files[file_path] = FileEntry(entry["mtime_ns"], entry["size"], symbols, references)
         self._rebuild()

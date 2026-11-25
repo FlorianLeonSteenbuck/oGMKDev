@@ -33,6 +33,14 @@ def _hint_span(line_text: str, column: int) -> Tuple[int, int]:
     return start, start + max(1, width)
 
 
+def _read_lines(path: str) -> List[str]:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read().split("\n")
+    except OSError:
+        return []
+
+
 def _cache_path(folder: str) -> str:
     base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
     digest = hashlib.sha1(os.path.abspath(folder).encode("utf-8")).hexdigest()
@@ -276,6 +284,30 @@ class AnalysisMixin:
             self.ask_text("Find implementations", "Name of the class or interface:", self._implementations_of)
             return
         self._implementations_of(name)
+
+    def find_usages(self) -> None:
+        """Edit > Find Usages: every occurrence of a name in the Python and JavaScript files of the workspace."""
+        self._ensure_index()
+        self.ask_text("Find usages", "Name of the variable, function, class or member:", self._usages_of)
+
+    def _usages_of(self, name: str) -> None:
+        name = name.strip()
+        if not name:
+            return
+        self._ensure_index()
+        hits = self.index.references(name)
+        lines_of = {}
+        self.search_store.clear()
+        for path, line, _column in hits:
+            if path not in lines_of:
+                lines_of[path] = _read_lines(path)
+            lines = lines_of[path]
+            text = lines[line - 1].strip() if 0 < line <= len(lines) else ""
+            self.search_store.append([f"{os.path.relpath(path, self.folder)}:{line}", text[:200], path])
+        self.bottom.set_current_page(self.bottom.page_num(self.search_page))
+        builder = getattr(self, "_index_builder", None)
+        note = " (the index is still being built)" if builder is not None and builder.busy else ""
+        self.set_status(f"{len(hits)} usage(s) of {name}{note}")
 
     def _implementations_of(self, name: str) -> None:
         self._ensure_index()
