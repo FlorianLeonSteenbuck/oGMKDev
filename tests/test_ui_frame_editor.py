@@ -91,6 +91,30 @@ class EditorTests(FrameTestCase):
         self.assertEqual(hints[-1], [])
         self.assertTrue(frame.problems_store)
 
+    def test_the_display_options_are_set_per_file_and_read_back(self):
+        path = write(self.folder, "circle.php", "<?php\nclass Circle {}\n")
+        frame = self.frame([path])
+        self.focus(frame, path)
+        self.assertEqual(frame.editors.options(path, False, False), (False, False))
+        self.assertEqual(frame.editors.options(path), (False, False))  # an option that is None is left as it is
+        self.assertEqual(frame.editors.options(path, True, None), (True, False))
+        self.assertEqual(frame.editors.options(path, None, True), (True, True))
+        self.assertIsNone(frame.editors.options(os.path.join(self.folder, "missing.php")))
+
+    def test_the_display_settings_of_the_file_reach_its_editor_when_they_are_saved(self):
+        path = write(self.folder, "circle.php", "<?php\nclass Circle {}\n")
+        frame = self.frame([path])
+        self.focus(frame, path)
+        self.assertTrue(pump_until(lambda: frame.editors.options(path) == (True, True)))  # the defaults
+        SettingsStore(self.folder).apply("project", {"ogmkdev_syntax_highlight": "off",
+                                                     "ogmkdev_current_line": "false"})
+        frame._settings_changed()  # the settings window does this when it saves
+        self.assertTrue(pump_until(lambda: frame.editors.options(path) == (False, False)))
+        SettingsStore(self.folder).apply("project", {"ogmkdev_syntax_highlight": "on",
+                                                     "ogmkdev_current_line": "true"})
+        frame._settings_changed()
+        self.assertTrue(pump_until(lambda: frame.editors.options(path) == (True, True)))
+
     def test_saving_applies_the_editorconfig_line_handling(self):
         write(self.folder, ".editorconfig",
               "root = true\n[*]\ntrim_trailing_whitespace = true\ninsert_final_newline = true\n")

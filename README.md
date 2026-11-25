@@ -252,8 +252,9 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
 - **Keymap**: every action can be rebound with `ogmkdev_key_<action> = <accelerator>` in the global or the
   project EditorConfig; `none` removes the shortcut. Example: `ogmkdev_key_save_current = <Primary>s`.
 - **Current line** is highlighted with the Eclipse color; switch it off with `ogmkdev_current_line = false`.
+- **Syntax colours** are switched off with `ogmkdev_syntax_highlight = off`; the text keeps its mode, only its
+  colours go. Both settings apply to the focused file and again when the settings are saved.
 - **Problem underlines** can be switched off in EditorConfig (global or project): `ogmkdev_diagnostic_marks = off`.
-  The frame does not apply yet `ogmkdev_syntax_highlight` and `ogmkdev_current_line` (see Open items).
 - **Git** (Git tab in the left panel, Project > Show Git Changes, Ctrl+Alt+G): lists new, modified and
   deleted files of the workspace folders with their staged state. Stage and Unstage work on the selected
   rows, Diff shows the staged and unstaged changes (new files as a new-file patch), Commit... commits the
@@ -355,8 +356,6 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
 - Outline and navigation on top of the ECMAScript tree of `ogmkdev/parsers/javascript.py`.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - Dialect-specific SQL keyword sets; PHP and Python syntax colours in the frame.
-- The settings `ogmkdev_syntax_highlight = off` and `ogmkdev_current_line = false` are read by the frame's settings
-  but not applied: Howl has no switch for its lexer per buffer, and the current-line flair is not wired yet.
 - A new untitled editor does not take Howl's current editor: `HOWL_EMBED_FOCUS` runs for it, but the status
   line keeps the previous file, and the commands act on that file. Not solved yet; the test only checks the tab.
 - The `.rpm` package is written but has not been built on openSUSE.

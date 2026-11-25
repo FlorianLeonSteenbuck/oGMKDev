@@ -83,13 +83,26 @@ class Buffer extends PropertyObject
     set: (new_mode = {}) =>
       old_mode = @_mode
       @_mode = new_mode
-      if new_mode.lexer
-        @_buffer.lexer = (text) -> new_mode.lexer text, @
-      else
-        @_buffer.lexer = nil
+      @_apply_lexer!
 
       @_set_config!
       signal.emit 'buffer-mode-set', buffer: self, mode: new_mode, :old_mode
+
+  -- the syntax colours of the text: the lexer of the mode, or none while they are switched off (the frame's
+  -- ogmkdev_syntax_highlight setting); the mode stays the same
+  @property syntax_colours:
+    get: => @_syntax_colours != false
+    set: (on) =>
+      @_syntax_colours = on != false
+      @_apply_lexer!
+
+  _apply_lexer: =>
+    -- not named mode: that would assign the howl.mode module imported at the top of this file
+    active_mode = @_mode or {}
+    if active_mode.lexer and @syntax_colours
+      @_buffer.lexer = (text) -> active_mode.lexer text, @
+    else
+      @_buffer.lexer = nil
 
   @property title:
     get: => @_title or (@file and @file.basename) or 'Untitled'

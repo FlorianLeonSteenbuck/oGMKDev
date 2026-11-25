@@ -379,6 +379,7 @@ class AnalysisMixin:
         def apply_values(*_args) -> None:
             new = {key: self._widget_value(setting, widget) for key, (setting, widget) in widgets.items()}
             store.apply(scope, new)
+            self._settings_changed()
             window.destroy()
             for open_path in self.editors.files():
                 self.publish_templates(open_path)

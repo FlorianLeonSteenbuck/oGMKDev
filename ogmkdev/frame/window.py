@@ -714,12 +714,23 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         self._go_to_word(word)
 
     def _follow_focus(self, path: Optional[str]) -> None:
-        """The edge line of the editors of a file: the column of its EditorConfig max_line_length."""
+        """The edge line and the display options (syntax colours, current line) of the editors of a file: the
+        column of its EditorConfig max_line_length, and its ogmkdev_syntax_highlight and ogmkdev_current_line."""
         key = (path, self.editors.count)
         if not path or key == self._edge_key:
             return
         self._edge_key = key
-        self.editors.set_edge(path, self._settings_for(path).max_line_length or EDGE_COLUMN_DEFAULT)
+        settings = self._settings_for(path)
+        self.editors.set_edge(path, settings.max_line_length or EDGE_COLUMN_DEFAULT)
+        custom = settings.custom
+        syntax = custom.get("ogmkdev_syntax_highlight", "on").strip().lower() != "off"
+        current_line = custom.get("ogmkdev_current_line", "true").strip().lower() not in ("false", "off", "no", "0")
+        self.editors.options(path, syntax, current_line)
+
+    def _settings_changed(self) -> None:
+        """The settings were saved: the edge line and the display options of the focused file are applied again
+        on the next poll."""
+        self._edge_key = None
 
     def _go_to_word(self, word: str) -> None:
         """Ctrl+click in the Howl editor: the definition of the word. The ids of XML, SVG and HTML documents

@@ -241,6 +241,23 @@ class Application extends PropertyObject
             buffer.markers\add {{name: 'change-' .. item[2], start_offset: line.start_pos, end_offset: line.start_pos + 1}}
         ed.view.gutter\refresh! if ed.view and ed.view.gutter
 
+    -- the display options of the editors that show a file (EditorConfig's ogmkdev_syntax_highlight and
+    -- ogmkdev_current_line): the syntax colours are the lexer of the buffer's mode, or none, and the current line
+    -- is highlighted or not. A nil option is left as it is. The result is the state of the first editor that
+    -- shows the file: 1 when it shows the syntax colours, 2 when it highlights the current line; nil when no
+    -- editor shows it (src/embed.c howl_options)
+    _G.HOWL_EMBED_OPTIONS = (path, syntax, current_line) ->
+      file = File(path)
+      state = nil
+      for ed in *@editors
+        buffer = ed.buffer
+        continue unless buffer and buffer.file == file
+        buffer.syntax_colours = syntax if syntax != nil and buffer.syntax_colours != syntax
+        if current_line != nil
+          ed.cursor_line_highlighted = current_line if ed.cursor_line_highlighted != current_line
+        state or= (buffer._buffer.lexer and 1 or 0) + (ed.cursor_line_highlighted and 2 or 0)
+      state
+
     -- the text of the buffer that shows a file, nil when no editor shows it (src/embed.c howl_text)
     _G.HOWL_EMBED_TEXT = (path) ->
       file = File(path)

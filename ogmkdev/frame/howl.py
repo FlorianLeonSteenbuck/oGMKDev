@@ -51,6 +51,8 @@ class Editors:
         self._lib.howl_templates.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self._lib.howl_changes.restype = ctypes.c_int
         self._lib.howl_changes.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self._lib.howl_options.restype = ctypes.c_int
+        self._lib.howl_options.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]
         self._lib.howl_text.restype = ctypes.c_int
         self._lib.howl_text.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_breakpoints.restype = ctypes.c_int
@@ -100,6 +102,16 @@ class Editors:
         deleted. An empty list removes them."""
         lines = [f"{line}\t{kind}" for line, kind in rows]
         return self._lib.howl_changes(os.path.abspath(path).encode(), "\n".join(lines).encode("utf-8")) == 0
+
+    def options(self, path: str, syntax: Optional[bool] = None,
+                current_line: Optional[bool] = None) -> Optional[Tuple[bool, bool]]:
+        """Sets the display options of the editors that show ``path``: the syntax colours and the highlight of the
+        current line; an option that is None stays as it is. Returns the state of the first editor that shows the
+        file as (syntax colours shown, current line highlighted), or None when no editor shows it."""
+        state = self._lib.howl_options(os.path.abspath(path).encode(),
+                                       -1 if syntax is None else int(syntax),
+                                       -1 if current_line is None else int(current_line))
+        return None if state < 0 else (bool(state & 1), bool(state & 2))
 
     TEXT_LIMIT = 4 * 1024 * 1024
 

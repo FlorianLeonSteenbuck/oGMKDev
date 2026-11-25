@@ -245,6 +245,24 @@ describe 'Buffer', ->
         assert.equal 'f1_value', config.get 'buf_var', 'file'..file.path
         assert.equal 'def value', config.get 'buf_var', 'buffer'..b1.id
 
+  describe '.syntax_colours = <bool>', ->
+    lexer = (text) -> {}
+
+    it 'is the lexer of the mode, and there is no lexer while the colours are switched off', ->
+      b = Buffer { :lexer }
+      assert.is_not_nil b._buffer.lexer
+      b.syntax_colours = false
+      assert.is_nil b._buffer.lexer
+      assert.equal lexer, b.mode.lexer
+      b.syntax_colours = true
+      assert.is_not_nil b._buffer.lexer
+
+    it 'keeps the lexer off when the mode is set while the colours are switched off', ->
+      b = Buffer {}
+      b.syntax_colours = false
+      b.mode = { :lexer }
+      assert.is_nil b._buffer.lexer
+
   describe 'delete(start_pos, end_pos)', ->
     it 'deletes the specified range, inclusive', ->
       b = buffer 'ño örf'

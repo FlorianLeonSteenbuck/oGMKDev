@@ -421,3 +421,36 @@ int howl_text(const char *file, char *out, int size)
   lua_pop(embedded, 1);
   return found ? 0 : 1;
 }
+
+/* Sets the display options of the editors that show a file and returns the state of the first one: bit 1 when
+   it shows the syntax colours, bit 2 when it highlights the current line. A negative syntax or current_line is
+   left as it is, so a call with both negative only reads the state. Returns -1 when no Howl editor shows the
+   file. See HOWL_EMBED_OPTIONS in application.moon. */
+int howl_options(const char *file, int syntax, int current_line)
+{
+  if (embedded == NULL)
+    return -1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_OPTIONS");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return -1;
+  }
+  lua_pushstring(embedded, file);
+  if (syntax < 0)
+    lua_pushnil(embedded);
+  else
+    lua_pushboolean(embedded, syntax);
+  if (current_line < 0)
+    lua_pushnil(embedded);
+  else
+    lua_pushboolean(embedded, current_line);
+  if (lua_pcall(embedded, 3, 1, 0)) {
+    g_critical("Howl options for %s failed: %s", file, lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return -1;
+  }
+  int state = lua_isnumber(embedded, -1) ? (int) lua_tointeger(embedded, -1) : -1;
+  lua_pop(embedded, 1);
+  return state;
+}
