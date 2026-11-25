@@ -11,6 +11,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
+from .. import htmldoc  # noqa: E402
 from ..history import LocalHistory  # noqa: E402
 from ..workspace import workspace_files  # noqa: E402
 from .panels import _scrolled, _text_view  # noqa: E402
@@ -156,6 +157,22 @@ class ToolsMixin:
             filename = native.get_file().get_path()
             self.local_history.extract_patch(revisions, filename, self.folder)
             self.set_status(f"patch set of {len(revisions)} revision(s) written to {filename}")
+
+    def export_documentation(self) -> None:
+        """Asks for a folder and writes the declarations of the index with their doc comments there as HTML."""
+        self._ensure_index()
+        self._docs_native = Gtk.FileChooserNative.new("Export Documentation", self,
+                                                      Gtk.FileChooserAction.SELECT_FOLDER, "Export", "Cancel")
+        self._docs_native.connect("response", self._write_documentation)
+        self._docs_native.show()
+
+    def _write_documentation(self, native, response) -> None:
+        if response != Gtk.ResponseType.ACCEPT or not native.get_file():
+            return
+        folder = native.get_file().get_path()
+        result = htmldoc.export(self.index, folder, title=os.path.basename(self.folder) or "Documentation")
+        self.set_status(f"documentation: {result.declarations} declarations, {result.documented} with a doc "
+                        f"comment, written to {folder} (open index.html)")
 
     def revert_to_selected(self) -> None:
         selected = self._selected_revisions()

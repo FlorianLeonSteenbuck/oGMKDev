@@ -43,6 +43,7 @@ MENUS = (
         ("Show Git Changes", "show-git", "<Control><Alt>g", "show_git"),
         ("Show Current File in Files", "reveal-file", "", "reveal_current_file"),
         ("Show TODOs", "show-todos", "<Control><Alt>t", "show_todos"),
+        ("Export Documentation (HTML)...", "export-docs", "", "export_documentation"),
     )),
     ("Settings", (
         ("Preferences...", "preferences", "", "open_global_settings"),
