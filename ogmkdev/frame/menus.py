@@ -53,6 +53,12 @@ MENUS = (
     )),
     ("Run", (
         ("Run Configuration", "run-configuration", "", "run_selected"),
+        ("Debug Configuration", "debug-configuration", "<Shift>F9", "debug_selected"),
+        ("Continue", "debug-continue", "F5", "debug_continue"),
+        ("Step Over", "step-over", "F8", "step_over"),
+        ("Step Into", "step-into", "F7", "step_into"),
+        ("Step Out", "step-out", "<Shift>F7", "step_out"),
+        ("Stop Debugging", "debug-stop", "<Shift>F5", "stop_debugging"),
         ("Stop Process", "stop-process", "", "stop_process"),
         ("Toggle Breakpoint", "toggle-breakpoint", "F9", "howl:breakpoint-toggle"),
     )),
@@ -76,8 +82,5 @@ CONTEXT_MENU = (
     ("Show Current File in Files", "ctx-reveal", "reveal_current_file"),
 )
 
-# Entries that are not wired yet (their status line says so)
-PENDING = {
-    "debug_selected": "debugger", "step_over": "debugger step", "step_into": "debugger step",
-    "step_out": "debugger step",
-}
+# Entries that are not wired yet (their status line says so); none at the moment
+PENDING: dict = {}

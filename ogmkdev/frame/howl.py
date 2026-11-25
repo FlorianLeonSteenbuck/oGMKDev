@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
-from typing import Optional
+from typing import List, Optional, Tuple
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 HOWL_ROOT = os.path.join(ROOT, "howl")
@@ -48,6 +48,8 @@ class Editors:
         self._lib.howl_edge.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_templates.restype = ctypes.c_int
         self._lib.howl_templates.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self._lib.howl_breakpoints.restype = ctypes.c_int
+        self._lib.howl_breakpoints.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_close.restype = ctypes.c_int
         self._lib.howl_close.argtypes = [ctypes.c_void_p]
         self._lib.howl_focus.restype = ctypes.c_int
@@ -99,6 +101,18 @@ class Editors:
         """The code templates of ``path`` for Ctrl+Space in its Howl editors: one row per template,
         "trigger<TAB>body" with the body escaped (see templates.howl_rows)."""
         return self._lib.howl_templates(os.path.abspath(path).encode(), rows.encode("utf-8")) == 0
+
+    def breakpoints(self) -> List[Tuple[str, int]]:
+        """The breakpoints the Howl editors show: (path, line) pairs, lines 1-based, each once."""
+        buffer = ctypes.create_string_buffer(65536)
+        if self._lib.howl_breakpoints(buffer, len(buffer)) != 0:
+            return []
+        found: List[Tuple[str, int]] = []
+        for row in buffer.value.decode("utf-8", "replace").split("\n"):
+            path, _, line = row.partition("\t")
+            if path and line.isdigit() and (path, int(line)) not in found:
+                found.append((path, int(line)))
+        return found
 
     def close(self, container) -> bool:
         """Releases the Howl editor shown in ``container`` (a Gtk.Box); call it before the container is removed."""

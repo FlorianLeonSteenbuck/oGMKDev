@@ -190,6 +190,31 @@ int howl_inspect(const char *file, const char *rows)
   return 0;
 }
 
+/* Copies the breakpoints of the Howl editors, one "path<TAB>line" per line (see HOWL_EMBED_BREAKPOINTS in
+   application.moon). */
+int howl_breakpoints(char *out, int size)
+{
+  out[0] = 0;
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_BREAKPOINTS");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  if (lua_pcall(embedded, 0, 1, 0)) {
+    g_critical("Howl breakpoints failed: %s", lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  const char *rows = lua_tostring(embedded, -1);
+  if (rows)
+    snprintf(out, size, "%s", rows);
+  lua_pop(embedded, 1);
+  return 0;
+}
+
 /* Releases the Howl editor that the frame shows in `container` (a GtkBox), before the frame drops
    the container. See HOWL_EMBED_CLOSE in application.moon. */
 int howl_close(void *container)

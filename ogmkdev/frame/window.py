@@ -22,6 +22,7 @@ from .panels import PanelsMixin  # noqa: E402
 from .tabs import TabsMixin  # noqa: E402
 from .tools import ToolsMixin  # noqa: E402
 from .analysis import AnalysisMixin  # noqa: E402
+from .debugging import DebugMixin  # noqa: E402
 from .structure import StructureMixin  # noqa: E402
 
 HIDDEN_NAMES = {".git", "node_modules", "__pycache__"}
@@ -67,7 +68,7 @@ def install_frame_css(mode: str, scheme: str) -> None:
     _frame_provider.load_from_string(theme.frame_css(mode, scheme))
 
 
-class Frame(AnalysisMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
+class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
     _edge_key: Optional[tuple] = None
     _loose_root = None  # the tree entry 'Loose files' (a Gtk.TreeIter) while it exists
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),

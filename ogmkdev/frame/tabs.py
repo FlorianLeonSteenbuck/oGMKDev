@@ -67,12 +67,15 @@ class TabsMixin:
         return model[iterator][3] if iterator is not None else None
 
     def run_selected(self) -> None:
+        if self._debugger is not None:
+            self.debug_continue()
+            return
         config = self._selected_run_config()
         if config is None:
             self.set_status("select a run configuration first")
             return
         if config.type in (runconfig.GDB_TYPE, runconfig.XDEBUG_TYPE):
-            self.set_status("debug configurations are not wired in the frame yet")
+            self.start_debugging(config)
             return
         if self._process is not None and self._process.poll() is None:
             self.set_status("a process is still running (Run > Stop Process)")
@@ -100,6 +103,9 @@ class TabsMixin:
         GLib.idle_add(self.set_status, f"process exited with code {code}")
 
     def stop_process(self) -> None:
+        if self._debugger is not None:
+            self.stop_debugging()
+            return
         if self._process is not None and self._process.poll() is None:
             self._process.terminate()
             self.set_status("process terminated")

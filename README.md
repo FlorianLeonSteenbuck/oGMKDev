@@ -72,6 +72,9 @@ is removed once its features are in the frame (see Open items).*
 | Ctrl+Z / Ctrl+Shift+Z | undo / redo |
 | Alt+click | put an extra caret where the mouse is, or take it away |
 | Ctrl+Alt+Up / Ctrl+Alt+Down | add a caret above the topmost / below the bottommost caret |
+| Shift+F9 | debug the selected run configuration (GDB or XDebug type) |
+| F5 / F8 / F7 / Shift+F7 | while debugging: continue / step over / step into / step out |
+| Shift+F5 | stop debugging |
 | Ctrl+Alt+J | select the word at the cursor, then each next occurrence of the selection |
 | Ctrl+Shift+Alt+J | select all occurrences of the selection, or of the word at the cursor |
 | Escape | end the extra carets, the cursor stays |
@@ -338,9 +341,9 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 
 ## Open items
 
-- The frame does not drive the debugger yet: GDB (GDB/MI) and XDebug (DBGp) are implemented in
-  `ogmkdev/debug`, but stepping and breakpoints are not sent to them from the frame, and there is no
-  variables view. XDebug has no UI test; the end-to-end test covers GDB only.
+- The frame drives GDB (GDB/MI) and XDebug (DBGp) for breakpoints, continue, steps and stop. The
+  breakpoints are the gutter's marks, sent before each run or step. There is no variables view and no
+  watch yet, and XDebug is not tested in the frame: a GDB session was checked by hand under Xvfb.
 - Change marks colour the whole line; gutter stripes and a diff view per pane are not built yet.
 - Python and JavaScript references are not indexed, only their declarations. Methods of Python classes
   are not in the index, so the HTML export has no page entry for them.

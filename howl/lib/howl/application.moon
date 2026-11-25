@@ -303,6 +303,18 @@ class Application extends PropertyObject
         paths[#paths + 1] = path if path
       table.concat paths, '\n'
 
+    -- the breakpoints of the editors, as "path<TAB>line" rows (src/embed.c howl_breakpoints)
+    _G.HOWL_EMBED_BREAKPOINTS = ->
+      rows = {}
+      for ed in *@editors
+        buffer = ed.buffer
+        path = buffer and buffer.file and buffer.file.path
+        continue unless path
+        for marker in *buffer.markers\find name: 'breakpoint'
+          line = buffer\context_at(marker.start_offset).line.nr
+          rows[#rows + 1] = "#{path}\t#{line}"
+      table.concat rows, '\n'
+
     _G.HOWL_EMBED_STATUS = ->
       editor = @editor
       buffer = editor and editor.buffer
