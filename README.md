@@ -22,9 +22,9 @@ frame's layout, not a separate window. Details: `howl/OGMKDEV.md`.
 
 Screenshots (sample data in `samples/shop`):
 
-![Split panes with Howl editors](samples/shop/screenshots/split-panes.png)
+![Split panes with Howl editors and the frame's file tree](samples/shop/screenshots/split-panes.png)
 
-![Problems and hierarchy](samples/shop/screenshots/problems-hierarchy.png)
+![Problems panel with the diagnostics of the sample project](samples/shop/screenshots/problems.png)
 
 Open items are listed at the end of this file.
 
