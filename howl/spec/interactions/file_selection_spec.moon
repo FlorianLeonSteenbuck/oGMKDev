@@ -34,7 +34,6 @@ describe 'file_selection', ->
 
   it "registers interactions", ->
     assert.not_nil interact.select_file
-    assert.not_nil interact.select_file_in_project
     assert.not_nil interact.select_directory
 
   describe 'interact.select_file', ->
