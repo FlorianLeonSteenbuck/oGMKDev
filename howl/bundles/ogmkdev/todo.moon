@@ -123,6 +123,16 @@ command.register
 
 bindings.push ctrl_alt_t: 'todo-list'
 
-signal.connect 'file-opened', (args) -> timer.after 0.3, -> refresh args.buffer
+-- refreshes the buffers whose text changed since the last check (once a second)
+watched = setmetatable {}, __mode: 'k'
+watch = ->
+  for buffer in *app.buffers
+    stamp = buffer.last_changed
+    if watched[buffer] != stamp
+      watched[buffer] = stamp
+      refresh buffer
+  timer.after 1, watch
+
+timer.after 1, watch
 
 return :todos_in, :refresh, :parse_keywords

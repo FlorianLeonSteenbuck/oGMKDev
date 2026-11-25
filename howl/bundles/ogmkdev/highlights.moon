@@ -1,7 +1,7 @@
 -- Copyright 2026 oGMKDev
 -- License: MIT (see LICENSE.md at the top-level directory of the distribution)
 
-{:config, :signal, :timer} = howl
+{:app, :config, :timer} = howl
 {:highlight} = howl.ui
 
 config.define {
@@ -43,6 +43,16 @@ refresh = (buffer) ->
       init = e + 1
     highlight.apply name, buffer, ranges if #ranges > 0
 
-signal.connect 'file-opened', (args) -> timer.after 0.3, -> refresh args.buffer
+-- refreshes the buffers whose text changed since the last check (once a second)
+watched = setmetatable {}, __mode: 'k'
+watch = ->
+  for buffer in *app.buffers
+    stamp = buffer.last_changed
+    if watched[buffer] != stamp
+      watched[buffer] = stamp
+      refresh buffer
+  timer.after 1, watch
+
+timer.after 1, watch
 
 return :parse_rules, :refresh
