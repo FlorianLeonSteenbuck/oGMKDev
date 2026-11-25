@@ -8,6 +8,7 @@
 {:sort} = table
 {:min, :max} = math
 append = table.insert
+link_opener = require('ljglibs.gio.app_info').launch_uri
 
 local last_display_position
 
@@ -299,10 +300,70 @@ severity_of = (inspections) ->
     severity = 'warning' if inspection.type == 'warning'
   severity
 
-show_popup = (editor, inspections, pos) ->
+-- Doc links of an identifier, by the language of the buffer: the PHP manual for PHP, MDN for the web
+-- languages. Every identifier also links to its definition, which is followed as Ctrl+click does.
+web_languages = {javascript: true, typescript: true, html: true, css: true}
+
+doc_links = (mode_name, word) ->
+  links = {}
+  return links unless word and word\match '^[%a_][%w_]*$'
+
+  if mode_name == 'php'
+    append links, {label: 'PHP manual', url: "https://www.php.net/manual-lookup.php?pattern=#{word}"}
+  elseif web_languages[mode_name]
+    append links, {label: 'MDN', url: "https://developer.mozilla.org/en-US/search?q=#{word}"}
+
+  append links, {label: 'Definition', definition: word}
+  links
+
+set_link_opener = (opener) -> link_opener = opener
+
+-- a click on a link: an address opens with the application the desktop picks for it, a definition is
+-- followed as a Ctrl+click on the word would follow it
+activate_link = (editor, marker) ->
+  if marker.url
+    link_opener marker.url
+  elseif marker.definition
+    signal.emit 'editor-ctrl-click', editor: editor, word: marker.definition, line_text: editor.current_line.text, column: editor.cursor.column
+  editor\remove_popup!
+
+-- the link under a click, if the click landed on one
+link_at = (buffer, view, event) ->
+  byte = view\position_from_coordinates event.x, event.y
+  return nil unless byte
+
+  pos = buffer\char_offset byte
+  for marker in *buffer.markers\for_range(pos, pos + 1, name: 'doc-link')
+    return marker
+  nil
+
+-- the popup of an inspection: its messages, and below them the doc links of the identifier it is on
+inspection_popup = (editor, inspections) ->
   buf = ActionBuffer!
   buf\append popup_text inspections
+
+  word = inspections[1] and inspections[1].word
+  links = doc_links editor.buffer.mode.name, word
+  if #links > 0
+    buf\append '\n'
+    for i, link in ipairs links
+      buf\append '   ' if i > 1
+      start = buf.length + 1
+      buf\append link.label
+      buf.markers\add {{name: 'doc-link', flair: 'doc-link', start_offset: start, end_offset: buf.length, url: link.url, definition: link.definition}}
+
   popup = BufferPopup buf, css_class: "inspection-#{severity_of inspections}"
+  popup.view.listener = {
+    on_button_press: (view, event) ->
+      marker = link_at buf, view, event
+      return false unless marker
+      activate_link editor, marker
+      true
+  }
+  popup
+
+show_popup = (editor, inspections, pos) ->
+  popup = inspection_popup editor, inspections
 
   with popup.view
     .cursor.line = 1
@@ -326,7 +387,7 @@ display_inspections = ->
   if #markers == 0 and pos > 1
     markers = a_markers\at pos - 1
 
-  markers = [{message: m.message, type: m.flair} for m in *markers when m.message]
+  markers = [{message: m.message, type: m.flair, word: editor.buffer\sub(m.start_offset, m.end_offset)} for m in *markers when m.message]
   if #markers > 0
     last_display_position = pos
     show_popup editor, markers, editor.cursor.pos
@@ -384,6 +445,12 @@ signal.connect 'editor-defocused', (args) ->
 signal.connect 'app-ready', (args) ->
   timer.on_idle 0.5, on_idle
   timer.on_idle (config.display_inspections_delay / 1000), display_inspections
+
+highlight.define_default 'doc-link',
+  type: highlight.UNDERLINE
+  foreground: '#5b9bd5'
+  line_width: 1
+  line_type: 'solid'
 
 highlight.define_default 'error',
   type: highlight.WAVY_UNDERLINE
@@ -449,4 +516,4 @@ command.register
       app.editor.cursor.pos = chunk.start_pos
       app.editor\highlight start_pos: chunk.start_pos, end_pos: chunk.end_pos + 1
 
-:inspect, :criticize, :publish, :severity_of
+:inspect, :criticize, :publish, :severity_of, :doc_links, :inspection_popup, :activate_link, :set_link_opener

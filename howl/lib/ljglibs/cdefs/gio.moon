@@ -412,6 +412,11 @@ ffi.cdef [[
                                             GAsyncReadyCallback callback,
                                             gpointer user_data);
 
+  /* opens a URI with the application the desktop picks for it; a web address opens the browser */
+  gboolean g_app_info_launch_default_for_uri (const char *uri,
+                                              void *context,
+                                              GError **error);
+
   gboolean g_subprocess_communicate_finish (GSubprocess *subprocess,
                                             GAsyncResult *result,
                                             GBytes **stdout_buf,

@@ -3,6 +3,9 @@
 
 import inspect, inspection, Buffer, mode from howl
 File = howl.io.File
+{:Editor} = howl.ui
+signal = howl.signal
+launch_uri = require('ljglibs.gio.app_info').launch_uri
 match = require 'luassert.match'
 
 describe 'inspect', ->
@@ -471,6 +474,55 @@ describe 'inspect', ->
     it 'is hint for hints and anything else', ->
       assert.equal 'hint', inspect.severity_of {{type: 'hint'}}
       assert.equal 'hint', inspect.severity_of {{type: 'info'}}
+
+  describe 'doc_links(mode_name, word)', ->
+    it 'links a PHP identifier to the PHP manual, and to its definition', ->
+      links = inspect.doc_links 'php', 'str_replace'
+      assert.equal 'PHP manual', links[1].label
+      assert.equal 'https://www.php.net/manual-lookup.php?pattern=str_replace', links[1].url
+      assert.equal 'Definition', links[2].label
+      assert.equal 'str_replace', links[2].definition
+
+    it 'links the web languages to MDN', ->
+      assert.equal 'MDN', inspect.doc_links('javascript', 'fetch')[1].label
+
+    it 'offers only the definition in other languages', ->
+      links = inspect.doc_links 'lua', 'print'
+      assert.equal 1, #links
+      assert.equal 'print', links[1].definition
+
+    it 'offers no links for anything that is not an identifier', ->
+      assert.same {}, inspect.doc_links('php', '$foo')
+      assert.same {}, inspect.doc_links('php', nil)
+
+  describe 'inspection_popup(editor, inspections)', ->
+    it 'puts the links below the messages, as doc-link markers', ->
+      php_editor = {buffer: {mode: {name: 'php'}}}
+      popup = inspect.inspection_popup php_editor, {{type: 'error', message: 'Call to undefined function', word: 'str_replace'}}
+      assert.truthy popup.buffer.text\find('Call to undefined function', 1, true)
+      assert.truthy popup.buffer.text\find('PHP manual', 1, true)
+      assert.equal 2, #popup.buffer.markers\find(name: 'doc-link')
+
+  describe 'activate_link(editor, marker)', ->
+    opener = launch_uri
+
+    after_each ->
+      inspect.set_link_opener opener
+
+    it 'opens an address with the link opener', ->
+      opened = {}
+      inspect.set_link_opener (uri) -> table.insert opened, uri
+      inspect.activate_link Editor(buffer), {url: 'https://example.org/manual'}
+      assert.same {'https://example.org/manual'}, opened
+
+    it 'follows a definition link as a Ctrl+click on its word does', ->
+      seen = nil
+      handler = (args) -> seen = args
+      signal.connect 'editor-ctrl-click', handler
+      buffer.text = 'foo'
+      inspect.activate_link Editor(buffer), {definition: 'foo'}
+      signal.disconnect 'editor-ctrl-click', handler
+      assert.equal 'foo', seen.word
 
   describe 'the cursor-goto-inspection command', ->
     local editor, select_opts
