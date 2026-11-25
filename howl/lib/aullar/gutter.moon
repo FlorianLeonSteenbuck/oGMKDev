@@ -65,7 +65,7 @@ define_class {
     return true if not opts.force and not changed
     -- room on the left for the breakpoint dots (see _draw)
     -- room on the left for the breakpoint dots, on the right for the fold arrows (see _draw)
-    @_text_width = math.ceil(@view\text_dimensions(lines_text).width) + 28
+    @_text_width = math.ceil(@view\text_dimensions(lines_text).width) + 34
     @area.content_width = @_text_width
     @number_chars = num_chars
     not changed
@@ -114,7 +114,8 @@ define_class {
       if @_mark_at(line_nr) == 'breakpoint'
         cr\save!
         cr\set_source_rgba 0.86, 0.19, 0.19, 1
-        cr\arc 7, y + total_height / 2, 4.5, 0, 2 * math.pi
+        -- in the frame the first pixels of the gutter get no presses, so the dot is drawn right of them
+        cr\arc 12, y + total_height / 2, 4.5, 0, 2 * math.pi
         cr\fill!
         cr\restore!
 
