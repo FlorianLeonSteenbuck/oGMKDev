@@ -270,10 +270,27 @@ def extract(path: str, source: str) -> List[Symbol]:
     return []
 
 
+XSD_DECLARATIONS = frozenset({"element", "complexType", "simpleType", "group", "attributeGroup", "attribute"})
+XSLT_DECLARATIONS = frozenset({"template", "variable", "param", "attribute-set", "key", "function"})
+
+
 def _extract_markup(source: str, path: str) -> List[Symbol]:
-    """The id attributes of XML, SVG and HTML documents: each id is a declaration named by its value."""
-    return [Symbol(name=name, kind="id", file=path, line=line, column=column)
-            for name, line, column, _tag in markup.id_positions(source) if name]
+    """The id attributes of XML, SVG and HTML documents (each id is a declaration named by its value), and
+    in XML Schema and XSLT the named declarations: schema types and elements, named templates, variables."""
+    found = [Symbol(name=name, kind="id", file=path, line=line, column=column)
+             for name, line, column, _tag in markup.id_positions(source) if name]
+    extension = os.path.splitext(path)[1].lower()
+    if extension in (".xsd", ".xsl", ".xslt"):
+        elements, _error = markup.collect(source)
+        for element in elements:
+            name = element.attributes.get("name", "")
+            prefix, _sep, local = element.tag.rpartition(":")
+            if not name:
+                continue
+            if (prefix in ("xs", "xsd") and local in XSD_DECLARATIONS) or (prefix == "xsl" and local in XSLT_DECLARATIONS):
+                found.append(Symbol(name=name, kind="declaration", file=path, line=element.line,
+                                    column=element.column))
+    return found
 
 
 # ----------------------------------------------------------------------- index

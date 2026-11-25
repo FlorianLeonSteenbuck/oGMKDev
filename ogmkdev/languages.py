@@ -64,8 +64,10 @@ LANGUAGES: Dict[str, Language] = {
         Language("scss", "SCSS", ("scss",), (), None, "scss"),
         Language("sass", "Sass", ("sass",), (), None, "sass"),
         Language("less", "LESS", ("less",), (), None, "less"),
-        # XML and its schema and transformation dialects; IntelliJ module files (.iml) are XML too
-        Language("xml", "XML", ("xml", "iml", "xsd", "xsl", "xslt", "dtd", "xul"), (), None, "xml"),
+        # XML and its dialects; IntelliJ module files (.iml) are XML too
+        Language("xml", "XML", ("xml", "iml", "dtd", "xul"), (), None, "xml"),
+        Language("xsd", "XML Schema", ("xsd",), (), None, "xml"),
+        Language("xslt", "XSLT", ("xsl", "xslt"), (), None, "xml"),
         Language("svg", "SVG", ("svg",), (), None, "xml"),
         Language("text", "Plain text", ("txt",), (), None, None),
     )

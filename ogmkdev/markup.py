@@ -29,6 +29,8 @@ Problem = Tuple[int, int, str]
 MARKUP_EXTENSIONS = frozenset({".xml", ".svg", ".xsd", ".xsl", ".xslt", ".iml", ".dtd", ".xul",
                                ".html", ".htm", ".xhtml"})
 HTML_EXTENSIONS = frozenset({".html", ".htm", ".xhtml"})
+XML_LANGUAGES = ("xml", "svg", "xsd", "xslt")  # documents read as XML
+MARKUP_LANGUAGES = XML_LANGUAGES + ("html",)   # everything the structure, selector and reference features apply to
 VOID_ELEMENTS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
                            "param", "source", "track", "wbr"})
 
@@ -40,6 +42,8 @@ REFERENCE_ATTRIBUTES = frozenset({"href", "src", "xlink:href", "schemaLocation",
 ATTRIBUTE_VALUE = re.compile(r"""([\w:.\-]+)\s*=\s*(["'])([^"'<>]*)\2""")
 CSS_URL = re.compile(r"""url\(\s*(["']?)([^)"'\s]+)\1\s*\)""")
 CSS_IMPORT = re.compile(r"""@import\s+(["'])([^"']+)\1""")
+# XSLT document("file.xml"), doc(...), unparsed-text(...) and the like: the file is the string argument
+CALL_DOCUMENT = re.compile(r"""(?:document|doc|unparsed-text)\(\s*(["'])([^"'<>]+)\1""")
 
 
 def position(text: str, offset: int) -> Tuple[int, int]:
@@ -143,7 +147,7 @@ def reference_at(line: str, column: int) -> Optional[str]:
     for match in ATTRIBUTE_VALUE.finditer(line):
         if match.group(1) in REFERENCE_ATTRIBUTES and match.start(3) <= index <= match.end(3):
             return match.group(3)
-    for pattern in (CSS_URL, CSS_IMPORT):
+    for pattern in (CSS_URL, CSS_IMPORT, CALL_DOCUMENT):
         for match in pattern.finditer(line):
             if match.start(2) <= index < match.end(2):
                 return match.group(2)

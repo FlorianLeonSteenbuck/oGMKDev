@@ -512,7 +512,7 @@ class Frame(AnalysisMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, G
         are definitions only where the inspection applies (not in PHP files)."""
         self._ensure_index()
         here = self._markup_enabled(self.area.current_path())
-        symbols = [s for s in self.index.definitions(word) if s.kind != "id" or here]
+        symbols = [s for s in self.index.definitions(word) if s.kind not in ("id", "declaration") or here]
         if not symbols:
             self.set_status(f"no definition of {word} in the folder")
             return

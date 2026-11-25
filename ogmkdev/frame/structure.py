@@ -23,7 +23,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 from .. import languages, markup, selectors  # noqa: E402
 from .panels import _scrolled  # noqa: E402
 
-MARKUP_LANGUAGES = ("xml", "svg", "html")
+MARKUP_LANGUAGES = markup.MARKUP_LANGUAGES
 XML_MENU_SLOTS = 24  # the menu entries are actions xml-copy-0 .. xml-copy-23
 
 

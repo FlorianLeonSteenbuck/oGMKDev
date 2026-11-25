@@ -95,10 +95,10 @@ def analyze(text: str, detection: Detection, settings: Optional[EditorSettings] 
         if detection.language == "json":
             for line, column, message in markup.json_problems(text):
                 found.append(Diagnostic(line, column, "error", "json-syntax", message))
-        if detection.language in ("xml", "svg"):
+        if detection.language in markup.XML_LANGUAGES:
             for line, column, message in markup.xml_problems(text):
                 found.append(Diagnostic(line, column, "error", "xml-syntax", message))
-        if detection.language in ("xml", "svg", "html"):
+        if detection.language in markup.MARKUP_LANGUAGES:
             for line, column, message in markup.duplicate_id_problems(text):
                 found.append(Diagnostic(line, column, "warning", "duplicate-id", message))
         if detection.language in ("css", "scss", "less"):
