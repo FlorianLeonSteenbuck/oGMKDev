@@ -31,6 +31,7 @@ class DebugMixin:
 
     _debugger = None
     _breakpoint_sync: Optional[BreakpointSync] = None
+    _debug_process: Optional[subprocess.Popen] = None
 
     # ----------------------------------------------------------- actions
 
@@ -113,6 +114,7 @@ class DebugMixin:
             if launch:
                 process = subprocess.Popen(launch, cwd=self.folder, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT, text=True, errors="replace")
+                self._debug_process = process
                 threading.Thread(target=self._pipe_output, args=(process,), daemon=True).start()
             debugger.start()
             for problem in sync.sync(wanted):
@@ -169,4 +171,8 @@ class DebugMixin:
         if self._debugger is debugger:
             self._debugger = None
             self._breakpoint_sync = None
+        # the script the engine was started for ends with the session (it would run on otherwise)
+        process, self._debug_process = self._debug_process, None
+        if process is not None and process.poll() is None:
+            process.terminate()
         threading.Thread(target=debugger.stop, daemon=True).start()
