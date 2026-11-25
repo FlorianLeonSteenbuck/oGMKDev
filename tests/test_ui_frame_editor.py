@@ -41,6 +41,8 @@ class EditorTests(FrameTestCase):
         frame.new_editor()
         self.assertEqual(len(frame.area.pages), 2)
         self.assertIsNone(frame.area.current_path())  # the untitled tab is the one shown: it has no file
+        # Howl follows the tab, and the untitled editor has a buffer of its own (not the buffer of the file)
+        self.assertTrue(pump_until(lambda: (frame.editors.status() or {}).get("path") == "Untitled"))
         frame.close_tab()
         self.assertEqual(len(frame.area.pages), 1)
         self.assertTrue(pump_until(lambda: frame.area.current_path() == source))

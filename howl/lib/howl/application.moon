@@ -396,6 +396,9 @@ class Application extends PropertyObject
       unless buffer
         buffer = @new_buffer mode.for_file path
         buffer.file = path
+    -- an untitled editor gets a buffer of its own: without one the editor takes the next buffer of Howl,
+    -- which is the buffer of another file
+    buffer or= @new_buffer!
     editor = @new_editor window: window, buffer: buffer
     @_move_content window, container
     @_embedded[container] = {:window, :editor}

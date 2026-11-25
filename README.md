@@ -357,6 +357,4 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
 - Outline and navigation on top of the ECMAScript tree of `ogmkdev/parsers/javascript.py`.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - Dialect-specific SQL keyword sets; PHP and Python syntax colours in the frame.
-- A new untitled editor does not take Howl's current editor: `HOWL_EMBED_FOCUS` runs for it, but the status
-  line keeps the previous file, and the commands act on that file. Not solved yet; the test only checks the tab.
 - The `.rpm` package is written but has not been built on openSUSE.
