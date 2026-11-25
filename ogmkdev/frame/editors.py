@@ -55,6 +55,7 @@ class EditorArea:
         notebook.set_scrollable(True)
         notebook.set_group_name("ogmkdev-editors")
         notebook.connect("page-removed", self._on_page_removed)
+        notebook.connect("switch-page", self._on_switch_page)
         click = Gtk.GestureClick()
         click.connect("pressed", lambda *_: self._activate(notebook))
         notebook.add_controller(click)
@@ -186,7 +187,18 @@ class EditorArea:
     def _close_page(self, page: Gtk.Widget) -> None:
         notebook = self._notebook_of(page)
         if notebook is not None:
+            # Howl releases the editor while its widgets are still in the page
+            self.frame.editors.close(page)
             notebook.remove_page(notebook.page_num(page))
+
+    def _on_switch_page(self, _notebook: Gtk.Notebook, page: Gtk.Widget, _index: int) -> None:
+        """The editor of the tab that becomes current gets the keyboard focus, so Howl follows the tab. It is
+        given once GTK has finished the switch: GTK would otherwise move the focus back while it works."""
+        GLib.idle_add(self._focus_page, page)
+
+    def _focus_page(self, page: Gtk.Widget) -> bool:
+        self.frame.editors.focus(page)
+        return False
 
     def _on_page_removed(self, notebook: Gtk.Notebook, child: Gtk.Widget, _index: int) -> None:
         self.pages.pop(child, None)

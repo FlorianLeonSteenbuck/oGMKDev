@@ -144,8 +144,30 @@ class Application extends PropertyObject
     files = if file and file != '' then {file} else {}
     @_load files, {}
     @_move_content @window, container
+    -- the editor each container of the frame shows, so that the frame can close or focus it
+    @_embedded = {}
+    @_embedded[container] = {window: @window, editor: @editor}
+    -- an editor that is released leaves the list of editors and stops being the focused one
+    howl.signal.connect 'editor-released', (args) ->
+      @_editors = [e for e in *@_editors when e != args.editor]
+      @editor = @_editors[#@_editors] if @editor == args.editor
     -- further editors of the same process (src/embed.c calls this for every later container)
     _G.HOWL_EMBED_ADD = (more_container, more_file) -> @embed_window more_container, more_file
+    -- releases the editor that a container of the frame shows (src/embed.c howl_close); the window of
+    -- that editor is no longer the one that new editors go to
+    _G.HOWL_EMBED_CLOSE = (box) ->
+      entry = @_embedded[box]
+      return unless entry
+      @_embedded[box] = nil
+      entry.window\remove_view entry.editor if entry.editor
+      if @window == entry.window
+        for _, other in pairs @_embedded
+          @window = other.window
+          break
+    -- gives the keyboard focus to the editor that a container of the frame shows (src/embed.c howl_focus)
+    _G.HOWL_EMBED_FOCUS = (box) ->
+      entry = @_embedded[box]
+      entry.editor\grab_focus! if entry and entry.editor
     -- opens a file (line and column 0 for none) in the editor that has the focus (src/embed.c)
     _G.HOWL_EMBED_OPEN = (path, line, column) ->
       loc = file: File(path)
@@ -303,6 +325,7 @@ class Application extends PropertyObject
         buffer.file = path
     editor = @new_editor window: window, buffer: buffer
     @_move_content window, container
+    @_embedded[container] = {:window, :editor}
 
   _move_content: (window, container) =>
     ffi = require 'ffi'
@@ -513,6 +536,7 @@ class Application extends PropertyObject
     signal.connect 'window-focused', self\synchronize
     signal.connect 'editor-released', (s_args) ->
       @_editors =  [e for e in *@_editors when e != s_args.editor]
+      @editor = @_editors[#@_editors] if @editor == s_args.editor
 
     breadcrumbs.init!
 

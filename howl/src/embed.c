@@ -190,6 +190,48 @@ int howl_inspect(const char *file, const char *rows)
   return 0;
 }
 
+/* Releases the Howl editor that the frame shows in `container` (a GtkBox), before the frame drops
+   the container. See HOWL_EMBED_CLOSE in application.moon. */
+int howl_close(void *container)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_CLOSE");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushlightuserdata(embedded, container);
+  if (lua_pcall(embedded, 1, 0, 0)) {
+    g_critical("Howl could not close an editor: %s", lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  return 0;
+}
+
+/* Gives the keyboard focus to the Howl editor that the frame shows in `container`. See HOWL_EMBED_FOCUS
+   in application.moon. */
+int howl_focus(void *container)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_FOCUS");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushlightuserdata(embedded, container);
+  if (lua_pcall(embedded, 1, 0, 0)) {
+    g_critical("Howl could not focus an editor: %s", lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  return 0;
+}
+
 /* Sets the code templates of a file for Ctrl+Space in its Howl editor: one row per template,
    "trigger<TAB>body", the body with its backslashes, line breaks and tabs escaped (see
    HOWL_EMBED_TEMPLATES in application.moon and howl.editing.templates). */

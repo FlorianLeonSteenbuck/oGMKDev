@@ -48,6 +48,10 @@ class Editors:
         self._lib.howl_edge.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_templates.restype = ctypes.c_int
         self._lib.howl_templates.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self._lib.howl_close.restype = ctypes.c_int
+        self._lib.howl_close.argtypes = [ctypes.c_void_p]
+        self._lib.howl_focus.restype = ctypes.c_int
+        self._lib.howl_focus.argtypes = [ctypes.c_void_p]
         self._root = root.encode()
         self.count = 0
 
@@ -95,6 +99,14 @@ class Editors:
         """The code templates of ``path`` for Ctrl+Space in its Howl editors: one row per template,
         "trigger<TAB>body" with the body escaped (see templates.howl_rows)."""
         return self._lib.howl_templates(os.path.abspath(path).encode(), rows.encode("utf-8")) == 0
+
+    def close(self, container) -> bool:
+        """Releases the Howl editor shown in ``container`` (a Gtk.Box); call it before the container is removed."""
+        return self._lib.howl_close(raw_pointer(container)) == 0
+
+    def focus(self, container) -> bool:
+        """Gives the keyboard focus to the Howl editor shown in ``container``; Howl then follows that editor."""
+        return self._lib.howl_focus(raw_pointer(container)) == 0
 
     def take_click(self):
         """The last Ctrl+click in a Howl editor, taken once: (word, column, line text), or None."""
