@@ -1,17 +1,18 @@
 #!/bin/sh
-# Builds the Howl binary that the oGMKDev editor window runs on.
+# Builds the Howl library and binary that the oGMKDev editor window runs on.
 #
 # howl/ is a patched copy of https://github.com/howl-editor/howl (see howl/OGMKDEV.md).
 # Howl's own Makefile downloads LuaJIT and lpeg; this script builds the same versions
 # from sources that can be fetched here instead:
 #
-#   LuaJIT 2.1 from the Ubuntu source package, built with LUA52COMPAT (Howl needs table.pack
-#   and other Lua 5.2 functions). Needs a deb-src entry for apt-get source, or set
-#   LUAJIT_SRC to an unpacked source tree.
+#   LuaJIT 2.1, built with LUA52COMPAT (Howl needs table.pack and other Lua 5.2 functions).
+#   Its source tree is found in LUAJIT_SRC, or in build/howl-deps/luajit-src/luajit-*/, or it is
+#   fetched with apt-get source (needs a deb-src entry in apt).
 #   lpeg 0.10.2 from the LuaDist repository tag (Howl's lexers need its variable-length B()).
 #
 # Needs: gcc, make, pkg-config, git, GTK 4 development files (libgtk-4-dev).
-# Output: howl/src/howl (run it as ./howl/src/howl file.txt).
+# Output: howl/src/howl (run it as ./howl/src/howl file.txt) and howl/src/libhowl.so (the library
+# that the GTK 4 frame loads).
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -19,11 +20,19 @@ WORK=${OGMKDEV_BUILD_DIR:-$ROOT/build/howl-deps}
 mkdir -p "$WORK"
 
 if [ -z "${LUAJIT_SRC:-}" ]; then
-  if [ ! -d "$WORK/luajit-src" ]; then
+  LUAJIT_SRC=$(ls -d "$WORK"/luajit-src/luajit-*/ 2>/dev/null | head -1 || true)
+  if [ -z "$LUAJIT_SRC" ]; then
     mkdir -p "$WORK/luajit-src"
-    (cd "$WORK/luajit-src" && apt-get source -q luajit)
+    if (cd "$WORK/luajit-src" && apt-get source -q luajit) >/dev/null 2>&1; then
+      LUAJIT_SRC=$(ls -d "$WORK"/luajit-src/luajit-*/ 2>/dev/null | head -1 || true)
+    fi
   fi
-  LUAJIT_SRC=$(ls -d "$WORK"/luajit-src/luajit-*/ | head -1)
+  if [ -z "$LUAJIT_SRC" ]; then
+    echo "build-howl: no LuaJIT source tree found." >&2
+    echo "  Unpack LuaJIT 2.1 and set LUAJIT_SRC to it, or add a deb-src entry and run apt-get source" >&2
+    echo "  in $WORK/luajit-src." >&2
+    exit 1
+  fi
   LUAJIT_SRC=${LUAJIT_SRC%/}
 fi
 if [ ! -f "$LUAJIT_SRC/src/libluajit.a" ]; then

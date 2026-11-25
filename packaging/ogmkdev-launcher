@@ -1,11 +1,15 @@
 #!/bin/sh
-# Starts ogmkdev with the first Python 3 that has PyGObject (python3-gi).
+# Starts the ogmkdev frame (GTK 4 with Howl) with the first Python 3 that has PyGObject and GTK 4.
 PYTHONPATH=/usr/share/ogmkdev${PYTHONPATH:+:$PYTHONPATH}
-export PYTHONPATH
+OGMKDEV_HOWL_LIBRARY=/usr/lib/ogmkdev/libhowl.so
+OGMKDEV_HOWL_ROOT=/usr/share/ogmkdev/howl
+export PYTHONPATH OGMKDEV_HOWL_LIBRARY OGMKDEV_HOWL_ROOT
 for PY in python3 python3.13 python3.12 python3.11 python3.10; do
-    if command -v "$PY" >/dev/null 2>&1 && "$PY" -c 'import gi' >/dev/null 2>&1; then
-        exec "$PY" -m ogmkdev "$@"
+    if command -v "$PY" >/dev/null 2>&1 && \
+       "$PY" -c 'import gi; gi.require_version("Gtk", "4.0"); from gi.repository import Gtk' >/dev/null 2>&1; then
+        exec "$PY" -m ogmkdev.frame "$@"
     fi
 done
-echo "ogmkdev needs Python 3 with PyGObject: install python3-gi (Debian) or python3-gobject (openSUSE)." >&2
+echo "ogmkdev needs Python 3 with PyGObject and GTK 4: install python3-gi and gir1.2-gtk-4.0 (Debian, Ubuntu)" >&2
+echo "or python3-gobject and typelib-1_0-Gtk-4_0 (openSUSE)." >&2
 exit 1

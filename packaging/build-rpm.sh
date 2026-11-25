@@ -1,5 +1,6 @@
 #!/bin/sh
-# Build the openSUSE (and Fedora-style) package: dist/rpmbuild/RPMS/noarch/ogmkdev-<version>.noarch.rpm
+# Build the openSUSE (and Fedora-style) package: dist/rpmbuild/RPMS/<arch>/ogmkdev-<version>-1.<arch>.rpm
+#   sh packaging/build-howl.sh         first: builds howl/src/libhowl.so (see packaging/README.md)
 #   sh packaging/build-rpm.sh          (needs rpmbuild; openSUSE: sudo zypper install rpm-build)
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)

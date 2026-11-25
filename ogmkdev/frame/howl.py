@@ -7,8 +7,9 @@ import os
 from typing import List, Optional, Tuple
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-HOWL_ROOT = os.path.join(ROOT, "howl")
-LIBRARY = os.path.join(HOWL_ROOT, "src", "libhowl.so")
+# A package installs the library and Howl's Lua files elsewhere: the starter sets these variables
+HOWL_ROOT = os.environ.get("OGMKDEV_HOWL_ROOT") or os.path.join(ROOT, "howl")
+LIBRARY = os.environ.get("OGMKDEV_HOWL_LIBRARY") or os.path.join(HOWL_ROOT, "src", "libhowl.so")
 
 _pythonapi = ctypes.pythonapi
 _pythonapi.PyCapsule_GetPointer.restype = ctypes.c_void_p
