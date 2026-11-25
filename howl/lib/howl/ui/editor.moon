@@ -3,6 +3,7 @@
 
 Gtk = require 'ljglibs.gtk'
 aullar = require 'aullar'
+Carets = require 'aullar.carets'
 -- gobject_signal = require 'ljglibs.gobject.signal'
 {:signal, :bindings, :config, :command, :clipboard, :dispatch, :sys} = howl
 {:Process} = howl.io
@@ -105,6 +106,31 @@ signal.connect 'buffer-mode-set', (args) ->
   for e in *editors!
     if buffer == e.buffer
       e\_set_config_settings!
+
+-- the cursor moves that every caret makes, by key name; the collapse says where a selection goes
+-- when the move is plain (left to its start, right to its end)
+MULTI_MOVES = {
+  left: {((editor) -> editor.view.cursor\backward!), 'start'}
+  right: {((editor) -> editor.view.cursor\forward!), 'end'}
+  up: {((editor) -> editor.view.cursor\up!)}
+  down: {((editor) -> editor.view.cursor\down!)}
+  home: {((editor) -> editor.view.cursor\start_of_line!)}
+  ['end']: {((editor) -> editor.view.cursor\end_of_line!)}
+  ctrl_home: {((editor) -> editor.view.cursor\start_of_file!)}
+  ctrl_end: {((editor) -> editor.view.cursor\end_of_file!)}
+  ctrl_left: {((editor) -> editor.cursor\word_left!)}
+  ctrl_right: {((editor) -> editor.cursor\word_right_end!)}
+}
+
+-- keys that keep several carets when their command runs (the command handles them itself)
+KEEPS_CARETS = {
+  ctrl_c: true
+  ctrl_insert: true
+  ctrl_alt_up: true
+  ctrl_alt_down: true
+  ctrl_alt_j: true
+  ctrl_shift_alt_j: true
+}
 
 class Editor extends PropertyObject
   editors: editors
@@ -833,7 +859,9 @@ class Editor extends PropertyObject
     else
       @searcher\cancel!
 
-    if not bindings.is_capturing and auto_pair.handle event, @
+    return true if @_multi_key_press event
+
+    if not @view\has_extra_carets! and not bindings.is_capturing and auto_pair.handle event, @
       @remove_popup!
       return true
 
@@ -905,6 +933,9 @@ class Editor extends PropertyObject
   _unfold_for_edit: =>
     positions = {@cursor.pos}
     positions[#positions + 1] = @selection.anchor unless @selection.empty
+    for c in *@view\extra_carets!
+      positions[#positions + 1] = c.pos
+      positions[#positions + 1] = c.anchor
     changed = false
     for pos in *positions
       changed = @_open_folds_at(pos) or changed
@@ -950,6 +981,13 @@ class Editor extends PropertyObject
 
   _on_button_press: (view, event) =>
     @remove_popup!
+    if event.button == 1 and event.alt and event.nr_presses == 1
+      -- Alt+click puts a caret where the mouse is, or takes away the extra caret there
+      pos = @view\position_from_coordinates event.x, event.y
+      @_toggle_extra_caret pos if pos
+      return true
+
+    @view\clear_extra_carets!
     if event.button == 3
       -- a right click puts the cursor where the mouse is (unless it is in a selection)
       pos = @_pos_from_coordinates(event.x, event.y)
@@ -1004,6 +1042,201 @@ class Editor extends PropertyObject
         unless sel_start == sel_end
           @selection\set sel_start, sel_end
           true
+
+  -- Several carets: the cursor (the primary caret, listed last) and the extra carets of the view. A
+  -- caret is a {pos, anchor} pair of byte positions, equal for a plain caret.
+  _all_carets: =>
+    carets = [{pos: c.pos, anchor: c.anchor} for c in *@view\extra_carets!]
+    selection = @view.selection
+    carets[#carets + 1] = {pos: @cursor.pos, anchor: (selection.is_empty and @cursor.pos) or selection.anchor, primary: true}
+    carets
+
+  -- the move applies to every caret; a plain move from a selection collapses it to its start or end
+  _move_carets: (move, extend) =>
+    move_fn, collapse = move[1], move[2]
+    moved = {}
+    for c in *@_all_carets!
+      if not extend and collapse and c.anchor != c.pos
+        pos = if collapse == 'start' then min(c.pos, c.anchor) else max(c.pos, c.anchor)
+        moved[#moved + 1] = {pos: pos, anchor: pos, primary: c.primary}
+      else
+        @cursor.pos = c.pos
+        move_fn @
+        pos = @cursor.pos
+        moved[#moved + 1] = {pos: pos, anchor: (extend and c.anchor) or pos, primary: c.primary}
+
+    primary = nil
+    for m in *moved
+      primary = m if m.primary
+
+    extras = {}
+    for m in *moved
+      continue if m.primary
+      duplicate = m.pos == primary.pos and m.anchor == primary.anchor
+      for e in *extras
+        duplicate or= e.pos == m.pos and e.anchor == m.anchor
+      extras[#extras + 1] = {pos: m.pos, anchor: m.anchor} unless duplicate
+
+    @view\set_extra_carets extras
+    @cursor.pos = primary.pos
+    if primary.anchor != primary.pos
+      @view.selection\set primary.anchor, primary.pos
+    else
+      @view.selection\clear!
+
+  -- the keys while several carets are active: they move, delete and insert at every caret. Any other
+  -- key ends the extra carets first, so its command works on the cursor alone
+  _multi_key_press: (event) =>
+    return false unless @view\has_extra_carets!
+
+    -- text goes to the input method
+    if event.character and not event.control and not event.alt
+      first = event.character\byte 1
+      return false if first and first >= 32 and first != 127
+
+    key = (event.key_name or '')\lower!
+    return false if key\match('^shift') or key\match('^control') or key\match('^alt') or key\match('^super') or key\match('^meta') or key\match('^hyper') or key\match('^iso_level') or key\match('^caps') or key\match('^num_lock')
+
+    for name in *bindings.translate_key(event)
+      return false if KEEPS_CARETS[name]
+      if name == 'escape'
+        @view\clear_extra_carets!
+        return true
+
+      extend = name\find('shift_', 1, true) != nil
+      base = name\gsub 'shift_', ''
+      if MULTI_MOVES[base]
+        @_move_carets MULTI_MOVES[base], extend
+        return true
+
+      if base == 'backspace' or base == 'delete'
+        @view\delete_at_carets base == 'backspace'
+        @_unfold_for_edit!
+        return true
+
+      if base == 'return'
+        @view\insert_at_carets((caret) -> @buffer.eol .. @view\indent_at(caret.start))
+        @_unfold_for_edit!
+        return true
+
+      if name == 'tab'
+        conf = @config_at_cursor
+        @view\insert(if conf.use_tabs then '\t' else string.rep(' ', conf.indent))
+        return true
+
+    @view\clear_extra_carets!
+    false
+
+  -- Alt+click: a caret where the mouse is, or the extra caret there is taken away
+  _toggle_extra_caret: (pos) =>
+    extras = [{pos: c.pos, anchor: c.anchor} for c in *@view\extra_carets!]
+    for i, c in ipairs extras
+      if c.pos == pos and c.anchor == pos
+        table.remove extras, i
+        @view\set_extra_carets extras
+        return
+
+    for c in *@_all_carets!
+      return if c.pos == pos and c.anchor == pos
+
+    extras[#extras + 1] = {pos: pos, anchor: pos}
+    @view\set_extra_carets extras
+
+  -- Ctrl+Alt+Up and Down: a caret one line above the topmost or below the bottommost caret
+  add_caret_above: => @_add_caret_vertically(-1)
+
+  add_caret_below: => @_add_caret_vertically(1)
+
+  _add_caret_vertically: (step) =>
+    carets = @_all_carets!
+    base = carets[1]
+    for c in *carets
+      base = c if (step < 0 and c.pos < base.pos) or (step > 0 and c.pos > base.pos)
+
+    buffer = @view.buffer
+    line = buffer\get_line_at_offset base.pos
+    nr = @view.cursor\_visible_line(line.nr + step, step)
+    return unless nr >= 1 and nr <= buffer.nr_lines
+
+    target = buffer\get_line nr
+    column = buffer\char_offset(base.pos) - buffer\char_offset(line.start_offset)
+    pos = min(buffer\byte_offset(buffer\char_offset(target.start_offset) + column), target.end_offset)
+    for c in *carets
+      return if c.pos == pos and c.anchor == pos
+
+    extras = [{pos: c.pos, anchor: c.anchor} for c in *@view\extra_carets!]
+    extras[#extras + 1] = {pos: pos, anchor: pos}
+    @view\set_extra_carets extras
+
+  -- whether the position is shown, not in a folded away line
+  _visible_at: (pos) =>
+    line = @view.buffer\get_line_at_offset pos
+    line != nil and not @_line_hidden(nil, line.nr)
+
+  -- Ctrl+Alt+J: the next occurrence of the selection joins the selections; with nothing selected the
+  -- word at the cursor is selected first
+  select_next_occurrence: =>
+    text = @view.buffer.text
+    carets = @_all_carets!
+    primary = carets[#carets]
+    if primary.pos == primary.anchor
+      start, stop = Carets.word_range text, primary.pos
+      if start
+        @cursor.pos = stop
+        @view.selection\set start, stop
+      return
+
+    first, last = min(primary.pos, primary.anchor), max(primary.pos, primary.anchor)
+    needle = text\sub first, last - 1
+    taken = (match) ->
+      for c in *carets
+        return true if Carets.overlaps({start: min(c.pos, c.anchor), stop: max(c.pos, c.anchor)}, match)
+      false
+
+    matches = [m for m in *Carets.occurrences(text, needle) when @_visible_at(m.start)]
+    pick = nil
+    for m in *matches
+      if m.start >= last and not taken(m)
+        pick = m
+        break
+    unless pick
+      for m in *matches
+        if not taken(m)
+          pick = m
+          break
+    return unless pick
+
+    extras = [{pos: c.pos, anchor: c.anchor} for c in *@view\extra_carets!]
+    extras[#extras + 1] = {pos: primary.pos, anchor: primary.anchor}
+    @view\set_extra_carets extras
+    @cursor.pos = pick.stop
+    @view.selection\set pick.start, pick.stop
+
+  -- Ctrl+Alt+Shift+J: every occurrence of the selection (or of the word at the cursor) is selected, the
+  -- one the cursor is on stays the primary selection
+  select_all_occurrences: =>
+    text = @view.buffer.text
+    primary = @_all_carets![#@_all_carets!]
+    if primary.pos == primary.anchor
+      start, stop = Carets.word_range text, primary.pos
+      return unless start
+      primary = {pos: stop, anchor: start}
+
+    first, last = min(primary.pos, primary.anchor), max(primary.pos, primary.anchor)
+    needle = text\sub first, last - 1
+    matches = [m for m in *Carets.occurrences(text, needle) when @_visible_at(m.start)]
+    return if #matches == 0
+
+    main = matches[1]
+    for m in *matches
+      main = m if m.start == first
+
+    extras = {}
+    for m in *matches
+      extras[#extras + 1] = {pos: m.stop, anchor: m.start} unless m == main
+    @view\set_extra_carets extras
+    @cursor.pos = main.stop
+    @view.selection\set main.start, main.stop
 
   _on_pos_changed: =>
     @_update_position!
@@ -1108,6 +1341,7 @@ class Editor extends PropertyObject
 
   _on_insert_at_cursor: (_, args) =>
     @_unfold_for_edit!
+    return if @view\has_extra_carets!
     params = moon.copy args
     params.editor = self
     return if signal.emit('insert-at-cursor', params) == signal.abort
@@ -1353,6 +1587,10 @@ for cmd_spec in *{
   { 'cut', 'Cut the selection or current line to the clipboard', 'cut' }
   { 'copy', 'Copy the selection or current line to the clipboard', 'copy' }
   { 'cycle-case', 'Change case for current word or selection', 'cycle_case' }
+  { 'select-next-occurrence', 'Select the next occurrence of the selection, or of the word at the cursor', 'select_next_occurrence' }
+  { 'select-all-occurrences', 'Select all occurrences of the selection, or of the word at the cursor', 'select_all_occurrences' }
+  { 'add-caret-above', 'Add a caret above the topmost caret', 'add_caret_above' }
+  { 'add-caret-below', 'Add a caret below the bottommost caret', 'add_caret_below' }
 }
   args = { select 4, table.unpack cmd_spec }
   command.register

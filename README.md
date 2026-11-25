@@ -26,7 +26,7 @@ Screenshots (sample data in `samples/shop`):
 
 ![Problems and hierarchy](samples/shop/screenshots/problems-hierarchy.png)
 
-Open: multi-cursor selection (Howl has none yet), the debugger UI and breakpoints, the class diagram,
+Open: the debugger UI and breakpoints, the class diagram,
 templates and file templates, organise imports, keymap configuration, the colour switches for the
 editor, and custom highlighting from the settings (the Howl bundle `ogmkdev` has it for now).
 
@@ -68,6 +68,11 @@ grammar or language server. Every language here is implemented in this repositor
 | Ctrl+F | focus the find bar; Enter for next match |
 | Ctrl+Space | expand the template whose trigger precedes the cursor |
 | Ctrl+Z / Ctrl+Y | undo / redo |
+| Alt+click | put an extra caret where the mouse is, or take it away |
+| Ctrl+Alt+Up / Ctrl+Alt+Down | add a caret above the topmost / below the bottommost caret |
+| Ctrl+Alt+J | select the word at the cursor, then each next occurrence of the selection |
+| Ctrl+Shift+Alt+J | select all occurrences of the selection, or of the word at the cursor |
+| Escape | end the extra carets, the cursor stays |
 | F9 | toggle breakpoint on the cursor line |
 | F5 | run the selected configuration, or continue when debugging |
 | F10 / F11 / Shift+F11 | step over / step into / step out |

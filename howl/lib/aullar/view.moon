@@ -17,6 +17,7 @@ require 'ljglibs.cairo.context'
 DisplayLines = require 'aullar.display_lines'
 Cursor = require 'aullar.cursor'
 Selection = require 'aullar.selection'
+Carets = require 'aullar.carets'
 Buffer = require 'aullar.buffer'
 Gutter = require 'aullar.gutter'
 CurrentLineMarker = require 'aullar.current_line_marker'
@@ -90,6 +91,7 @@ View = {
 
     @selection = Selection @
     @cursor = Cursor @, @selection
+    @_extra_carets = {}
     @cursor.show_when_inactive = @config.view_show_inactive_cursor
     @cursor.blink_interval = @config.cursor_blink_interval
 
@@ -343,6 +345,11 @@ View = {
     notify @, 'on_scroll', opts
 
   insert: (text, opts = {}) =>
+    if #@_extra_carets > 0
+      @insert_at_carets text, opts
+      notify @, 'on_insert_at_cursor', :text
+      return nil
+
     if @selection.is_empty
       @_buffer\insert @cursor.pos, text, #text, opts
     else
@@ -353,6 +360,10 @@ View = {
     nil
 
   delete_back: (opts = {}) =>
+    if #@_extra_carets > 0
+      @delete_at_carets true, opts
+      return
+
     if @selection.is_empty
       cur_pos = @cursor.pos
       @cursor\backward!
@@ -367,6 +378,44 @@ View = {
     else
       start_pos = @selection\range!
       @_buffer\delete start_pos, @selection.size, opts
+
+  -- the extra carets, besides the cursor: {pos, anchor} byte positions, equal for a plain caret
+  extra_carets: => @_extra_carets
+
+  has_extra_carets: => #@_extra_carets > 0
+
+  set_extra_carets: (carets) =>
+    @_extra_carets = carets
+    @_draw!
+
+  clear_extra_carets: =>
+    return if #@_extra_carets == 0
+    @_extra_carets = {}
+    @_draw!
+
+  -- text goes in place of every caret; text is a string or a function giving the text for a caret
+  insert_at_carets: (text, opts = {}) =>
+    text_for = text
+    if type(text) != 'function'
+      text_for = (-> text)
+    edits, carets = Carets.insertion @_caret_ranges!, text_for
+    @_apply_edits edits, opts
+    @_set_carets carets
+
+  -- every selection loses its text, a plain caret the character before it (backward) or after it
+  delete_at_carets: (backward, opts = {}) =>
+    before = (pos) -> @_char_before pos
+    after = (pos) -> @_char_after pos
+    edits, carets = Carets.deletion @_caret_ranges!, backward, before, after
+    @_apply_edits edits, opts
+    @_set_carets carets
+
+  -- the blanks at the start of the line that holds pos
+  indent_at: (pos) =>
+    line = @_buffer\get_line_at_offset pos
+    return '' unless line
+    text = @_buffer\sub(line.start_offset, line.end_offset) or ''
+    text\match('^[ \t]*') or ''
 
   to_gobject: => @bin
 
@@ -636,6 +685,7 @@ View = {
       if @selection\affects_line line
         @selection\draw 0, y, cr, display_line, line
 
+      @_draw_extra_selections 0, y, cr, display_line, line
       display_line\draw 0, y, cr, clip, line_draw_opts
 
       if @selection\affects_line line
@@ -648,9 +698,73 @@ View = {
         if conf.view_show_cursor
           @cursor\draw 0, y, cr, display_line
 
+      @_draw_extra_carets 0, y, cr, display_line, line if conf.view_show_cursor
       y += display_line.slot
       cr\restore!
       cr\move_to 0, y
+
+  -- the carets as ranges, the cursor's among them marked as primary
+  _caret_ranges: =>
+    ranges = {}
+    if @selection.is_empty
+      ranges[1] = {start: @cursor.pos, stop: @cursor.pos, primary: true}
+    else
+      start, stop = @selection\range!
+      ranges[1] = {:start, :stop, primary: true}
+    for c in *@_extra_carets
+      ranges[#ranges + 1] = {start: min(c.pos, c.anchor), stop: max(c.pos, c.anchor)}
+    ranges
+
+  -- all edits in one undo step, from the end so that the earlier positions stay valid
+  _apply_edits: (edits, opts = {}) =>
+    @_buffer\as_one_undo ->
+      for i = #edits, 1, -1
+        edit = edits[i]
+        size = edit.stop - edit.start
+        if size > 0 and #edit.text > 0
+          @_buffer\replace edit.start, size, edit.text, #edit.text, opts
+        elseif size > 0
+          @_buffer\delete edit.start, size, opts
+        elseif #edit.text > 0
+          @_buffer\insert edit.start, edit.text, #edit.text, opts
+
+  -- the carets after an edit: the primary one is the cursor, the others are the extra carets
+  _set_carets: (carets) =>
+    extras, primary = {}, nil
+    for c in *carets
+      if c.primary
+        primary = c
+      else
+        extras[#extras + 1] = {pos: c.start, anchor: c.start}
+    @_extra_carets = extras
+    @selection\clear!
+    @cursor.pos = primary.start if primary
+    @_draw!
+
+  -- the position of the character before pos, nil at the start of the buffer
+  _char_before: (pos) =>
+    return nil if pos <= 1
+    @_buffer\byte_offset @_buffer\char_offset(pos) - 1
+
+  -- the position behind the character at pos, nil at the end of the buffer
+  _char_after: (pos) =>
+    return nil if pos > @_buffer.size
+    @_buffer\byte_offset @_buffer\char_offset(pos) + 1
+
+  -- the selections of the extra carets on this line, drawn under the text
+  _draw_extra_selections: (x, y, cr, display_line, line) =>
+    for c in *@_extra_carets
+      continue if c.pos == c.anchor
+      start, stop = min(c.pos, c.anchor), max(c.pos, c.anchor)
+      if Selection.affects_range(start, stop, line)
+        Selection.draw_range start, stop, x, y, cr, display_line, line
+
+  -- the carets of the extra carets on this line, drawn like the cursor
+  _draw_extra_carets: (x, y, cr, display_line, line) =>
+    return unless @cursor.active or @cursor.show_when_inactive
+    for c in *@_extra_carets
+      if c.pos >= line.start_offset and (c.pos <= line.end_offset or not line.has_eol)
+        @cursor\draw_at(c.pos - line.start_offset + 1, x, y, cr, display_line)
 
   _reset_display: =>
     @_last_visible_line = nil

@@ -95,6 +95,11 @@
     ctrl_alt_d:        'vc-diff'
 
     alt_g:             'cursor-goto-line'
+
+    ctrl_alt_j:        'editor-select-next-occurrence'
+    ctrl_shift_alt_j:  'editor-select-all-occurrences'
+    ctrl_alt_up:       'editor-add-caret-above'
+    ctrl_alt_down:     'editor-add-caret-below'
   }
 
   ctrl_o:           'open'

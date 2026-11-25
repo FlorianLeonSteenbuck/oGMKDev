@@ -19,6 +19,29 @@ flair.define 'selection_overlay', {
   min_width: 'letter'
 }
 
+-- the part of the line between start and stop (stop not included) is selected
+draw_range = (start, stop, x, y, cr, display_line, line) ->
+  start_col, end_col = 1, line.size + 1
+  sel_start, sel_end = false, false
+
+  if start > line.start_offset -- sel starts on line
+    start_col = (start - line.start_offset) + 1
+    sel_start = true
+
+  if stop <= line.end_offset -- sel ends on line
+    end_col = (stop - line.start_offset) + 1
+    sel_end = true
+
+  return if start_col == end_col and (sel_start or sel_end)
+  flair.draw 'selection', display_line, start_col, end_col, x, y, cr
+
+-- whether the range between start and stop touches the line
+affects_range = (start, stop, line) ->
+  if start >= line.start_offset
+    return start <= line.end_offset
+
+  stop >= line.start_offset
+
 Selection = {
   new: (@view) =>
     @_anchor = nil
@@ -87,27 +110,11 @@ Selection = {
   affects_line: (line) =>
     return false if @is_empty
     start, stop = @range!
-
-    if start >= line.start_offset
-      return start <= line.end_offset
-
-    stop >= line.start_offset
+    affects_range start, stop, line
 
   draw: (x, y, cr, display_line, line) =>
     start, stop = @range!
-    start_col, end_col = 1, line.size + 1
-    sel_start, sel_end = false, false
-
-    if start > line.start_offset -- sel starts on line
-      start_col = (start - line.start_offset) + 1
-      sel_start = true
-
-    if stop <= line.end_offset -- sel ends on line
-      end_col = (stop - line.start_offset) + 1
-      sel_end = true
-
-    return if start_col == end_col and (sel_start or sel_end)
-    flair.draw 'selection', display_line, start_col, end_col, x, y, cr
+    draw_range start, stop, x, y, cr, display_line, line
 
   draw_overlay: (x, y, cr, display_line, line) =>
     bg_ranges = display_line.background_ranges
@@ -134,5 +141,8 @@ Selection = {
     start_offset, end_offset = @range!
     @view\refresh_display from_offset: start_offset or 1, to_offset: end_offset
 }
+
+Selection.draw_range = draw_range
+Selection.affects_range = affects_range
 
 define_class Selection
