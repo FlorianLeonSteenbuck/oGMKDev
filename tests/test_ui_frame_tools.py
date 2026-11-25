@@ -12,6 +12,7 @@ import unittest
 
 from ogmkdev import git as git_module
 from ogmkdev import search_everywhere as search
+from ogmkdev.settings import SettingsStore
 from tests.frame_support import FrameTestCase, GTK_AVAILABLE, SKIP_REASON, pump_until, write
 from tests.test_index import BASE, CIRCLE, PY, SHAPE, SQUARE, TS
 
@@ -55,6 +56,15 @@ class GitPanelTests(FrameTestCase):
         log = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=self.folder, capture_output=True, text=True)
         self.assertEqual(log.stdout.strip(), "add b")
         self.assertEqual(git_module.status(self.folder), [])
+
+    def test_the_changes_are_coloured_by_their_kind_unless_the_setting_is_off(self):
+        frame = self.frame()
+        frame.refresh_git()
+        colours = {row[2]: row[4] for row in frame.git_store}
+        self.assertEqual(colours["b.txt"], "#2EA043")  # a new file: the colour of the added lines
+        SettingsStore(self.folder).apply("project", {"ogmkdev_git_colors": "off"})
+        frame.refresh_git()
+        self.assertEqual({row[2]: row[4] for row in frame.git_store}["b.txt"], None)
 
 
 @unittest.skipUnless(GTK_AVAILABLE, SKIP_REASON)

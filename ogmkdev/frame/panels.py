@@ -20,6 +20,11 @@ from ..workspace import workspace_files  # noqa: E402
 from .menus import MENUS  # noqa: E402
 
 
+# The colours of the changes in the Git panel: new (added), modified and deleted files (fixed, like the
+# change stripes of the gutter)
+GIT_COLOURS = {"new": "#2EA043", "A": "#2EA043", "M": "#1F70EB", "D": "#F7524A"}
+
+
 def _scrolled(child: Gtk.Widget) -> Gtk.ScrolledWindow:
     scroller = Gtk.ScrolledWindow()
     scroller.set_child(child)
@@ -45,13 +50,14 @@ class PanelsMixin:
         self.refresh_git()
 
     def _build_git(self) -> None:
-        self.git_store = Gtk.ListStore(str, str, str, object)  # staged, change, path, Change
+        self.git_store = Gtk.ListStore(str, str, str, object, str)  # staged, change, path, Change, colour
         self.git_view = Gtk.TreeView(model=self.git_store)
         selection = self.git_view.get_selection()
         selection.set_mode(Gtk.SelectionMode.MULTIPLE)
         selection.connect("changed", lambda *_: self._show_git_diff())
         for index, heading in enumerate(("Staged", "Change", "Path")):
-            self.git_view.append_column(Gtk.TreeViewColumn(heading, Gtk.CellRendererText(), text=index))
+            self.git_view.append_column(Gtk.TreeViewColumn(heading, Gtk.CellRendererText(), text=index,
+                                                           foreground=4))
         self.git_diff = _text_view()
         paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
         paned.set_start_child(_scrolled(self.git_view))
@@ -83,10 +89,12 @@ class PanelsMixin:
                 continue
         self.git_all = sorted({change.path: change for change in changes}.values(), key=lambda c: c.path)
         self.git_store.clear()
+        colours = SettingsStore(self.folder).value("ogmkdev_git_colors", os.path.join(self.folder, "_")) != "off"
         for change in self.git_all:
             staged = "" if change.untracked else change.index.strip()
             iterator = self.git_store.append([staged, change.label,
-                                              os.path.relpath(change.path, change.root), change])
+                                              os.path.relpath(change.path, change.root), change,
+                                              GIT_COLOURS.get(change.label) if colours else None])
             if change.path in selected:
                 self.git_view.get_selection().select_iter(iterator)
         self.set_status(f"{len(self.git_all)} changed file(s) in git")
