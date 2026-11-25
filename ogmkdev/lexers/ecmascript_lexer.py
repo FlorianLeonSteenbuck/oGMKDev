@@ -37,7 +37,7 @@ protected public
 
 PUNCTUATORS = sorted("""
 { } ( ) [ ] . ; , < > <= >= == != === !== + - * % ** ++ -- << >> >>> & | ^ ! ~ && || ?? ?. ?
-: = += -= *= %= **= <<= >>= >>>= &= |= ^= &&= ||= ??= => ... / /=
+: = += -= *= %= **= <<= >>= >>>= &= |= ^= &&= ||= ??= => ... / /= @
 """.split(), key=len, reverse=True)
 
 LINE_TERMINATORS = frozenset("\n\r  ")
@@ -160,6 +160,14 @@ def scan_template_continuation(source: str, brace: int) -> Token:
     """The template part that follows the substitution whose closing brace is at ``brace``."""
     end, opens, error = scan_template_chunk(source, brace + 1)
     return Token("template-open" if opens else "template", brace, end, False, error)
+
+
+def jsx_text_end(source: str, position: int) -> int:
+    """The end of JSX text that starts at ``position``: the next '<' or '{', or the end of the input."""
+    end = position
+    while end < len(source) and source[end] not in "<{":
+        end += 1
+    return end
 
 
 def _line_end(source: str, position: int) -> int:

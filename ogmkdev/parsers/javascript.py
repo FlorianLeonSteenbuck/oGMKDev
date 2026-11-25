@@ -1,20 +1,23 @@
-"""JavaScript parser for ECMAScript 2022: recursive descent, with precise syntax errors.
+"""JavaScript parser for ECMAScript 2022, with JSX and, when typed, TypeScript: recursive descent, with
+precise syntax errors.
 
 It parses scripts and modules: var, let and const, functions (generators, async functions), classes
 (fields, private names, static blocks, accessors), every statement, import and export, arrow
 functions, destructuring with defaults and rest, spread, template literals with substitutions,
-tagged templates, optional chaining, the nullish and logical assignment operators, ``**``,
-``new.target``, ``import.meta``, dynamic ``import()``, ``await`` and ``yield``.
+tagged templates, optional chaining, the nullish and logical assignments, ``**``, ``new.target``,
+``import.meta``, dynamic ``import()``, ``await``, ``yield`` and JSX. With ``typed=True`` it also
+reads TypeScript (see :mod:`ogmkdev.parsers.typescript`); JSX is read in JSX code (``jsx=True``).
 
 The first error stops the parse. :class:`ParseError` gives the 1-based line and column of the token
 where the error was found and a message that names it, for example ``missing ';' before identifier
-'b'`` or ``expected ')' to match '(' on line 3 before ';'``.
+'b'`` or ``expected ')' to match '(' on line 3 before ';'``. ``lexical`` tells a malformed token
+(an unterminated string) from one that is out of place.
 
 The tree is generic: :class:`Node` has a ``kind`` (``"Program"``, ``"BinaryExpression"``...), the
 offsets of its text, its ``children``, a ``text`` (names, operators, literal text) and ``flags``
 (``"parenthesized"``, ``"async"``, ``"computed"``, ...). Patterns and arrow parameters are made by
 converting expressions that were parsed first (a cover grammar), so ``({a = 1}) => a`` and
-``[a, b] = c`` need no second pass.
+``[a, b] = c`` need no second pass; typed code reads parameter lists directly where it must.
 
 Leniencies, so that valid code never shows a false error: ``return`` at the top level (CommonJS
 modules), ``with``, sloppy-mode names such as ``let`` and ``yield`` outside generators, and calls
@@ -28,6 +31,11 @@ from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Tuple
 
 from ..lexers import ecmascript_lexer as L
+from .jsx import JsxMixin
+from .syntax import Node, ParseError, flags as _flags, position as _position
+from .typescript import TypeMixin
+
+__all__ = ["Node", "ParseError", "parse"]
 
 RESERVED = frozenset("""
 break case catch class const continue debugger default delete do else enum export extends false
@@ -50,38 +58,13 @@ BINARY_PRECEDENCE: Dict[str, int] = {
     "*": 10, "/": 10, "%": 10,
     "**": 11,
 }
+RELATIONAL_PRECEDENCE = 7
 UNARY_WORDS = frozenset({"delete", "void", "typeof"})
 UNARY_SIGNS = frozenset({"+", "-", "!", "~"})
 UPDATE_OPERATORS = frozenset({"++", "--"})
 YIELD_ENDS = frozenset({")", "]", "}", ",", ";", ":"})
 REGEXP_FLAGS = frozenset("dgimsuvy")
 SHORTHAND_INITIALIZER = "invalid shorthand property initializer"
-
-
-class ParseError(Exception):
-    """A syntax error at the 1-based ``line`` and ``column``; ``message`` names the token."""
-
-    def __init__(self, line: int, column: int, message: str) -> None:
-        super().__init__(f"{line}:{column}: {message}")
-        self.line = line
-        self.column = column
-        self.message = message
-
-
-@dataclass
-class Node:
-    kind: str
-    start: int
-    end: int
-    children: List["Node"] = field(default_factory=list)
-    text: str = ""
-    flags: frozenset = frozenset()
-
-    def walk(self):
-        """This node and every node below it, in source order."""
-        yield self
-        for child in self.children:
-            yield from child.walk()
 
 
 @dataclass
@@ -95,22 +78,15 @@ class _Frame:
     breakable: int = 0                         # enclosing loops and switches (for break)
 
 
-def _position(source: str, offset: int) -> Tuple[int, int]:
-    line = source.count("\n", 0, offset) + 1
-    column = offset - (source.rfind("\n", 0, offset) + 1) + 1
-    return line, column
+class _Parser(JsxMixin, TypeMixin):
+    """One parse: the cursor (the current token and the end of the previous one), the function frame,
+    and the shorthand initializers that wait for a pattern to claim them."""
 
-
-def _flags(*names: str) -> frozenset:
-    return frozenset(name for name in names if name)
-
-
-class _Parser:
-    """One parse: the cursor (the current token and the end of the previous one), the function
-    frame, and the shorthand initializers that wait for a pattern to claim them."""
-
-    def __init__(self, source: str) -> None:
+    def __init__(self, source: str, typed: bool = False, jsx: bool = True) -> None:
         self.src = source
+        self.typed = typed
+        self.jsx = jsx
+        self.ambient = 0                           # inside `declare`: no initializers, no bodies
         self.frame = _Frame(is_async=True)         # the top level: `await` is an operator
         self.covers: List[Tuple[int, str]] = []    # (offset, message) of {a = 1} awaiting a pattern
         self.prev_end = 0
@@ -138,12 +114,37 @@ class _Parser:
     def _peek(self) -> L.Token:
         return self._scan_from(self.tok.end)
 
+    def _peek_is_punct(self, text: str) -> bool:
+        following = self._peek()
+        return following.kind == "punctuator" and self._text(following) == text
+
+    def _peek_is_word(self, word: str) -> bool:
+        following = self._peek()
+        return following.kind == "keyword" and self._text(following) == word
+
+    def _peek_is_name(self, name: str) -> bool:
+        following = self._peek()
+        return following.kind == "identifier" and self._text(following) == name
+
+    def _peek_starts_name(self) -> bool:
+        following = self._peek()
+        return following.kind == "identifier" or (following.kind == "keyword" and self._text(following) in CONTEXTUAL)
+
+    def _mark(self) -> Tuple[L.Token, int, int]:
+        """The cursor, for a speculative reading that may have to be undone."""
+        return self.tok, self.prev_end, len(self.covers)
+
+    def _reset(self, mark: Tuple[L.Token, int, int]) -> None:
+        self.tok, self.prev_end, covers = mark
+        del self.covers[covers:]
+
     def _check(self, token: L.Token) -> None:
         if token.error:
             message = token.error
             if message == "unexpected character":
                 message = f"unexpected character {self.src[token.start]!r}"
-            raise self._error(token.start, message)
+            line, column = _position(self.src, token.start)
+            raise ParseError(line, column, message, lexical=True)
 
     def _text(self, token: Optional[L.Token] = None) -> str:
         token = self.tok if token is None else token
@@ -188,6 +189,10 @@ class _Parser:
         line, column = _position(self.src, offset)
         return ParseError(line, column, message)
 
+    def _lexical_error(self, offset: int, message: str) -> ParseError:
+        line, column = _position(self.src, offset)
+        return ParseError(line, column, message, lexical=True)
+
     def _unexpected(self, token: Optional[L.Token] = None) -> ParseError:
         token = self.tok if token is None else token
         if token.kind == "eof":
@@ -216,8 +221,7 @@ class _Parser:
         line_open, _ = _position(self.src, opener.start)
         line_here, _ = _position(self.src, self.tok.start)
         where = f" to match '{self._text(opener)}' on line {line_open}" if line_open != line_here else ""
-        raise self._error(self.tok.start,
-                          f"expected '{close}'{where} before {self._describe(self.tok)}")
+        raise self._error(self.tok.start, f"expected '{close}'{where} before {self._describe(self.tok)}")
 
     def _separator(self, close: str) -> bool:
         """Consume the comma between two list items. False when the list closes here."""
@@ -226,8 +230,7 @@ class _Parser:
             return True
         if self._is_punct(close):
             return False
-        raise self._error(self.tok.start,
-                          f"expected ',' or '{close}' before {self._describe(self.tok)}")
+        raise self._error(self.tok.start, f"expected ',' or '{close}' before {self._describe(self.tok)}")
 
     def _semicolon(self) -> None:
         """A semicolon, or an automatic one before a line break, a closing brace or the end."""
@@ -262,14 +265,26 @@ class _Parser:
         return following.kind == "punctuator" and self._text(following) in ("(", ".")
 
     def _modifier_follows(self, no_line_break: bool = False) -> bool:
-        """After async, get, set or static: is it a modifier, followed by a name, or the name of
-        a property that has punctuation after it?"""
+        """After async, get, set or static: is it a modifier, followed by a name, or the name of a
+        property that has punctuation after it?"""
         following = self._peek()
         if following.kind == "eof" or (no_line_break and following.newline_before):
             return False
         if following.kind == "punctuator":
             return self._text(following) in ("*", "[")
         return True
+
+    def _typed_async_arrow(self, start: int) -> Optional[Node]:
+        """``async (x: T) => ...`` and ``async <T>(x) => ...``: None when ``async`` is an identifier."""
+        following = self._peek()
+        if following.newline_before or following.kind != "punctuator" or self._text(following) not in ("(", "<"):
+            return None
+        mark = self._mark()
+        self._next()  # async
+        arrow = self._typed_arrow(start, True, False)
+        if arrow is None:
+            self._reset(mark)
+        return arrow
 
     # ----------------------------------------------------------- frames, covers
 
@@ -295,6 +310,10 @@ class _Parser:
         return Node("Program", 0, len(self.src), body)
 
     def _statement_list_item(self, top_level: bool = False) -> Node:
+        if self.typed:
+            declaration = self._typed_statement(top_level)
+            if declaration is not None:
+                return declaration
         token = self.tok
         if token.kind == "keyword":
             word = self._text()
@@ -340,7 +359,7 @@ class _Parser:
             if word == "throw":
                 return self._throw()
             if word == "try":
-                return self._try()
+                return self._try_statement()
             if word == "switch":
                 return self._switch()
             if word == "with":
@@ -357,10 +376,8 @@ class _Parser:
                 raise self._error(token.start, f"lexical declaration '{word}' is not allowed here")
             if word in ("import", "export") and not (word == "import" and self._import_call_or_meta_follows()):
                 raise self._error(token.start, f"'{word}' may only appear at the top level of a module")
-        if self._is_binding_name():
-            following = self._peek()
-            if following.kind == "punctuator" and self._text(following) == ":":
-                return self._labeled()
+        if self._is_binding_name() and self._peek_is_punct(":"):
+            return self._labeled()
         return self._expression_statement()
 
     def _expression_statement(self) -> Node:
@@ -389,17 +406,25 @@ class _Parser:
         declarators: List[Node] = []
         while True:
             target = self._binding_target("variable name")
-            init: Optional[Node] = None
+            children = [target]
+            if self.typed:
+                if self._is_punct("!"):  # definite assignment: let x!: T
+                    self._next()
+                annotation = self._type_annotation()
+                if annotation is not None:
+                    children.append(annotation)
+            initializer = False
             if self._is_punct("="):
                 self._next()
-                init = self._assignment(no_in=no_in)
-            elif not in_head:
+                children.append(self._assignment(no_in=no_in))
+                initializer = True
+            elif not in_head and not self.ambient and not (self.typed and len(children) > 1):
                 if target.kind != "Identifier":
                     raise self._error(target.start, "missing initializer in destructuring declaration")
                 if kind == "const":
                     raise self._error(target.start, "missing initializer in const declaration")
-            children = [target] if init is None else [target, init]
-            declarators.append(Node("VariableDeclarator", target.start, self.prev_end, children))
+            declarators.append(Node("VariableDeclarator", target.start, self.prev_end, children,
+                                    flags=_flags("init" if initializer else "")))
             if not self._is_punct(","):
                 return declarators
             self._next()
@@ -488,7 +513,7 @@ class _Parser:
         return Node("ObjectPattern", opener.start, self.prev_end, properties)
 
     def _property_key(self, allow_private: bool = False) -> Tuple[Node, bool]:
-        """A property name: returns the key node and whether it is computed (``[expression]``)."""
+        """A property name: the key node and whether the name is computed (``[expression]``)."""
         token = self.tok
         if self._is_punct("["):
             self._next()
@@ -580,7 +605,7 @@ class _Parser:
                 return self._for_in_of(start, opener, head, is_await)
             if kind == "const":
                 for declarator in declarators:
-                    if len(declarator.children) == 1:
+                    if "init" not in declarator.flags:
                         raise self._error(declarator.start, "missing initializer in const declaration")
             init = head
         elif not self._is_punct(";"):
@@ -656,7 +681,7 @@ class _Parser:
         self._semicolon()
         return Node("ThrowStatement", start, self.prev_end, [argument])
 
-    def _try(self) -> Node:
+    def _try_statement(self) -> Node:
         start = self.tok.start
         self._next()
         children = [self._block()]
@@ -675,8 +700,8 @@ class _Parser:
             self._next()
             children.append(self._block())
         if len(children) == 1:
-            raise self._error(self.tok.start,
-                              f"expected 'catch' or 'finally' after the try block, found {self._describe(self.tok)}")
+            raise self._error(self.tok.start, "expected 'catch' or 'finally' after the try block, found "
+                                              f"{self._describe(self.tok)}")
         return Node("TryStatement", start, self.prev_end, children)
 
     def _switch(self) -> Node:
@@ -701,8 +726,7 @@ class _Parser:
                 self._next()
                 labels = []
             else:
-                raise self._error(self.tok.start,
-                                  f"expected 'case' or 'default', found {self._describe(self.tok)}")
+                raise self._error(self.tok.start, f"expected 'case' or 'default', found {self._describe(self.tok)}")
             self._expect(":")
             body: List[Node] = []
             while not (self._is_word("case") or self._is_word("default") or self._is_punct("}")
@@ -763,6 +787,10 @@ class _Parser:
         specifiers: List[Node] = []
         while not self._is_punct("}") and self.tok.kind != "eof":
             start = self.tok.start
+            spec_flags = _flags()
+            if self.typed and self._is_name("type") and self._peek().kind in ("identifier", "keyword", "string"):
+                self._next()  # `type` marks a type-only specifier
+                spec_flags = _flags("type")
             first = self._module_export_name()
             second = first
             if self._is_name("as"):
@@ -770,7 +798,7 @@ class _Parser:
                 second = self._binding_identifier("an import name") if imports else self._module_export_name()
             elif imports and (first.kind != "Identifier" or first.text in RESERVED):
                 raise self._error(first.start, f"{first.text} cannot be imported without 'as'")
-            specifiers.append(Node(kind, start, self.prev_end, [first, second]))
+            specifiers.append(Node(kind, start, self.prev_end, [first, second], flags=spec_flags))
             if not self._separator("}"):
                 break
         self._close("}", opener)
@@ -779,12 +807,18 @@ class _Parser:
     def _import_declaration(self) -> Node:
         start = self.tok.start
         self._next()
+        type_only = False
+        if self.typed and self._is_name("type") and self._type_import_follows():
+            self._next()
+            type_only = True
+        if self.typed and self._is_binding_name() and self._peek_is_punct("="):
+            return self._import_equals(start, type_only)
         children: List[Node] = []
         if self.tok.kind == "string":
             children.append(self._module_source())
             self._import_attributes()
             self._semicolon()
-            return Node("ImportDeclaration", start, self.prev_end, children)
+            return Node("ImportDeclaration", start, self.prev_end, children, flags=_flags("type" if type_only else ""))
         if self._is_binding_name():
             local = self._binding_identifier("an import name")
             children.append(Node("ImportDefaultSpecifier", local.start, local.end, [local]))
@@ -799,17 +833,38 @@ class _Parser:
         elif self._is_punct("{"):
             children.extend(self._named_specifiers("ImportSpecifier", imports=True))
         elif not children:
-            raise self._error(self.tok.start,
-                              f"expected a name, '*' or '{{' after 'import', found {self._describe(self.tok)}")
+            raise self._error(self.tok.start, "expected a name, '*' or '{' after 'import', found "
+                                              f"{self._describe(self.tok)}")
         self._expect_name("from")
         children.append(self._module_source())
         self._import_attributes()
         self._semicolon()
-        return Node("ImportDeclaration", start, self.prev_end, children)
+        return Node("ImportDeclaration", start, self.prev_end, children, flags=_flags("type" if type_only else ""))
+
+    def _type_import_follows(self) -> bool:
+        following = self._peek()
+        if following.kind == "punctuator":
+            return self._text(following) in ("{", "*")
+        return following.kind in ("identifier", "keyword") and self._text(following) != "from"
 
     def _export_declaration(self) -> Node:
         start = self.tok.start
         self._next()
+        if self.typed:
+            if self._is_punct("="):
+                self._next()
+                expression = self._assignment()
+                self._semicolon()
+                return Node("ExportAssignment", start, self.prev_end, [expression])
+            if self._is_name("as") and self._peek_is_name("namespace"):
+                self._next()
+                self._next()
+                name = self._binding_identifier("a namespace name")
+                self._semicolon()
+                return Node("NamespaceExport", start, self.prev_end, [name])
+            if self._is_word("import"):
+                declaration = self._import_declaration()
+                return Node("ExportNamedDeclaration", start, self.prev_end, [declaration])
         if self._is_word("default"):
             self._next()
             if self._is_word("function"):
@@ -820,10 +875,16 @@ class _Parser:
                 declaration = self._function(async_start, is_async=True, declaration=True, name_optional=True)
             elif self._is_word("class"):
                 declaration = self._class(self.tok.start, declaration=True, name_optional=True)
+            elif self.typed and self._is_word("interface"):
+                declaration = self._interface(self.tok.start)
             else:
                 declaration = self._assignment()
                 self._semicolon()
             return Node("ExportDefaultDeclaration", start, self.prev_end, [declaration])
+        type_only = False
+        if self.typed and self._is_name("type") and (self._peek_is_punct("{") or self._peek_is_punct("*")):
+            self._next()
+            type_only = True
         if self._is_punct("*"):
             self._next()
             children: List[Node] = []
@@ -834,7 +895,7 @@ class _Parser:
             children.append(self._module_source())
             self._import_attributes()
             self._semicolon()
-            return Node("ExportAllDeclaration", start, self.prev_end, children)
+            return Node("ExportAllDeclaration", start, self.prev_end, children, flags=_flags("type" if type_only else ""))
         if self._is_punct("{"):
             specifiers = self._named_specifiers("ExportSpecifier", imports=False)
             if self._is_name("from"):
@@ -842,13 +903,24 @@ class _Parser:
                 specifiers.append(self._module_source())
                 self._import_attributes()
             self._semicolon()
-            return Node("ExportNamedDeclaration", start, self.prev_end, specifiers)
+            return Node("ExportNamedDeclaration", start, self.prev_end, specifiers,
+                        flags=_flags("type" if type_only else ""))
+        if self.typed and self._typed_declaration_follows():
+            declaration = self._statement_list_item(top_level=True)
+            return Node("ExportNamedDeclaration", start, self.prev_end, [declaration])
         if (self._is_word("var") or self._is_word("const") or self._is_word("let") or self._is_word("function")
                 or self._is_word("class") or (self._is_name("async") and self._async_function_follows())):
             declaration = self._statement_list_item(top_level=True)
             return Node("ExportNamedDeclaration", start, self.prev_end, [declaration])
-        raise self._error(self.tok.start,
-                          f"expected a declaration, '*' or '{{' after 'export', found {self._describe(self.tok)}")
+        raise self._error(self.tok.start, "expected a declaration, '*' or '{' after 'export', found "
+                                          f"{self._describe(self.tok)}")
+
+    def _typed_declaration_follows(self) -> bool:
+        token = self.tok
+        if token.kind == "punctuator":
+            return self._text() == "@"
+        return token.kind in ("identifier", "keyword") and self._text() in (
+            "interface", "type", "enum", "declare", "namespace", "module", "abstract", "const")
 
     # ----------------------------------------------------------- functions and classes
 
@@ -862,25 +934,40 @@ class _Parser:
             children.append(self._binding_identifier("a function name"))
         elif declaration and not name_optional:
             raise self._error(self.tok.start, f"expected a function name before {self._describe(self.tok)}")
+        if self.typed and self._is_punct("<"):
+            children.append(self._type_parameters())
         saved = self._enter(_Frame(is_async=is_async, is_generator=generator))
         children.append(self._formal_parameters())
-        children.append(self._function_body())
+        if self.typed:
+            return_type = self._return_type()
+            if return_type is not None:
+                children.append(return_type)
+        body = self._optional_body()
         self._leave(saved)
+        if body is not None:
+            children.append(body)
         kind = "FunctionDeclaration" if declaration else "FunctionExpression"
         return Node(kind, start, self.prev_end, children,
                     flags=_flags("async" if is_async else "", "generator" if generator else ""))
+
+    def _parameter(self) -> Node:
+        if self.typed:
+            return self._typed_parameter()
+        if self._is_punct("..."):
+            return self._rest_binding("a parameter name")
+        return self._binding_element("a parameter name")
 
     def _formal_parameters(self) -> Node:
         opener = self.tok
         self._expect("(")
         params: List[Node] = []
         while not self._is_punct(")") and self.tok.kind != "eof":
-            if self._is_punct("..."):
-                params.append(self._rest_binding("a parameter name"))
+            param = self._parameter()
+            params.append(param)
+            if param.kind == "RestElement":
                 if self._is_punct(","):
                     raise self._error(self.tok.start, "rest parameter must be last in a parameter list")
                 break
-            params.append(self._binding_element("a parameter name"))
             if not self._separator(")"):
                 break
         self._close(")", opener)
@@ -891,16 +978,33 @@ class _Parser:
             raise self._error(self.tok.start, f"expected '{{' before {self._describe(self.tok)}")
         return self._block()
 
+    def _optional_body(self) -> Optional[Node]:
+        """A body, or in typed code the semicolon of an overload or an ambient declaration."""
+        if self.typed and not self._is_punct("{"):
+            self._semicolon()
+            return None
+        return self._function_body()
+
     def _method(self, start: int, is_async: bool, generator: bool) -> Node:
+        children: List[Node] = []
+        if self.typed and self._is_punct("<"):
+            children.append(self._type_parameters())
         saved = self._enter(_Frame(is_async=is_async, is_generator=generator, super_ok=True))
-        params = self._formal_parameters()
-        body = self._function_body()
+        children.append(self._formal_parameters())
+        if self.typed:
+            return_type = self._return_type()
+            if return_type is not None:
+                children.append(return_type)
+        body = self._optional_body()
         self._leave(saved)
-        return Node("FunctionExpression", start, self.prev_end, [params, body], text="method",
+        if body is not None:
+            children.append(body)
+        return Node("FunctionExpression", start, self.prev_end, children, text="method",
                     flags=_flags("async" if is_async else "", "generator" if generator else ""))
 
     def _check_accessor(self, accessor: str, method: Node, key: Node) -> None:
-        count = len(method.children[0].children)
+        parameters = next(child for child in method.children if child.kind == "FormalParameters")
+        count = len(parameters.children)
         if accessor == "get" and count:
             raise self._error(key.start, "getter must not have any parameters")
         if accessor == "set" and count != 1:
@@ -913,9 +1017,19 @@ class _Parser:
             children.append(self._binding_identifier("a class name"))
         elif declaration and not name_optional:
             raise self._error(self.tok.start, f"expected a class name before {self._describe(self.tok)}")
+        if self.typed and self._is_punct("<"):
+            children.append(self._type_parameters())
         if self._is_word("extends"):
             self._next()
             children.append(self._call_expression())
+            if self.typed and self._is_punct("<"):
+                children.append(self._type_arguments())
+        if self.typed and self._is_word("implements"):
+            self._next()
+            children.append(self._type_reference())
+            while self._is_punct(","):
+                self._next()
+                children.append(self._type_reference())
         opener = self.tok
         self._expect("{")
         constructors = 0
@@ -924,7 +1038,8 @@ class _Parser:
                 self._next()
                 continue
             member = self._class_member()
-            if member.text == "constructor":
+            has_body = any(child.kind == "BlockStatement" for child in member.children[-1].children)
+            if member.text == "constructor" and has_body:  # overload signatures have no body
                 constructors += 1
                 if constructors > 1:
                     raise self._error(member.start, "a class may only have one constructor")
@@ -935,6 +1050,10 @@ class _Parser:
 
     def _class_member(self) -> Node:
         start = self.tok.start
+        if self.typed and self._is_punct("@"):
+            decorators = self._decorators()
+            member = self._class_member()
+            return Node("Decorated", start, self.prev_end, decorators + [member])
         is_static = False
         if self._is_word("static"):
             following = self._peek()
@@ -944,6 +1063,13 @@ class _Parser:
             if self._modifier_follows():
                 is_static = True
                 self._next()
+        modifiers: List[str] = []
+        if self.typed:
+            while self.tok.kind in ("identifier", "keyword") and self._text() in _MEMBER_MODIFIERS \
+                    and self._modifier_follows():
+                modifiers.append(self._text())
+                self._next()
+            is_static = is_static or "static" in modifiers
         is_async = False
         if self._is_name("async") and self._modifier_follows(no_line_break=True):
             is_async = True
@@ -952,33 +1078,51 @@ class _Parser:
         if generator:
             self._next()
         accessor = ""
-        if (not is_async and not generator and (self._is_name("get") or self._is_name("set"))
-                and self._modifier_follows()):
+        if not is_async and not generator and (self._is_name("get") or self._is_name("set")) \
+                and self._modifier_follows():
             accessor = self._text()
             self._next()
+        if self.typed and self._is_punct("[") and self._looks(self._index_signature_head):
+            index = self._index_signature(start, readonly="readonly" in modifiers)
+            self._semicolon()
+            return index
         key, computed = self._property_key(allow_private=True)
-        flags = _flags("static" if is_static else "", "computed" if computed else "")
-        if self._is_punct("("):
+        optional = definite = False
+        if self.typed:
+            if self._is_punct("?"):
+                optional = True
+                self._next()
+            elif self._is_punct("!"):
+                definite = True
+                self._next()
+        member_flags = _flags(*modifiers, "static" if is_static else "", "computed" if computed else "",
+                              "optional" if optional else "", "definite" if definite else "")
+        if self._is_punct("(") or (self.typed and self._is_punct("<")):
             method = self._method(start, is_async, generator)
             self._check_accessor(accessor, method, key)
             constructor = (not is_static and not computed and not accessor and not is_async and not generator
                            and self._static_name(key) == "constructor")
             text = "constructor" if constructor else (accessor or "method")
-            return Node("MethodDefinition", start, self.prev_end, [key, method], text=text, flags=flags)
+            return Node("MethodDefinition", start, self.prev_end, [key, method], text=text, flags=member_flags)
         if accessor or is_async or generator:
             raise self._error(self.tok.start, f"expected '(' after the method name before {self._describe(self.tok)}")
-        if not (self._is_punct("=") or self._is_punct(";") or self._is_punct("}") or self.tok.kind == "eof"
-                or self.tok.newline_before):
-            raise self._error(self.tok.start,
-                              f"expected '(' or '=' after the class member name before {self._describe(self.tok)}")
+        allowed = ("=", ";", "}", ":") if self.typed else ("=", ";", "}")
+        if not (self.tok.kind == "eof" or self.tok.newline_before
+                or (self.tok.kind == "punctuator" and self._text() in allowed)):
+            raise self._error(self.tok.start, "expected '(' or '=' after the class member name before "
+                                              f"{self._describe(self.tok)}")
         children = [key]
+        if self.typed:
+            annotation = self._type_annotation()
+            if annotation is not None:
+                children.append(annotation)
         if self._is_punct("="):
             self._next()
             saved = self._enter(_Frame(super_ok=True))
             children.append(self._assignment())
             self._leave(saved)
         self._semicolon()
-        return Node("FieldDefinition", start, self.prev_end, children, flags=flags)
+        return Node("FieldDefinition", start, self.prev_end, children, flags=member_flags)
 
     @staticmethod
     def _static_name(key: Node) -> str:
@@ -1017,8 +1161,8 @@ class _Parser:
             self._next()
             parameter = self._binding_identifier("a parameter name")
             if not self._is_punct("=>") or self.tok.newline_before:
-                raise self._error(self.tok.start,
-                                  f"expected '=>' after 'async {parameter.text}' before {self._describe(self.tok)}")
+                raise self._error(self.tok.start, f"expected '=>' after 'async {parameter.text}' before "
+                                                  f"{self._describe(self.tok)}")
             return self._arrow_body(token.start, [parameter], True, no_in)
         left = self._conditional(no_in)
         if self._is_punct("=>"):
@@ -1069,13 +1213,17 @@ class _Parser:
         del self.covers[mark:]
         return self._arrow_body(left.start, params, is_async, no_in)
 
-    def _arrow_body(self, start: int, params: List[Node], is_async: bool, no_in: bool) -> Node:
+    def _arrow_body(self, start: int, params: List[Node], is_async: bool, no_in: bool,
+                    prefix: Optional[List[Node]] = None) -> Node:
+        """The body of an arrow function; the cursor is on its '=>'. ``prefix`` holds the type
+        parameters and return type of a typed arrow function."""
         self._expect("=>")
         saved = self._enter(_Frame(is_async=is_async, super_ok=self.frame.super_ok))
         body = self._block() if self._is_punct("{") else self._assignment(no_in=no_in)
         self._leave(saved)
-        formal = Node("FormalParameters", start, params[-1].end if params else start, params)
-        return Node("ArrowFunction", start, self.prev_end, [formal, body],
+        end = params[-1].end if params else start
+        formal = Node("FormalParameters", start, end, params)
+        return Node("ArrowFunction", start, self.prev_end, [formal] + (prefix or []) + [body],
                     flags=_flags("async" if is_async else ""))
 
     def _to_param(self, node: Node) -> Node:
@@ -1153,6 +1301,10 @@ class _Parser:
         left = self._unary()
         while True:
             token = self.tok
+            if self.typed and token.kind == "identifier" and self._text() in ("as", "satisfies") \
+                    and not token.newline_before and min_precedence <= RELATIONAL_PRECEDENCE:
+                left = self._type_cast(left)
+                continue
             if token.kind not in ("punctuator", "keyword"):
                 return left
             operator = self._text()
@@ -1237,8 +1389,7 @@ class _Parser:
         if not self.frame.super_ok:
             raise self._error(token.start, "'super' keyword unexpected here")
         if not (self._is_punct(".") or self._is_punct("[") or self._is_punct("(")):
-            raise self._error(self.tok.start,
-                              f"expected '.', '[' or '(' after 'super' before {self._describe(self.tok)}")
+            raise self._error(self.tok.start, f"expected '.', '[' or '(' after 'super' before {self._describe(self.tok)}")
         return Node("Super", token.start, token.end, text="super")
 
     def _new_expression(self) -> Node:
@@ -1260,6 +1411,10 @@ class _Parser:
             callee = self._primary()
         callee = self._member_tail(callee, allow_call=False)
         children = [callee]
+        if self.typed and self._is_punct("<"):
+            type_arguments = self._try(self._type_arguments)
+            if type_arguments is not None:
+                children.append(type_arguments)
         if self._is_punct("("):
             children.append(self._arguments())
         return Node("NewExpression", token.start, self.prev_end, children)
@@ -1323,6 +1478,21 @@ class _Parser:
                          and "parenthesized" not in expression.flags and not token.newline_before)
                 arguments = self._arguments(cover=cover)
                 expression = Node("CallExpression", expression.start, self.prev_end, [expression, arguments])
+            elif text == "!" and self.typed and not token.newline_before:
+                self._next()  # non-null assertion: value!
+                expression = Node("NonNullExpression", expression.start, self.prev_end, [expression])
+            elif text == "<" and self.typed and allow_call:
+                type_arguments = self._try(self._call_type_arguments)
+                if type_arguments is None:
+                    return expression
+                if self._is_punct("("):
+                    arguments = self._arguments()
+                    expression = Node("CallExpression", expression.start, self.prev_end,
+                                      [expression, type_arguments, arguments])
+                else:
+                    template = self._template()
+                    expression = Node("TaggedTemplate", expression.start, self.prev_end,
+                                      [expression, type_arguments, template])
             else:
                 return expression
 
@@ -1330,8 +1500,7 @@ class _Parser:
         token = self.tok
         if token.kind not in ("identifier", "keyword", "private-name"):
             dot = "?." if optional else "."
-            raise self._error(token.start,
-                              f"expected a property name after '{dot}', found {self._describe(token)}")
+            raise self._error(token.start, f"expected a property name after '{dot}', found {self._describe(token)}")
         self._next()
         kind = "PrivateName" if token.kind == "private-name" else "Identifier"
         name = Node(kind, token.start, token.end, text=self._text(token))
@@ -1360,6 +1529,10 @@ class _Parser:
         kind = token.kind
         text = self._text()
         if kind == "identifier":
+            if text == "async" and self.typed:
+                arrow = self._typed_async_arrow(token.start)
+                if arrow is not None:
+                    return arrow
             if text == "async" and self._async_function_follows():
                 self._next()
                 return self._function(token.start, is_async=True, declaration=False, name_optional=True)
@@ -1397,6 +1570,10 @@ class _Parser:
             return Node("PrivateName", token.start, token.end, text=text)
         elif kind == "punctuator":
             if text == "(":
+                if self.typed:
+                    arrow = self._typed_arrow(token.start, False, False)
+                    if arrow is not None:
+                        return arrow
                 return self._parenthesized()
             if text == "[":
                 return self._array_literal()
@@ -1404,13 +1581,15 @@ class _Parser:
                 return self._object_literal()
             if text in ("/", "/="):
                 return self._regexp_literal()
+            if text == "<":
+                return self._angle_expression()
         raise self._unexpected()
 
     def _regexp_literal(self) -> Node:
         start = self.tok.start
         end, error = L._scan_regexp(self.src, start)
         if error:
-            raise self._error(start, error)
+            raise self._lexical_error(start, error)
         flags = self.src[self.src.rfind("/", start + 1, end) + 1:end]
         if len(set(flags)) != len(flags) or not set(flags) <= REGEXP_FLAGS:
             raise self._error(start, "invalid regular expression flags")
@@ -1436,8 +1615,8 @@ class _Parser:
         return Node("TemplateLiteral", first.start, self.prev_end, expressions)
 
     def _parenthesized(self) -> Node:
-        """A parenthesized expression, or the parameter list of an arrow function, which is decided
-        by the ``=>`` after the closing parenthesis."""
+        """A parenthesized expression, or the parameter list of an arrow function, which is decided by
+        the ``=>`` after the closing parenthesis."""
         opener = self.tok
         mark = len(self.covers)
         self._next()
@@ -1518,22 +1697,23 @@ class _Parser:
         if generator:
             self._next()
         accessor = ""
-        if (not is_async and not generator and (self._is_name("get") or self._is_name("set"))
-                and self._modifier_follows()):
+        if not is_async and not generator and (self._is_name("get") or self._is_name("set")) \
+                and self._modifier_follows():
             accessor = self._text()
             self._next()
         key, computed = self._property_key()
-        flags = _flags("computed" if computed else "")
-        if self._is_punct("("):
+        property_flags = _flags("computed" if computed else "")
+        if self._is_punct("(") or (self.typed and self._is_punct("<")):
             method = self._method(start, is_async, generator)
             self._check_accessor(accessor, method, key)
-            return Node("Property", start, self.prev_end, [key, method], text=accessor or "method", flags=flags)
+            return Node("Property", start, self.prev_end, [key, method], text=accessor or "method",
+                        flags=property_flags)
         if is_async or generator or accessor:
             raise self._error(self.tok.start, f"expected '(' after the method name before {self._describe(self.tok)}")
         if self._is_punct(":"):
             self._next()
             value = self._assignment(cover=True)
-            return Node("Property", start, self.prev_end, [key, value], text="init", flags=flags)
+            return Node("Property", start, self.prev_end, [key, value], text="init", flags=property_flags)
         if computed or key.kind != "Identifier" or key.text in RESERVED:
             raise self._error(self.tok.start, f"expected ':' before {self._describe(self.tok)}")
         shorthand = Node("Identifier", key.start, key.end, text=key.text)
@@ -1547,6 +1727,11 @@ class _Parser:
         return Node("Property", start, self.prev_end, [key, shorthand], text="init", flags=_flags("shorthand"))
 
 
-def parse(source: str) -> Node:
-    """Parse ``source`` as a script or a module. Raises :class:`ParseError` at the first error."""
-    return _Parser(source).program()
+_MEMBER_MODIFIERS = frozenset({"public", "private", "protected", "readonly", "abstract", "override",
+                               "declare", "accessor", "static"})
+
+
+def parse(source: str, typed: bool = False, jsx: bool = True) -> Node:
+    """Parse ``source`` as a script or a module. ``typed`` reads TypeScript; ``jsx`` reads JSX
+    elements where an expression starts. Raises :class:`ParseError` at the first error."""
+    return _Parser(source, typed=typed, jsx=jsx).program()

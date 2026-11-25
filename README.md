@@ -113,7 +113,7 @@ Paragraphs are lines up to the next blank line. Files use the extensions `.bd` a
 | SQL (Oracle, Apache Hive, MySQL, MariaDB, MSSQL, PostgreSQL) | lexer rules and keyword list ported from Howl, `ENGINE=` checks, own highlighting | dialect-specific keyword sets |
 | PHP | heredoc and nowdoc scanner, diagnostics; highlighting by GtkSourceView | own parser |
 | Python 2 / 3 / PyPy | dialect detection; highlighting by GtkSourceView | own parser |
-| TypeScript, JSX, TSX | GtkSourceView JavaScript grammar as an approximation | own lexer |
+| TypeScript, TSX, JSX | own lexer (`ogmkdev/lexers/typescript_lexer.py`); the parser of `ogmkdev/parsers/javascript.py` reads TypeScript when typed (types, interfaces, generics, enums, namespaces, decorators, `import type`, `as`, `satisfies`) and JSX; syntax diagnostics for .ts, .tsx, .jsx and .js | outline on top of the tree |
 | Mustache, Twig | detection of compound extensions, templates; highlighting of the base language | own grammar |
 | Markdown, HTML, JSON, CSS | GtkSourceView | none yet |
 | C++ | KDevelop `plugins/clang` in the source tree | rewrite to Python or bind |
@@ -352,6 +352,6 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 - Outline and navigation on top of the ECMAScript tree of `ogmkdev/parsers/javascript.py`.
 - The class diagram scrolls but has no zoom and no edge routing yet.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
-- Dialect-specific SQL keyword sets; TypeScript and JSX lexers; PHP and Python syntax colours in the frame.
+- Dialect-specific SQL keyword sets; PHP and Python syntax colours in the frame.
 - The GTK 3 window still has its own settings dialog, theme keys and highlighting through GtkSourceView.
 - The `.rpm` package is written but has not been built on openSUSE.

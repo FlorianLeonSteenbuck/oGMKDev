@@ -142,7 +142,7 @@ class SyntaxErrorTests(unittest.TestCase):
         self.assertError("throw\nnew Error()", 2, 1, "illegal newline after 'throw'")
 
     def test_characters_the_lexer_does_not_know(self):
-        self.assertError("x = 1 @ 2", 1, 7, "unexpected character '@'")
+        self.assertError("x = 1 @ 2", 1, 7, "missing ';' before '@'")
 
     def test_numbers_followed_by_identifiers(self):
         self.assertError("x = 3in y", 1, 6, "identifier starts immediately after a numeric literal")

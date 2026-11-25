@@ -5,7 +5,8 @@ Checks and their default severities:
 * PHP heredoc and nowdoc errors (``heredoc-*``, error);
 * PHP features newer than the file's PHP version, per feature (``php-<feature>``, error),
   library functions and classes (``php-function``, ``php-class``, warning);
-* ECMAScript lexical and syntax errors (``js-lexical``, ``js-syntax``, error);
+* ECMAScript, JSX, TypeScript and TSX lexical and syntax errors (``js-lexical``, ``js-syntax``,
+  error);
 * BareDown unclosed code blocks (``baredown-fence``, warning);
 * JSON syntax (``json-syntax``, error); XML well-formedness for XML and SVG (``xml-syntax``, error);
   duplicate ``id`` values in XML, SVG and HTML (``duplicate-id``, warning); unbalanced braces in CSS,
@@ -26,8 +27,11 @@ from typing import Dict, List, Optional
 from . import baredown, heredoc, markup, php_features, sql, standards
 from .editorconfig import EditorSettings
 from .languages import Detection
-from .lexers import ecmascript_lexer
 from .parsers import javascript as jsparser
+
+# the languages that the JavaScript parser checks: JSX is read in ecmascript, jsx and tsx,
+# TypeScript types in typescript and tsx
+JAVASCRIPT_LANGUAGES = ("ecmascript", "jsx", "typescript", "tsx")
 
 SEVERITIES = ("error", "warning", "hint", "off")
 
@@ -68,17 +72,15 @@ def analyze(text: str, detection: Detection, settings: Optional[EditorSettings] 
             else:
                 code, default = f"php-{finding.kind}", "warning"
             found.append(Diagnostic(finding.line, finding.column, default, code, finding.message))
-    if detection.language == "ecmascript":
-        lexical = ecmascript_lexer.problems(text)
-        for line, column, message in lexical:
-            found.append(Diagnostic(line, column, "error", "js-lexical", message))
-        if not lexical:
-            try:
-                jsparser.parse(text)
-            except jsparser.ParseError as error:
-                found.append(Diagnostic(error.line, error.column, "error", "js-syntax", error.message))
-            except RecursionError:
-                pass  # nested deeper than the recursive parser goes: no verdict
+    if detection.language in JAVASCRIPT_LANGUAGES:
+        try:
+            jsparser.parse(text, typed=detection.language in ("typescript", "tsx"),
+                           jsx=detection.language != "typescript")
+        except jsparser.ParseError as error:
+            code = "js-lexical" if error.lexical else "js-syntax"
+            found.append(Diagnostic(error.line, error.column, "error", code, error.message))
+        except RecursionError:
+            pass  # nested deeper than the recursive parser goes: no verdict
     if detection.template is None:  # templated files (Mustache, Twig) are not checked as plain markup
         if detection.language == "json":
             for line, column, message in markup.json_problems(text):
