@@ -11,7 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional
 
-from . import heredoc, sql
+from . import baredown, heredoc, sql
+from .lexers import ecmascript_lexer
 from .editorconfig import EditorSettings
 from .languages import Detection
 
@@ -38,6 +39,12 @@ def analyze(text: str, detection: Detection, settings: Optional[EditorSettings] 
         for error in scan.errors:
             line, column = _position(text, error.offset)
             found.append(Diagnostic(line, column, "error", f"heredoc-{error.code}", error.message))
+    if detection.language == "ecmascript":
+        for line, column, message in ecmascript_lexer.problems(text):
+            found.append(Diagnostic(line, column, "error", "js-syntax", message))
+    if detection.language == "baredown":
+        for line, message in baredown.problems(text):
+            found.append(Diagnostic(line, 1, "warning", "baredown-fence", message))
     if detection.language == "sql":
         dialect = detection.dialect or "generic"
         for clause in sql.engine_clauses(text, dialect):

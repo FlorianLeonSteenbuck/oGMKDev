@@ -57,6 +57,7 @@ LANGUAGES: Dict[str, Language] = {
                  ("generic", "oracle", "apache-hive", "mysql", "mariadb", "mssql", "postgresql"),
                  "generic", "sql"),
         Language("markdown", "Markdown", ("md", "markdown", "mdown"), (), None, "markdown"),
+        Language("baredown", "BareDown", ("bd", "baredown"), (), None, None),
         Language("html", "HTML", ("html", "htm", "xhtml"), (), None, "html"),
         Language("json", "JSON", ("json",), (), None, "json"),
         Language("css", "CSS", ("css",), (), None, "css"),

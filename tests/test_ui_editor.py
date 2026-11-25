@@ -102,6 +102,63 @@ class EditorTests(unittest.TestCase):
         self.assertIn("gdb_target.c *", self.win.page.tab_label.get_text())
 
 
+@unittest.skipUnless(GTK_AVAILABLE, "PyGObject/GTK 3 and a display are required")
+class ChromeAndHighlightTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.project = self._tmp.name
+        self.win = EditorWindow(None, project_dir=self.project)
+
+    def tearDown(self):
+        self.win.destroy()
+        self._tmp.cleanup()
+
+    def _menu_labels(self, menu_name):
+        for item in self.win.menubar.get_children():
+            if item.get_label() == menu_name:
+                return [child.get_children()[0].get_label() if child.get_children() else child.get_label()
+                        for child in item.get_submenu().get_children()]
+        raise AssertionError(menu_name)
+
+    def test_menus_follow_the_action_table(self):
+        self.assertIn("Save", self._menu_labels("File"))
+        self.assertIn("Toggle Breakpoint", self._menu_labels("Debug"))
+        self.assertIn("Find...", self._menu_labels("Edit"))
+        self.assertIn("About ogmkdev", self._menu_labels("Help"))
+
+    def test_toolbar_icons_resolve_in_the_icon_theme(self):
+        from ogmkdev.ui.app import ACTIONS
+        theme = Gtk.IconTheme.get_default()
+        self.assertIsNotNone(theme)
+        missing = [icon for _m, _l, icon, _a, _meth, in_bar in ACTIONS
+                   if in_bar and not theme.has_icon(icon)]
+        self.assertEqual(missing, [])
+
+    def test_every_action_method_exists(self):
+        from ogmkdev.ui.app import ACTIONS
+        for _menu, _label, _icon, _accel, method, _in_bar in ACTIONS:
+            self.assertTrue(callable(getattr(self.win, method)), method)
+
+    def test_baredown_and_ecmascript_use_our_own_highlighting(self):
+        bd = os.path.join(self.project, "notes.bd")
+        with open(bd, "w", encoding="utf-8") as handle:
+            handle.write("= Title\n- item **bold**\n")
+        win = self.win
+        win.open_path(bd)
+        self.assertIsNone(win.buffer.get_language())
+        title_start = win.buffer.get_iter_at_offset(2)
+        self.assertIn("hl-heading", [t.get_property("name") for t in title_start.get_tags()])
+        js = os.path.join(self.project, "app.js")
+        with open(js, "w", encoding="utf-8") as handle:
+            handle.write("var x = 1; // note\n")
+        win.open_path(js)
+        self.assertIsNone(win.buffer.get_language())
+        keyword = win.buffer.get_iter_at_offset(0)
+        self.assertIn("hl-keyword", [t.get_property("name") for t in keyword.get_tags()])
+        comment = win.buffer.get_iter_at_offset(11)
+        self.assertIn("hl-comment", [t.get_property("name") for t in comment.get_tags()])
+
+
 @unittest.skipUnless(GTK_AVAILABLE and shutil.which("gdb") and shutil.which("gcc"),
                      "GTK, gdb and gcc are required")
 class DebugEndToEndTests(unittest.TestCase):

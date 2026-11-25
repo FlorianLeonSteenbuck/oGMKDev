@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 try:
     gi.require_version("GtkSource", "3.0")
@@ -30,12 +30,48 @@ try:
 except (ImportError, ValueError):
     GtkSource = None
 
-from .. import diagnostics, languages, runconfig, templates  # noqa: E402
+from .. import diagnostics, highlight, languages, runconfig, templates  # noqa: E402
+from .. import __version__  # noqa: E402
 from ..debug import DebuggerError, Exited, GdbMiDebugger, Output, Stopped, XdebugDebugger  # noqa: E402
 from ..document import Document  # noqa: E402
 
 BREAKPOINT_CATEGORY = "ogmkdev-breakpoint"
 EXEC_TAG = "ogmkdev-exec"
+# Languages highlighted by our own tokenizers (see ogmkdev/highlight.py), not by GtkSourceView.
+OWN_HIGHLIGHT = frozenset({"ecmascript", "baredown", "sql"})
+MENU_ORDER = ("File", "Edit", "Run", "Debug", "Help")
+# menu, label, icon name, accelerator, method name, shown in toolbar
+ACTIONS = (
+    ("File", "New", "document-new", "<Control>n", "new_document", True),
+    ("File", "Open...", "document-open", "<Control>o", "open_dialog", True),
+    ("File", "Save", "document-save", "<Control>s", "save_current", True),
+    ("File", "Save As...", "document-save-as", "", "save_as", False),
+    ("File", "Close Tab", "window-close", "<Control>w", "close_page", False),
+    ("Edit", "Undo", "edit-undo", "<Control>z", "_undo", True),
+    ("Edit", "Redo", "edit-redo", "<Control>y", "_redo", True),
+    ("Edit", "Find...", "edit-find", "<Control>f", "focus_find", True),
+    ("Edit", "Expand Template", "insert-text", "<Control>space", "_complete", False),
+    ("Run", "Run Configuration", "media-playback-start", "", "run_selected", True),
+    ("Run", "Debug Configuration", "system-run", "", "debug_selected", True),
+    ("Debug", "Toggle Breakpoint", "media-record", "F9", "toggle_breakpoint", True),
+    ("Debug", "Continue", "media-skip-forward", "F5", "continue_debugging", True),
+    ("Debug", "Step Over", "go-next", "F10", "step_over", True),
+    ("Debug", "Step Into", "go-down", "F11", "step_into", True),
+    ("Debug", "Step Out", "go-up", "<Shift>F11", "step_out", True),
+    ("Debug", "Stop", "media-playback-stop", "", "stop_debug", True),
+)
+
+
+def _tag_props(props):
+    result = {}
+    for key, value in props.items():
+        if key == "style":
+            result["style"] = Pango.Style.ITALIC
+        elif key == "underline":
+            result["underline"] = Pango.Underline.SINGLE
+        else:
+            result[key] = value
+    return result
 
 
 def _ui(function, *args) -> None:
@@ -67,12 +103,15 @@ class Page:
         self.view.set_monospace(True)
         self.view.set_auto_indent(True)
         self.exec_tag = self.buffer.create_tag(EXEC_TAG, background="#ffe27a")
+        for style, props in highlight.TAG_STYLES.items():
+            self.buffer.create_tag(f"hl-{style}", **_tag_props(props))
         self.buffer.set_text(document.text)
         self.scroller = Gtk.ScrolledWindow()
         self.scroller.add(self.view)
         self.tab_label = Gtk.Label(label=document.title)
         self.apply_settings()
         self.apply_language()
+        self.highlight()
 
     def text(self) -> str:
         start, end = self.buffer.get_bounds()
@@ -91,9 +130,23 @@ class Page:
     def apply_language(self) -> None:
         if GtkSource is None:
             return
+        if self.document.detection.language in OWN_HIGHLIGHT:
+            self.buffer.set_language(None)
+            return
         gtk_id = languages.LANGUAGES[self.document.detection.language].gtk_source_id
         manager = GtkSource.LanguageManager.get_default()
         self.buffer.set_language(manager.get_language(gtk_id) if gtk_id else None)
+
+    def highlight(self) -> None:
+        start, end = self.buffer.get_bounds()
+        for style in highlight.TAG_STYLES:
+            self.buffer.remove_tag_by_name(f"hl-{style}", start, end)
+        language = self.document.detection.language
+        if language not in OWN_HIGHLIGHT:
+            return
+        for style, first, last in highlight.spans(language, self.text()):
+            self.buffer.apply_tag_by_name(f"hl-{style}", self.buffer.get_iter_at_offset(first),
+                                          self.buffer.get_iter_at_offset(last))
 
     def update_label(self) -> None:
         self.tab_label.set_text(self.document.title + (" *" if self.dirty else ""))
@@ -164,18 +217,8 @@ class EditorWindow(Gtk.Window):
         self.find_entry = Gtk.SearchEntry(placeholder_text="Find (Ctrl+F), Enter for next match")
         self.find_entry.connect("activate", lambda *_: self.find_next())
 
-        toolbar = Gtk.Box(spacing=4)
-        for label, handler in (
-            ("New", self.new_document), ("Open", self.open_dialog), ("Save", self.save_current),
-            ("Close", self.close_page), ("Breakpoint", self.toggle_breakpoint),
-            ("Run", self.run_selected), ("Debug", self.debug_selected),
-            ("Continue", lambda: self.debug_op("run")), ("Over", lambda: self.debug_op("step_over")),
-            ("Into", lambda: self.debug_op("step_into")), ("Out", lambda: self.debug_op("step_out")),
-            ("Stop", self.stop_debug),
-        ):
-            button = Gtk.Button(label=label)
-            button.connect("clicked", lambda _b, h=handler: h())
-            toolbar.pack_start(button, False, False, 0)
+        self.menubar = self._build_menubar()
+        self.toolbar = self._build_toolbar()
 
         center = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
         center.pack1(self.notebook, True, False)
@@ -184,7 +227,8 @@ class EditorWindow(Gtk.Window):
         main.pack1(left, False, False)
         main.pack2(center, True, False)
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        outer.pack_start(toolbar, False, False, 0)
+        outer.pack_start(self.menubar, False, False, 0)
+        outer.pack_start(self.toolbar, False, False, 0)
         outer.pack_start(main, True, True, 0)
         outer.pack_start(self.find_entry, False, False, 0)
         outer.pack_start(self.status, False, False, 2)
@@ -195,6 +239,70 @@ class EditorWindow(Gtk.Window):
             self.open_path(path)
         else:
             self.new_document()
+
+    # ------------------------------------------------------ menus and toolbar
+
+    def _build_menubar(self) -> Gtk.MenuBar:
+        bar = Gtk.MenuBar()
+        menus: Dict[str, Gtk.Menu] = {}
+        for name in MENU_ORDER:
+            item = Gtk.MenuItem(label=name)
+            submenu = Gtk.Menu()
+            item.set_submenu(submenu)
+            bar.append(item)
+            menus[name] = submenu
+        for menu, label, _icon, accel, method, _in_toolbar in ACTIONS:
+            entry = Gtk.MenuItem()
+            accel_label = Gtk.AccelLabel(label=label, xalign=0.0)
+            if accel:
+                key, mods = Gtk.accelerator_parse(accel)
+                accel_label.set_accel(key, mods)
+            entry.add(accel_label)
+            entry.connect("activate", lambda _item, m=method: getattr(self, m)())
+            menus[menu].append(entry)
+        about = Gtk.MenuItem(label="About ogmkdev")
+        about.connect("activate", lambda _item: self.show_about())
+        menus["Help"].append(about)
+        return bar
+
+    def _build_toolbar(self) -> Gtk.Toolbar:
+        bar = Gtk.Toolbar()
+        bar.set_style(Gtk.ToolbarStyle.ICONS)
+        previous_menu = None
+        for menu, label, icon, accel, method, in_toolbar in ACTIONS:
+            if not in_toolbar:
+                continue
+            if previous_menu is not None and menu != previous_menu:
+                bar.insert(Gtk.SeparatorToolItem(), -1)
+            previous_menu = menu
+            image = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR)
+            button = Gtk.ToolButton(icon_widget=image, label=label)
+            button.set_tooltip_text(f"{label}  ({accel})" if accel else label)
+            button.connect("clicked", lambda _button, m=method: getattr(self, m)())
+            bar.insert(button, -1)
+        return bar
+
+    def focus_find(self) -> None:
+        self.find_entry.grab_focus()
+
+    def continue_debugging(self) -> None:
+        self.debug_op("run")
+
+    def step_over(self) -> None:
+        self.debug_op("step_over")
+
+    def step_into(self) -> None:
+        self.debug_op("step_into")
+
+    def step_out(self) -> None:
+        self.debug_op("step_out")
+
+    def show_about(self) -> None:
+        dialog = Gtk.AboutDialog(transient_for=self, program_name="ogmkdev", version=__version__,
+                                 comments="A lightweight editor: KDevelop-derived base, GTK 3 front end.",
+                                 license_type=Gtk.License.GPL_2_0)
+        dialog.run()
+        dialog.destroy()
 
     # ------------------------------------------------ compatibility accessors
 
@@ -249,6 +357,7 @@ class EditorWindow(Gtk.Window):
         page.dirty = True
         page.document.text = page.text()
         page.document.analyze()
+        page.highlight()
         page.update_label()
         self._update_status()
 
@@ -290,6 +399,7 @@ class EditorWindow(Gtk.Window):
         page.dirty = False
         page.apply_settings()
         page.apply_language()
+        page.highlight()
         page.update_label()
         self._update_status(saved=True)
 
