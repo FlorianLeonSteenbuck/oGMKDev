@@ -32,7 +32,7 @@ try:
 except (ImportError, ValueError):
     GtkSource = None
 
-from .. import diagnostics, editorconfig, highlight, languages, runconfig, templates, theme  # noqa: E402
+from .. import diagnostics, editorconfig, highlight, languages, organize, runconfig, templates, theme  # noqa: E402
 from ..index import ProjectIndex  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
@@ -70,6 +70,8 @@ ACTIONS = (
     ("Debug", "Stop", "media-playback-stop", "", "stop_debug", True),
     ("Project", "Search in Files...", "edit-find", "<Control><Shift>f", "search_in_files", False),
     ("Project", "Find Implementations", "go-down", "<Control><Alt>b", "find_implementations", True),
+    ("Project", "Go to Definition", "go-jump", "<Control>b", "go_to_definition", True),
+    ("Edit", "Organize Imports", "format-justify-left", "<Control><Alt>o", "organize_imports", False),
     ("Project", "Show Type Hierarchy", "go-jump", "<Control>h", "show_hierarchy", True),
     ("Project", "Inspect Project", "dialog-warning", "", "inspect_project", True),
     ("Project", "Refresh Index", "view-refresh", "", "refresh_index", False),
@@ -998,9 +1000,43 @@ class EditorWindow(Gtk.Window):
             self.status.set_text("place the cursor on a class or interface name")
             return
         found = self.index.implementations(word)
+        if len(found) == 1:
+            self.navigate(found[0].file, found[0].line, found[0].column)
+            self.status.set_text(f"implementation of {word}: {found[0].short}")
+            return
         rows = [(s.short, self._location(s.file, s.line), s.file, s.line, s.column) for s in found]
         self.status.set_text(f"implementations of {word}: {len(found)}")
         self._show_results(self.search_view, rows, "Search")
+
+    def go_to_definition(self) -> None:
+        word = self._word_at_cursor()
+        if not word:
+            self.status.set_text("place the cursor on a name")
+            return
+        found = self.index.definitions(word)
+        if not found:
+            self.status.set_text(f"no definition for {word}")
+            return
+        if len(found) == 1:
+            self.navigate(found[0].file, found[0].line, found[0].column)
+            self.status.set_text(f"definition of {word}: {self._location(found[0].file, found[0].line)}")
+            return
+        rows = [(s.name, self._location(s.file, s.line), s.file, s.line, s.column) for s in found]
+        self._show_results(self.search_view, rows, "Search")
+        self.status.set_text(f"{len(found)} definitions of {word}")
+
+    def organize_imports(self) -> None:
+        page = self.page
+        if page is None or page.document.detection.language != "php":
+            self.status.set_text("organise imports works on PHP files")
+            return
+        text = page.text()
+        organised = organize.organize(text)
+        if organised == text:
+            self.status.set_text("imports are already organised")
+            return
+        page.buffer.set_text(organised)
+        self.status.set_text("imports organised")
 
     def show_hierarchy(self) -> None:
         word = self._word_at_cursor()

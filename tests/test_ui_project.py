@@ -127,3 +127,40 @@ class DiagramTests(unittest.TestCase):
         finally:
             import shutil
             shutil.rmtree(root, ignore_errors=True)
+
+
+@unittest.skipUnless(GTK_AVAILABLE, "PyGObject/GTK 3 and a display are required")
+class NavigationToolTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        write(self.root, "src/Shape.php", SHAPE)
+        write(self.root, "src/Circle.php", CIRCLE)
+        write(self.root, "src/Square.php", SQUARE)
+        self.win = EditorWindow(os.path.join(self.root, "src/Square.php"), project_dir=self.root)
+        self.win.index.cache_path = None
+        self.win.show_all()
+
+    def tearDown(self):
+        self.win.destroy()
+        self._tmp.cleanup()
+
+    def test_go_to_definition_jumps_to_the_declaration(self):
+        place(self.win, 4, 22)  # on "Circle" in "class Square extends Circle"
+        self.win.go_to_definition()
+        self.assertEqual(self.win.page.document.path, os.path.join(self.root, "src/Circle.php"))
+
+    def test_go_to_implementation_lists_several_implementers(self):
+        self.win.open_path(os.path.join(self.root, "src/Shape.php"))
+        place(self.win, 4, 12)  # on "Shape" in the interface line: Circle and Square implement it
+        self.win.find_implementations()
+        self.assertEqual(sorted(row[0] for row in self.win.search_view.store), ["Circle", "Square"])
+        self.assertEqual(self.win.page.document.path, os.path.join(self.root, "src/Shape.php"))
+
+    def test_organize_imports_rewrites_the_document(self):
+        write(self.root, "src/Imports.php", "<?php\nnamespace App;\nuse Zeta\\Unused;\nuse App\\Shape;\nclass U { function f(Shape $s) {} }\n")
+        self.win.open_path(os.path.join(self.root, "src/Imports.php"))
+        self.win.organize_imports()
+        text = self.win.page.text()
+        self.assertNotIn("Unused", text)
+        self.assertIn("use App\\Shape;", text)

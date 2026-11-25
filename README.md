@@ -175,6 +175,35 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
   for 8.5 and 8.6 and the RFCs they link. Some 8.6 details come from pre-release coverage; check the
   migration guide before relying on an edge case.
 
+## Navigation, inspections and imports
+
+- **Go to Definition** (Ctrl+B): the declaration of the name under the cursor. One match jumps; several
+  are listed in the Search panel (classes first, then members with that name).
+- **Go to Implementation** (Ctrl+Alt+B): the classes that extend or implement the type under the cursor.
+  One implementation jumps; several are listed.
+- **Inspections** (Project > Inspect Project) report, besides diagnostics: unused imports (warning),
+  imports that the project does not define (hint), and concrete classes that do not implement a method of
+  an interface or abstract class they inherit (error).
+- **Organise Imports** (Edit > Organize Imports, Ctrl+Alt+O): sorts the top-level PHP `use` statements,
+  drops unused ones and keeps `use function` and `use const`. Group imports (`use A\{B, C};`) are left
+  alone.
+
+## Workspace and keyboard
+
+- **Workspace** (JetBrains-style): source folders (`ogmkdev_source_roots`), test folders
+  (`ogmkdev_test_roots`, shown in a different color) and ignored folders (`ogmkdev_exclude`, hidden from
+  the tree and not indexed or searched). Project > Add Folder to Workspace adds further project folders;
+  each one is a top-level node in the Files tree.
+- **Keymap**: every action can be rebound with `ogmkdev_key_<action> = <accelerator>` in the global or the
+  project EditorConfig; `none` removes the shortcut. Example: `ogmkdev_key_save_current = <Primary>s`.
+- **Current line** is highlighted with the Eclipse color; switch it off with `ogmkdev_current_line = false`.
+
+## Packaging
+
+`packaging/build-deb.sh` builds `dist/ogmkdev_<version>_all.deb` (tested), and `packaging/build-rpm.sh`
+builds the openSUSE `.rpm` from `packaging/ogmkdev.spec` (written, not yet built here). Both use
+`packaging/install-tree.sh`. See `packaging/README.md`.
+
 ## Templates
 
 Every language has built-in templates (PHP, Python 2/3/PyPy, ECMAScript, TypeScript, TSX, JSX,
@@ -236,6 +265,12 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 `php-cli` with `php-xdebug` when installed; otherwise they are skipped.
 
 ## Open items
+
+- Git staging and a "changed files" view, a global search for files, symbols, actions and settings
+  (Search Everywhere), quick open of files, and configurable file templates are not built yet.
+- Coding-standard checks (trailing whitespace, indentation style, line length, final newline) are not
+  added as diagnostics yet; the diagnostic severities are already configurable per check.
+- The `.rpm` package is written but has not been built on openSUSE.
 
 - Build an AST on top of the ECMAScript parse tree (outline, navigation).
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.

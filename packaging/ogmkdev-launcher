@@ -1,0 +1,11 @@
+#!/bin/sh
+# Starts ogmkdev with the first Python 3 that has PyGObject (python3-gi).
+PYTHONPATH=/usr/share/ogmkdev${PYTHONPATH:+:$PYTHONPATH}
+export PYTHONPATH
+for PY in python3 python3.13 python3.12 python3.11 python3.10; do
+    if command -v "$PY" >/dev/null 2>&1 && "$PY" -c 'import gi' >/dev/null 2>&1; then
+        exec "$PY" -m ogmkdev "$@"
+    fi
+done
+echo "ogmkdev needs Python 3 with PyGObject: install python3-gi (Debian) or python3-gobject (openSUSE)." >&2
+exit 1

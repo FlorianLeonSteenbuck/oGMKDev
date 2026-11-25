@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ogmkdev
+GenericName=Code Editor
+Comment=Lightweight code editor with EditorConfig, project index and debugging
+Exec=ogmkdev %F
+Icon=ogmkdev
+Terminal=false
+Categories=Development;IDE;TextEditor;
+Keywords=editor;code;php;javascript;python;sql;debugger;
+StartupNotify=true

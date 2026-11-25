@@ -120,5 +120,50 @@ class IndexTests(unittest.TestCase):
         self.assertEqual(again.refresh(), {"added": 0, "changed": 0, "removed": 0})
 
 
+class NavigationAndInspectionTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        write(self.root, "src/Shape.php", SHAPE)
+        write(self.root, "src/Circle.php", CIRCLE)
+        write(self.root, "src/Good.php", "<?php\nnamespace App;\nclass Good implements Shape\n{\n    public function area(): float { return 1.0; }\n    public function countable(): int { return 1; }\n}\n")
+        write(self.root, "src/Bad.php", "<?php\nnamespace App;\nclass Bad implements Shape\n{\n    public function other(): int { return 2; }\n}\n")
+        write(self.root, "src/Abstract.php", "<?php\nnamespace App;\nabstract class Half implements Shape\n{\n}\n")
+        self.index = I.ProjectIndex(self.root)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_definitions_return_classes_first_then_members(self):
+        found = self.index.definitions("area")
+        self.assertTrue(all(s.kind == "method" for s in found))
+        self.assertIn("App\\Circle::area", {s.name for s in found})
+        classes = self.index.definitions("Circle")
+        self.assertEqual(classes[0].kind, "class")
+
+    def test_missing_method_is_reported_for_concrete_classes_only(self):
+        missing = {(s.short, iface, method) for s, iface, method in self.index.missing_implementations()}
+        self.assertIn(("Bad", "Shape", "area"), missing)
+        self.assertNotIn(("Good", "Shape", "area"), missing)
+        self.assertNotIn(("Circle", "Shape", "area"), missing)  # Circle declares area
+        self.assertFalse(any(m[0] == "Half" for m in missing))   # abstract classes may leave it open
+
+    def test_inspections_include_missing_methods_and_imports(self):
+        write(self.root, "src/Imports.php", "<?php\nnamespace App;\nuse Vendor\\Thing;\nuse App\\Shape;\nclass U { function f(Shape $s) {} }\n")
+        index = I.ProjectIndex(self.root)
+        findings = {(i.code, i.message) for i in index.inspect()}
+        self.assertIn(("missing-implementation", "Bad does not implement area() from Shape"), findings)
+        self.assertTrue(any(code == "unused-import" and "Vendor\\Thing" in msg for code, msg in findings))
+        self.assertTrue(any(code == "unresolved-import" and "Vendor\\Thing" in msg for code, msg in findings))
+        self.assertFalse(any(code == "unused-import" and "App\\Shape" in msg for code, msg in findings))
+
+    def test_abstract_flag_is_kept_in_the_cache(self):
+        cache = os.path.join(self.root, "cache.json")
+        self.index.save_cache(cache)
+        again = I.ProjectIndex(self.root, cache_path=cache)
+        self.assertTrue(again.find("App\\Half")[0].abstract)
+        self.assertFalse(again.find("App\\Good")[0].abstract)
+
+
 if __name__ == "__main__":
     unittest.main()

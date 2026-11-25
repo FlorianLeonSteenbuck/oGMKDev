@@ -20,7 +20,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from . import diagnostics, editorconfig, languages
+from . import diagnostics, editorconfig, languages, organize
 from .lexers import php_lexer
 
 SKIP_DIRS = frozenset({".git", "__pycache__", "node_modules"})
@@ -41,6 +41,12 @@ class Symbol:
     traits: Tuple[str, ...] = ()
     container: Optional[str] = None
     references: Tuple[str, ...] = ()
+    abstract: bool = False
+
+    @property
+    def member(self) -> str:
+        """Member name of a method, property or constant (empty for top-level symbols)."""
+        return self.name.split("::", 1)[1].lstrip("$") if self.container else ""
 
     @property
     def short(self) -> str:
@@ -146,7 +152,8 @@ def _extract_php(source: str, path: str) -> List[Symbol]:
                 and kinds[i + 1] == "name" and not (i > 0 and texts[i - 1] in ("::", "->", "new")):
             line, column = _position(source, tokens[i + 1].start)
             rec = {"name": f"{namespace}\\{texts[i + 1]}" if namespace else texts[i + 1], "kind": low,
-                   "line": line, "column": column, "supertypes": [], "traits": [], "refs": [], "members": []}
+                   "line": line, "column": column, "supertypes": [], "traits": [], "refs": [], "members": [],
+                   "abstract": low == "interface" or (i > 0 and lower[i - 1] == "abstract")}
             j, mode = i + 2, None
             while j < n and texts[j] not in ("{", ";"):
                 if lower[j] == "extends":
@@ -204,7 +211,7 @@ def _extract_php(source: str, path: str) -> List[Symbol]:
     for rec in records:
         symbols.append(Symbol(rec["name"], rec["kind"], path, rec["line"], rec["column"],
                               tuple(rec["supertypes"]), tuple(rec["traits"]), None,
-                              tuple(dict.fromkeys(rec["refs"]))))
+                              tuple(dict.fromkeys(rec["refs"])), rec["abstract"]))
         for member_kind, member, line, column in rec["members"]:
             symbols.append(Symbol(f"{rec['name']}::{member}", member_kind, path, line, column,
                                   container=rec["name"]))
@@ -338,10 +345,14 @@ class ProjectIndex:
     def _rebuild(self) -> None:
         self._by_name = {}
         self._subtypes = {}
+        self._members = {}
         for entry in self.files.values():
             for symbol in entry.symbols:
                 self._by_name.setdefault(symbol.name.lower(), []).append(symbol)
-                if symbol.short.lower() != symbol.name.lower():
+                if symbol.container:
+                    self._by_name.setdefault(symbol.member.lower(), []).append(symbol)
+                    self._members.setdefault(symbol.container.lower(), []).append(symbol)
+                elif symbol.short.lower() != symbol.name.lower():
                     self._by_name.setdefault(symbol.short.lower(), []).append(symbol)
                 for parent in symbol.supertypes + symbol.traits:
                     self._subtypes.setdefault(parent.lower(), []).append(symbol.name)
@@ -355,6 +366,38 @@ class ProjectIndex:
 
     def find(self, name: str) -> List[Symbol]:
         return [s for s in self._by_name.get(name.lower(), []) if s.container is None]
+
+    def definitions(self, name: str) -> List[Symbol]:
+        """Declarations a name can refer to: classes, functions, and members with that name.
+
+        Classes come first; a member is listed for every class that declares it.
+        """
+        found = self._by_name.get(name.lower(), [])
+        return sorted(found, key=lambda s: (s.container is not None, s.file, s.line))
+
+    def members_of(self, name: str, kind: Optional[str] = None) -> List[Symbol]:
+        return [s for s in self._members.get(name.lower(), []) if kind is None or s.kind == kind]
+
+    def missing_implementations(self) -> List[Tuple[Symbol, str, str]]:
+        """(class, interface or abstract class, method) for concrete classes lacking an inherited method."""
+        result: List[Tuple[Symbol, str, str]] = []
+        for symbol in self.symbols:
+            if symbol.container is not None or symbol.kind != "class" or symbol.abstract:
+                continue
+            provided = set()
+            for candidate in [symbol] + [a for a in self.supertypes(symbol.name) if a.kind != "unresolved"]:
+                if candidate.kind == "interface":
+                    continue
+                provided.update(m.member.lower() for m in self.members_of(candidate.name, "method"))
+                for trait in candidate.traits:
+                    provided.update(m.member.lower() for m in self.members_of(trait, "method"))
+            for ancestor in self.supertypes(symbol.name):
+                if ancestor.kind == "unresolved" or not (ancestor.kind == "interface" or ancestor.abstract):
+                    continue
+                for method in self.members_of(ancestor.name, "method"):
+                    if method.member.lower() not in provided:
+                        result.append((symbol, ancestor.short, method.member))
+        return result
 
     def supertypes(self, name: str, transitive: bool = True) -> List[Symbol]:
         seen: Dict[str, Symbol] = {}
@@ -483,6 +526,19 @@ class ProjectIndex:
         for symbol, missing in self.unresolved_supertypes():
             results.append(Inspection(symbol.file, symbol.line, symbol.column, "warning", "unresolved-supertype",
                                       f"{symbol.short} extends or implements unknown type {missing}"))
+        for symbol, interface, method in self.missing_implementations():
+            results.append(Inspection(symbol.file, symbol.line, symbol.column, "error", "missing-implementation",
+                                      f"{symbol.short} does not implement {method}() from {interface}"))
+        for path in sorted(self.files):
+            if os.path.splitext(path)[1].lower() in PHP_EXTENSIONS:
+                with open(path, encoding="utf-8", errors="replace") as handle:
+                    text = handle.read()
+                for statement in organize.unused_imports(text):
+                    results.append(Inspection(path, statement.line, statement.column, "warning", "unused-import",
+                                              f"import {statement.fqn} is never used"))
+                for statement in organize.unresolved_imports(text, self):
+                    results.append(Inspection(path, statement.line, statement.column, "hint", "unresolved-import",
+                                              f"import {statement.fqn} cannot be resolved in the project"))
         return results
 
     # --- cache
@@ -506,6 +562,6 @@ class ProjectIndex:
         for file_path, entry in data.get("files", {}).items():
             symbols = [Symbol(s["name"], s["kind"], s["file"], s["line"], s["column"],
                               tuple(s["supertypes"]), tuple(s["traits"]), s["container"],
-                              tuple(s["references"])) for s in entry["symbols"]]
+                              tuple(s["references"]), s.get("abstract", False)) for s in entry["symbols"]]
             self.files[file_path] = FileEntry(entry["mtime_ns"], entry["size"], symbols)
         self._rebuild()
