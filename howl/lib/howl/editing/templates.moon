@@ -110,8 +110,9 @@ set_for_path = (path, rows) ->
 howl.command.register
   name: 'editor-expand-or-complete'
   description: 'Expands the code template of the word before the cursor, or starts completion'
+  -- commands are called without self: the focused editor is the application's
   handler: ->
-    editor = @editor
+    editor = howl.app.editor
     return unless editor
     list = for_buffer editor.buffer
     return if list and expand_at_cursor(editor, list)

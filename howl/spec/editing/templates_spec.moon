@@ -1,5 +1,5 @@
-import Buffer from howl
-import Editor from howl.ui
+import Buffer, app, command from howl
+import Editor, Window from howl.ui
 import File from howl.io
 import templates from howl.editing
 
@@ -98,3 +98,28 @@ describe 'templates', ->
 
     it 'has none for a buffer without a file', ->
       assert.is_nil templates.for_buffer(Buffer!)
+
+  describe 'the editor-expand-or-complete command', ->
+    local previous, previous_window
+
+    before_each ->
+      previous, previous_window = app.editor, app.window
+      app.window = Window!
+
+    after_each ->
+      app.window\destroy!
+      app.window = previous_window
+      app.editor = previous
+
+    it 'expands the template before the cursor of the focused editor', ->
+      path = '/nonexistent/ogmkdev/command-spec.php'
+      templates.set_for_path(path, 'fn\tfn(${x:a}) => $0;')
+      buffer = Buffer!
+      buffer.file = File(path)
+      editor = Editor buffer
+      buffer.text = 'fn'
+      editor.cursor.pos = 3
+      app.editor = editor
+      command.run 'editor-expand-or-complete'
+      assert.equal 'fn(a) => ;', buffer.text
+      assert.equal 10, editor.cursor.pos
