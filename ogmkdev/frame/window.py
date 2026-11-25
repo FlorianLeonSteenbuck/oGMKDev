@@ -11,7 +11,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from ogmkdev import markup, scaffold  # noqa: E402
+from ogmkdev import filetemplates, markup, scaffold  # noqa: E402
 from ogmkdev.settings import SettingsStore  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from . import theme  # noqa: E402
@@ -483,6 +483,24 @@ class Frame(AnalysisMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, G
         column = cursor - (main_text.rfind("\n", 0, cursor) + 1) + 1
         self.open_file(main_path, line, column)
         self.set_status(f"created the {framework} component: {', '.join(name for name, _t, _c in files)}")
+
+    def new_file_from_template(self) -> None:
+        self.ask_text("New file from template", "File name (for example cart.php):",
+                      self._create_file_from_template)
+
+    def _create_file_from_template(self, file_name: str) -> None:
+        """Creates a file next to the current one (or in the folder) from the file template of its extension,
+        opens it with the cursor where the template puts it, and never overwrites a file."""
+        current = self.area.current_path()
+        folder = os.path.dirname(current) if current else self.folder
+        properties = SettingsStore(self.folder).effective_for(os.path.join(folder, file_name.strip() or "_"))
+        try:
+            created = filetemplates.create_new_file(folder, file_name, self.folder, properties)
+        except ValueError as problem:
+            self.set_status(str(problem))
+            return
+        self.open_file(created.path, created.line, created.column)
+        self.set_status(created.message)
 
     def new_editor(self) -> None:
         self.add_editor(None)

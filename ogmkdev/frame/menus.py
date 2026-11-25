@@ -4,6 +4,7 @@ the name of a Window method, or "howl:<command>" for a Howl command in the focus
 MENUS = (
     ("File", (
         ("New Editor", "new-editor", "", "add_editor"),
+        ("New File from Template...", "new-file-template", "", "new_file_from_template"),
         ("Open...", "open", "", "open_dialog"),
         ("Quick Open...", "quick-open", "<Control>p", "quick_open"),
         ("Save", "save", "", "howl:save"),
