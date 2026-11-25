@@ -1,0 +1,3 @@
+[submodule "vendor/kdevelop"]
+	path = vendor/kdevelop
+	url = https://github.com/KDE/kdevelop
