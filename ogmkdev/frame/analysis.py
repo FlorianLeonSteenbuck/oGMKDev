@@ -14,7 +14,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
-from .. import diagnostics, editorconfig, index as index_module, languages  # noqa: E402
+from .. import diagnostics, docblocks, editorconfig, index as index_module, languages  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
 from .panels import _scrolled  # noqa: E402
@@ -46,6 +46,35 @@ class AnalysisMixin:
     def _settings_for(self, path: Optional[str]) -> editorconfig.EditorSettings:
         properties = SettingsStore(self.folder).effective_for(path or self.folder)
         return editorconfig.settings_from_properties(properties)
+
+    # ------------------------------------------------------- doc comments
+
+    def generate_doc_comment(self) -> None:
+        """Inserts the doc comment of the declaration on the cursor line (or the next lines), built from
+        its signature: the parameters, the return type and, for a class, its properties."""
+        status = self.editors.status()
+        if not status:
+            self.set_status("no editor has the focus")
+            return
+        path = status["path"]
+        if status["modified"]:
+            self.set_status("save the file first: the doc comment is generated from the saved text")
+            return
+        detection = languages.detect(path, self._settings_for(path).custom)
+        family = docblocks.family_of(detection.language)
+        if family is None:
+            self.set_status("doc comments are generated for PHP, JavaScript, TypeScript and Python")
+            return
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+        block = docblocks.generate(text, status["line"], family)
+        if block is None:
+            self.set_status("no function, method or class declaration on this line or the next lines")
+            return
+        if not self.editors.insert_before(path, block.line, block.text + "\n"):
+            self.set_status("the doc comment could not be inserted")
+            return
+        self.set_status(f"doc comment inserted above line {block.line}: save the file to keep it")
 
     # ---------------------------------------------------------- problems
 

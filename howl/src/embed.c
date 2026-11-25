@@ -258,3 +258,27 @@ int howl_files(char *out, int size)
   lua_pop(embedded, 1);
   return 0;
 }
+
+/* Inserts text (whole lines) in front of a line of the editor that shows `file` (see HOWL_EMBED_INSERT). */
+int howl_insert(const char *file, int line, const char *text)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_INSERT");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, file);
+  lua_pushinteger(embedded, line);
+  lua_pushstring(embedded, text);
+  if (lua_pcall(embedded, 3, 1, 0)) {
+    g_critical("Howl insert into %s failed: %s", file, lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  int done = lua_toboolean(embedded, -1);
+  lua_pop(embedded, 1);
+  return done ? 0 : 1;
+}

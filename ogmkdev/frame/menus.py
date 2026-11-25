@@ -17,6 +17,7 @@ MENUS = (
         ("Find...", "find", "", "howl:buffer-search-forward"),
         ("Fold or Unfold Block", "toggle-fold", "<Control>period", "howl:fold-toggle"),
         ("Search Everywhere...", "search-everywhere", "<Control><Shift>a", "search_everywhere"),
+        ("Generate Doc Comment", "generate-doc", "<Control><Alt>d", "generate_doc_comment"),
     )),
     ("View", (
         ("Split Right", "split-right", "", "split_right"),

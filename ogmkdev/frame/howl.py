@@ -38,6 +38,8 @@ class Editors:
         self._lib.howl_status.argtypes = [ctypes.c_char_p, ctypes.c_int]
         self._lib.howl_files.restype = ctypes.c_int
         self._lib.howl_files.argtypes = [ctypes.c_char_p, ctypes.c_int]
+        self._lib.howl_insert.restype = ctypes.c_int
+        self._lib.howl_insert.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p]
         self._lib.howl_inspect.restype = ctypes.c_int
         self._lib.howl_inspect.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self._lib.howl_take_click.restype = ctypes.c_int
@@ -102,6 +104,10 @@ class Editors:
     def set_edge(self, path: str, column: int) -> bool:
         """The edge line at ``column`` in the editors that show ``path`` (0 for none)."""
         return self._lib.howl_edge(os.path.abspath(path).encode(), column) == 0
+
+    def insert_before(self, path: str, line: int, text: str) -> bool:
+        """Inserts whole lines in front of a 1-based line of the editor showing ``path``."""
+        return self._lib.howl_insert(os.path.abspath(path).encode(), line, text.encode("utf-8")) == 0
 
     def files(self) -> list:
         """The paths of the files shown in the Howl editors."""

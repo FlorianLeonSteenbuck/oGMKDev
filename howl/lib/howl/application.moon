@@ -255,6 +255,19 @@ class Application extends PropertyObject
         if group and not group.empty
           howl.signal.emit 'editor-ctrl-click', editor: editor, word: group.text
 
+    -- inserts text (whole lines) in front of a line of the editor showing a file (src/embed.c howl_insert)
+    _G.HOWL_EMBED_INSERT = (path, line, text) ->
+      shown = nil
+      for ed in *@editors
+        if ed.buffer and ed.buffer.file == File(path)
+          shown = ed
+          break
+      return false unless shown
+      target = shown.buffer.lines[line]
+      return false unless target
+      shown.buffer\insert text, target.start_pos
+      true
+
     -- the paths of the files shown in the Howl editors, one per line (src/embed.c howl_files)
     _G.HOWL_EMBED_FILES = ->
       paths = {}
