@@ -30,6 +30,7 @@ MENUS = (
         ("Go to Definition...", "go-to-definition", "", "go_to_definition"),
         ("Find Implementations", "find-implementations", "", "find_implementations"),
         ("Show Type Hierarchy", "show-hierarchy", "", "show_hierarchy"),
+        ("Show Structure", "show-structure", "<Control><Alt>s", "show_structure"),
         ("Inspect Folder", "inspect-folder", "", "inspect_folder"),
         ("Refresh Index", "refresh-index", "", "refresh_index"),
         ("Clear Index and Rebuild", "clear-index", "", "clear_index"),
