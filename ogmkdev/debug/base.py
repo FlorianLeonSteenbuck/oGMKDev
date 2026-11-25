@@ -180,6 +180,11 @@ class Debugger(abc.ABC):
     def evaluate(self, expression: str) -> str:
         """Value of ``expression`` in the current frame, as display text."""
 
+    def variables(self) -> List[Tuple[str, str]]:
+        """The local variables of the current frame, as (name, value text) pairs. Engines that cannot list
+        them say so with a DebuggerError."""
+        raise DebuggerError("this engine does not list the variables of a frame")
+
     @abc.abstractmethod
     def _add_breakpoint(self, bp: Breakpoint) -> None: ...
 

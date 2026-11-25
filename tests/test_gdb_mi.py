@@ -86,6 +86,7 @@ class GdbIntegrationTests(unittest.TestCase):
                 self.assertEqual(step.reason, "step")
                 self.assertEqual(step.location.line, _line_of(source, "@bp-return"))
                 self.assertEqual(dbg.evaluate("result"), "1")
+                self.assertEqual(dict(dbg.variables()).get("result"), "1")
 
                 dbg.remove_breakpoint(bp.id)
                 dbg.run()

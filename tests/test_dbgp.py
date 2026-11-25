@@ -45,6 +45,9 @@ class XdebugIntegrationTests(unittest.TestCase):
             self.assertEqual(os.path.realpath(stop.location.file), os.path.realpath(source))
             self.assertEqual(dbg.evaluate("$a"), "2")
             self.assertEqual(dbg.evaluate("$sum"), "5")
+            locals_ = dict(dbg.variables())
+            self.assertEqual({name: locals_.get(name) for name in ("$a", "$b", "$sum")},
+                             {"$a": "2", "$b": "3", "$sum": "5"})
             self.assertEqual(dbg.watch_values(), {})
             dbg.add_watch("$sum + 1")
             self.assertEqual(dbg.watch_values(), {"$sum + 1": "6"})

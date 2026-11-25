@@ -188,12 +188,34 @@ class ToolsMixin:
     # --------------------------------------------------------- Watches
 
     def _build_watches(self) -> None:
+        """The local variables of the stopped program and the watch expressions, in one table (see
+        DebugMixin). A watch is typed in the entry and stays in the list across sessions."""
+        self._watch_list: List[str] = []
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.watch_entry = Gtk.Entry(placeholder_text="watch expression (the debugger is not wired yet)")
-        self.watch_label = Gtk.Label(xalign=0)
-        box.append(self.watch_entry)
-        box.append(self.watch_label)
-        self.bottom.append_page(box, Gtk.Label(label="Watches"))
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.watch_entry = Gtk.Entry(placeholder_text="watch expression (Enter adds it)", hexpand=True)
+        self.watch_entry.connect("activate", self._on_watch_activate)
+        remove = Gtk.Button(label="Remove Watch")
+        remove.connect("clicked", self._on_remove_watch)
+        row.append(self.watch_entry)
+        row.append(remove)
+        self.variables_store, self.variables_view = _list(("Kind", "Name", "Value"))
+        box.append(row)
+        box.append(_scrolled(self.variables_view))
+        self.bottom.append_page(box, Gtk.Label(label="Variables"))
+
+    def _on_watch_activate(self, entry: Gtk.Entry) -> None:
+        expression = entry.get_text().strip()
+        entry.set_text("")
+        if expression:
+            self.add_watch_expression(expression)
+
+    def _on_remove_watch(self, _button: Gtk.Button) -> None:
+        model, iterator = self.variables_view.get_selection().get_selected()
+        if iterator is None or model[iterator][0] != "watch":
+            self.set_status("select a watch in the Variables tab to remove it")
+            return
+        self.remove_watch_expression(model[iterator][1])
 
     # -------------------------------------------------- Problems, Search
 

@@ -16,7 +16,7 @@ import socket
 import threading
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
 from .base import Breakpoint, Debugger, DebuggerError, Exited, Location, Output, Stopped
@@ -212,6 +212,12 @@ class XdebugDebugger(Debugger):
         if prop is None:
             return ""
         return _decode_text(prop)
+
+    def variables(self) -> List[Tuple[str, str]]:
+        # context 0 is the local context of the current stack frame
+        root = self._call("context_get", "-c 0")
+        return [(child.get("name", ""), _decode_text(child))
+                for child in root if _local(child.tag) == "property"]
 
     # ---------------------------------------------------------- breakpoints
 

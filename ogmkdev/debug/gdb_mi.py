@@ -260,6 +260,11 @@ class GdbMiDebugger(Debugger):
         _, payload = self._command(f"-data-evaluate-expression {_quote(expression)}")
         return str(payload.get("value", ""))
 
+    def variables(self) -> List[Tuple[str, str]]:
+        _, payload = self._command("-stack-list-locals --simple-values")
+        return [(str(item.get("name", "")), str(item.get("value", "")))
+                for item in payload.get("locals", [])]
+
     # ------------------------------------------------------- breakpoints
 
     def _add_breakpoint(self, bp: Breakpoint) -> None:

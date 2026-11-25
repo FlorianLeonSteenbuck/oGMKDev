@@ -341,9 +341,10 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 
 ## Open items
 
-- The frame drives GDB (GDB/MI) and XDebug (DBGp) for breakpoints, continue, steps and stop. The
-  breakpoints are the gutter's marks, sent before each run or step. There is no variables view and no
-  watch yet, and XDebug is not tested in the frame: a GDB session was checked by hand under Xvfb.
+- The frame drives GDB (GDB/MI) and XDebug (DBGp) for breakpoints, continue, steps and stop; the
+  breakpoints are the gutter's marks, sent before each run or step. The Variables tab shows the locals
+  of the stopped program and the watch expressions. `tests/test_ui_frame_debug.py` runs the XDebug
+  session through the frame; a GDB session was checked by hand under Xvfb.
 - Change marks colour the whole line; gutter stripes and a diff view per pane are not built yet.
 - Python and JavaScript references are not indexed, only their declarations. Methods of Python classes
   are not in the index, so the HTML export has no page entry for them.

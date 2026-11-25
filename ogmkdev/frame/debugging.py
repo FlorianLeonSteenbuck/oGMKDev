@@ -59,6 +59,8 @@ class DebugMixin:
             self.set_status(f"{config.name}: {error}")
             return
         sync = BreakpointSync(debugger)
+        for expression in self._watch_list:
+            debugger.add_watch(expression)
         self._debugger = debugger
         self._breakpoint_sync = sync
         debugger.on_event(lambda event: GLib.idle_add(self._on_debug_event, debugger, event))
@@ -155,6 +157,7 @@ class DebugMixin:
                 self.show_debug_stop(location.file, location.line)
             else:
                 self.set_status(f"stopped ({event.reason})")
+            self._refresh_variables()
         elif isinstance(event, Exited):
             code = "" if event.code is None else f", exit code {event.code}"
             self.set_status(f"program exited{code}")
@@ -175,4 +178,61 @@ class DebugMixin:
         process, self._debug_process = self._debug_process, None
         if process is not None and process.poll() is None:
             process.terminate()
+        self._show_variables(None, None, None)
         threading.Thread(target=debugger.stop, daemon=True).start()
+
+    # ---------------------------------------------------- variables, watches
+
+    def add_watch_expression(self, expression: str) -> None:
+        """A watch is kept for later sessions too; a running session evaluates it at the next stop."""
+        expression = expression.strip()
+        if not expression:
+            return
+        if expression not in self._watch_list:
+            self._watch_list.append(expression)
+        debugger = self._debugger
+        if debugger is not None and not any(watch.expression == expression for watch in debugger.watches):
+            debugger.add_watch(expression)
+        self._refresh_variables()
+
+    def remove_watch_expression(self, expression: str) -> None:
+        if expression in self._watch_list:
+            self._watch_list.remove(expression)
+        debugger = self._debugger
+        if debugger is not None:
+            for watch in debugger.watches:
+                if watch.expression == expression:
+                    debugger.remove_watch(watch.id)
+        self._refresh_variables()
+
+    def _refresh_variables(self) -> None:
+        """Reads the local variables and the watches of the stopped program on a worker thread, then shows them.
+        Without a session the watches are listed without a value."""
+        debugger = self._debugger
+        if debugger is None:
+            self._show_variables(None, None, None)
+            return
+
+        def worker() -> None:
+            try:
+                locals_ = debugger.variables()
+            except DebuggerError as error:
+                locals_ = [("", f"<{error}>")]
+            watches = debugger.watch_values()
+            GLib.idle_add(self._show_variables, debugger, locals_, watches)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_variables(self, debugger, locals_, watches) -> bool:
+        # values read for a session that has ended since are stale: they are dropped
+        if debugger is not self._debugger:
+            return False
+        store = self.variables_store
+        store.clear()
+        # the table's last column is an object column (not shown), so each row ends with None
+        for name, value in locals_ or []:
+            store.append(["variable", name, value, None])
+        for expression in self._watch_list:
+            value = "no debug session" if watches is None else watches.get(expression, "")
+            store.append(["watch", expression, value, None])
+        return False
