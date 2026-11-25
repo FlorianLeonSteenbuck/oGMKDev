@@ -117,6 +117,64 @@ Run and debug configurations are JetBrains XML under `.run/*.run.xml`. Debug con
 the types `OgmkdevGdbConfigurationType` (options `PROGRAM`, `ARGUMENTS`, `WORKING_DIRECTORY`) and
 `OgmkdevXdebugConfigurationType` (options `SCRIPT_NAME`, `PORT`).
 
+## Project tools
+
+- **Index** (`ogmkdev/index.py`): symbols of PHP (classes, interfaces, traits, enums, functions, methods,
+  constants, properties, namespaces and `use` imports resolved), Python and JavaScript/TypeScript
+  (classes, interfaces, functions). Files keep their size and modification time: `refresh()` re-reads
+  only changed files, saving a file invalidates that file, and a JSON cache keeps the index between
+  sessions (`$XDG_CACHE_HOME/ogmkdev/`).
+- **Type hierarchy** (Project > Show Type Hierarchy, Ctrl+H): supertypes and subtypes, transitive, and
+  the dependencies of the class under the cursor. Items navigate to their declaration on activation.
+- **Class diagram**: the Hierarchy panel's "Diagram" tab draws the inheritance levels as columns; each
+  class is a button. Built from GTK widgets, so no drawing library is needed.
+- **Implementations** (Ctrl+Alt+B): all classes that extend or implement the type under the cursor.
+- **Search in files** (Ctrl+Shift+F): text or regular expression over the project, results in the
+  Search panel.
+- **Inspections** (Project > Inspect Project): diagnostics of every indexed file plus unresolved
+  supertypes; results in the Problems panel.
+
+## Settings
+
+Two scopes use the same keys, and both are EditorConfig files:
+
+| Scope | File | Applies to |
+|---|---|---|
+| Global (Settings > Preferences) | `$XDG_CONFIG_HOME/ogmkdev/.editorconfig` | every file |
+| Project (Project > Project Settings) | `.editorconfig` in the project root | files below the root |
+
+A `.editorconfig` in a subdirectory still wins for its files. Setting a value to its default removes
+the key, so it is inherited again. Error hinting has its own dialog (Settings > Error Hinting), and
+every check can be turned off or set to error, warning or hint:
+
+```ini
+[*]
+ogmkdev_diagnostics = on
+ogmkdev_diagnostic_php_function = warning
+ogmkdev_diagnostic_php_match = off        # per PHP feature: ogmkdev_diagnostic_php_<feature>
+
+[*.php]
+ogmkdev_dialect = 8.6                     # PHP version of the files
+```
+
+## PHP versions
+
+`php_features.py` detects the syntax and library features of PHP 8.0 to 8.6 on a token stream from
+`lexers/php_lexer.py`. Each feature is checked against the file's PHP version (`ogmkdev_dialect`).
+
+- 8.0: attributes, nullsafe `?->`, `match`, `throw` as expression, named arguments, constructor
+  promotion, `$object::class`, catch without a variable.
+- 8.1: enums, readonly properties, first-class callables `f(...)`, `never`, intersection types,
+  `0o` octal, `final const`. 8.2: readonly classes, DNF types, `true`/`null`/`false` types.
+  8.3: typed class constants, `#[\Override]`, `$c::{$name}`. 8.4: property hooks, asymmetric
+  visibility, `new` in a chain without parentheses, `#[\Deprecated]`.
+- 8.5: pipe operator `|>`, `clone($x, [...])`, `#[\NoDiscard]`, closures in constant expressions,
+  `array_first()` and `array_last()`.
+- 8.6: partial function application with the `?` and `...` placeholders, default values for readonly
+  properties, `clamp()`, `SortDirection`, `Time\Duration`, `Io\Poll`. Sources: php.net release notes
+  for 8.5 and 8.6 and the RFCs they link. Some 8.6 details come from pre-release coverage; check the
+  migration guide before relying on an edge case.
+
 ## Templates
 
 Every language has built-in templates (PHP, Python 2/3/PyPy, ECMAScript, TypeScript, TSX, JSX,
@@ -180,6 +238,11 @@ the standard action icons (Humanity or Adwaita). The integration tests use `gdb`
 ## Open items
 
 - Build an AST on top of the ECMAScript parse tree (outline, navigation).
+- The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
+- Python and JavaScript references are not indexed; only their declarations are.
+- The class diagram scrolls but has no zoom and no edge routing yet.
+- The settings dialog covers the editor, PHP version and error hinting keys; the theme keys are
+  still set from the View menu and command-line options.
 - PHP and Python highlighting still comes from GtkSourceView's default scheme; the dark mode
   colors apply to our own languages only. Our own tokenizers for them would fix that.
 - Dialect-specific SQL keyword sets; TypeScript and JSX lexers.

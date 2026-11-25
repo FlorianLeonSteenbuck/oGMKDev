@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import gi
 
+gi.require_version("Gdk", "3.0")
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
@@ -31,9 +32,11 @@ try:
 except (ImportError, ValueError):
     GtkSource = None
 
-from .. import diagnostics, highlight, languages, runconfig, templates, theme  # noqa: E402
+from .. import diagnostics, editorconfig, highlight, languages, runconfig, templates, theme  # noqa: E402
 from ..index import ProjectIndex  # noqa: E402
-from .panels import HierarchyView, ResultsView  # noqa: E402
+from .. import settings as settings_module  # noqa: E402
+from ..settings import SettingsStore  # noqa: E402
+from .panels import DiagramView, HierarchyView, ResultsView  # noqa: E402
 from .. import __version__  # noqa: E402
 from ..debug import DebuggerError, Exited, GdbMiDebugger, Output, Stopped, XdebugDebugger  # noqa: E402
 from ..document import Document  # noqa: E402
@@ -42,7 +45,7 @@ BREAKPOINT_CATEGORY = "ogmkdev-breakpoint"
 EXEC_TAG = "ogmkdev-exec"
 # Languages highlighted by our own tokenizers (see ogmkdev/highlight.py), not by GtkSourceView.
 OWN_HIGHLIGHT = frozenset({"ecmascript", "baredown", "sql", "php"})
-MENU_ORDER = ("File", "Edit", "View", "Project", "Run", "Debug", "Help")
+MENU_ORDER = ("File", "Edit", "View", "Project", "Settings", "Run", "Debug", "Help")
 # menu, label, icon name, accelerator, method name, shown in toolbar
 ACTIONS = (
     ("File", "New", "document-new", "<Control>n", "new_document", True),
@@ -68,6 +71,9 @@ ACTIONS = (
     ("Project", "Inspect Project", "dialog-warning", "", "inspect_project", True),
     ("Project", "Refresh Index", "view-refresh", "", "refresh_index", False),
     ("Project", "Open Folder...", "folder-open", "<Control><Shift>o", "open_folder", False),
+    ("Project", "Project Settings...", "document-properties", "", "open_project_settings", False),
+    ("Settings", "Preferences...", "preferences-system", "", "open_global_settings", False),
+    ("Settings", "Error Hinting...", "dialog-warning", "", "open_diagnostic_settings", False),
 )
 
 
@@ -205,6 +211,7 @@ class EditorWindow(Gtk.Window):
         self.status.set_selectable(True)
         self.run_configs: List[runconfig.RunConfiguration] = runconfig.discover(self.project_dir)
         self.index = ProjectIndex(self.project_dir, cache_path=self._cache_path())
+        self.settings_store = SettingsStore(self.project_dir)
         self.connect("destroy", self._save_index)
         self.debugger = None
         self.watch_exprs: List[str] = []
@@ -241,10 +248,15 @@ class EditorWindow(Gtk.Window):
         self.search_view = ResultsView(self.navigate, "Result")
         self.problems_view = ResultsView(self.navigate, "Problem")
         self.hierarchy_view = HierarchyView(self.navigate)
+        self.diagram_view = DiagramView(self.navigate)
+        hierarchy_tabs = Gtk.Notebook()
+        hierarchy_tabs.append_page(self.hierarchy_view, Gtk.Label(label="Tree"))
+        hierarchy_tabs.append_page(self.diagram_view, Gtk.Label(label="Diagram"))
+        self.hierarchy_tabs = hierarchy_tabs
         left = Gtk.Notebook()
         left.append_page(files_scroll, Gtk.Label(label="Files"))
         left.append_page(run_box, Gtk.Label(label="Run"))
-        left.append_page(self.hierarchy_view, Gtk.Label(label="Hierarchy"))
+        left.append_page(hierarchy_tabs, Gtk.Label(label="Hierarchy"))
         self.left = left
         self.left_pages = {"Files": 0, "Run": 1, "Hierarchy": 2}
 
@@ -278,6 +290,7 @@ class EditorWindow(Gtk.Window):
         main = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         main.pack1(left, False, False)
         main.pack2(center, True, False)
+        main.set_position(400)
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         outer.pack_start(self.menubar, False, False, 0)
         outer.pack_start(self.toolbar, False, False, 0)
@@ -423,7 +436,7 @@ class EditorWindow(Gtk.Window):
             if page.document.path == absolute:
                 self.notebook.set_current_page(index)
                 return page
-        return self._add_page(Document.open(absolute))
+        return self._add_page(Document.open(absolute, self.settings_store.effective_for(absolute)))
 
     def _add_page(self, document: Document) -> Page:
         page = Page(document, self.palette)
@@ -938,7 +951,13 @@ class EditorWindow(Gtk.Window):
         if not word:
             self.status.set_text("place the cursor on a class or interface name")
             return
-        self.hierarchy_view.show(self.index.hierarchy(word))
+        tree = self.index.hierarchy(word)
+        dependencies = []
+        for name in self.index.dependencies(word):
+            found = self.index.find(name)
+            dependencies.append((name, found[0].file, found[0].line, found[0].column) if found else (name, "", 0, 0))
+        self.hierarchy_view.show(tree, dependencies)
+        self.diagram_view.show(tree)
         self.left.set_current_page(self.left_pages["Hierarchy"])
         self.status.set_text(f"type hierarchy of {word}")
 
@@ -974,12 +993,14 @@ class EditorWindow(Gtk.Window):
 
     def set_project(self, folder: str) -> None:
         self._save_index()
-        self.project_dir = os.path.abspath(folder)
+        self.project_dir = os.path.abspath(folder)  # noqa
         self.tree_store.clear()
         self._populate_tree(None, self.project_dir)
         self.run_configs = runconfig.discover(self.project_dir)
         self._load_run_list()
         self.index = ProjectIndex(self.project_dir, cache_path=self._cache_path())
+        self.settings_store = SettingsStore(self.project_dir)
+        self._refresh_settings_all()
         self.status.set_text(f"project {self.project_dir}")
 
     def _prompt(self, title: str, label: str) -> str:
@@ -996,6 +1017,82 @@ class EditorWindow(Gtk.Window):
         text = entry.get_text().strip()
         dialog.destroy()
         return text if response == Gtk.ResponseType.OK else ""
+
+    # ----------------------------------------------------------- settings
+
+    def open_global_settings(self) -> None:
+        self._settings_dialog("global")
+
+    def open_diagnostic_settings(self) -> None:
+        self._settings_dialog("global", tab="Diagnostics")
+
+    def open_project_settings(self) -> None:
+        self._settings_dialog("project")
+
+    def _settings_dialog(self, scope: str, tab: Optional[str] = None) -> None:
+        title = "Preferences" if scope == "global" else "Project Settings"
+        dialog = Gtk.Dialog(title=f"{title}: {self.settings_store.path_for(scope)}", transient_for=self, modal=True)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Apply", Gtk.ResponseType.OK)
+        current = self.settings_store.read(scope)
+        notebook = Gtk.Notebook()
+        widgets = {}
+        for group, settings in settings_module.groups():
+            grid = Gtk.Grid(column_spacing=12, row_spacing=8)
+            grid.set_border_width(12)
+            for row, setting in enumerate(settings):
+                grid.attach(Gtk.Label(label=setting.label, xalign=0.0), 0, row, 1, 1)
+                value = current.get(setting.key, setting.default)
+                if setting.kind == "choice":
+                    widget = Gtk.ComboBoxText()
+                    for choice in setting.choices:
+                        widget.append_text(choice)
+                    widget.set_active(setting.choices.index(value) if value in setting.choices else 0)
+                elif setting.kind == "int":
+                    widget = Gtk.SpinButton.new_with_range(0, 200, 1)
+                    widget.set_value(int(value) if value.isdigit() else int(setting.default))
+                else:
+                    widget = Gtk.CheckButton()
+                    widget.set_active(value == "true")
+                grid.attach(widget, 1, row, 1, 1)
+                widgets[setting.key] = (setting, widget)
+            notebook.append_page(grid, Gtk.Label(label=group))
+            if tab == group:
+                notebook.set_current_page(notebook.get_n_pages() - 1)
+        dialog.get_content_area().pack_start(notebook, True, True, 0)
+        dialog.set_default_size(620, 460)
+        dialog.show_all()
+        response = dialog.run()
+        values = {}
+        if response == Gtk.ResponseType.OK:
+            for key, (setting, widget) in widgets.items():
+                values[key] = self._widget_value(setting, widget)
+        dialog.destroy()
+        if values:
+            self.apply_settings_values(scope, values)
+
+    @staticmethod
+    def _widget_value(setting, widget) -> str:
+        if setting.kind == "choice":
+            return setting.choices[widget.get_active()]
+        if setting.kind == "int":
+            return str(int(widget.get_value()))
+        return "true" if widget.get_active() else "false"
+
+    def apply_settings_values(self, scope: str, values: Dict[str, str]) -> None:
+        """Write values into the global or project settings and apply them to open documents."""
+        self.settings_store.apply(scope, values)
+        self._refresh_settings_all()
+        self.status.set_text(f"{'preferences' if scope == 'global' else 'project settings'} saved")
+
+    def _refresh_settings_all(self) -> None:
+        for page in self.pages:
+            path = page.document.path
+            properties = self.settings_store.effective_for(path) if path else self.settings_store.global_properties()
+            page.document.settings = editorconfig.settings_from_properties(properties)
+            page.apply_settings()
+            page.document.analyze()
+            page.highlight()
+        self._update_status()
 
     def find_next(self) -> None:
         page = self.page

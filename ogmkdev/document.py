@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from . import diagnostics, editing, editorconfig, languages
 from .diagnostics import Diagnostic
@@ -19,11 +19,15 @@ class Document:
     diagnostics: List[Diagnostic] = field(default_factory=list)
 
     @classmethod
-    def open(cls, path: str) -> "Document":
+    def open(cls, path: str, properties: Optional[Dict[str, str]] = None) -> "Document":
+        """Open a file. ``properties`` are the effective settings (global and project); the file's
+        own EditorConfig files are used when they are not given."""
         absolute = os.path.abspath(path)
         with open(absolute, encoding="utf-8", errors="replace") as handle:
             text = handle.read()
-        settings = editorconfig.settings_for(absolute)
+        if properties is None:
+            properties = editorconfig.effective_properties(absolute)
+        settings = editorconfig.settings_from_properties(properties)
         detection = languages.detect_file(absolute, settings.custom)
         document = cls(absolute, text, settings, detection)
         document.analyze()

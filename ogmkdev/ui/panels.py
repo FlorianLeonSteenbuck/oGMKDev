@@ -1,15 +1,16 @@
-"""Result panels: a flat result list and a clickable type hierarchy (GTK 3, no editor logic)."""
+"""Result panels: a flat result list, a clickable type hierarchy and a class diagram (GTK 3 widgets).
+
+No drawing library is needed: the diagram is a grid of buttons, one column per inheritance level.
+"""
 
 from __future__ import annotations
 
-from typing import Callable, Iterable, Optional, Tuple
+from typing import Callable, Iterable, Tuple
 
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
-
-Location = Tuple[str, int, int]
+from gi.repository import GLib, Gtk  # noqa: E402
 
 
 class ResultsView(Gtk.ScrolledWindow):
@@ -38,8 +39,53 @@ class ResultsView(Gtk.ScrolledWindow):
         self._on_activate(row[2], row[3], row[4])
 
 
+class DiagramView(Gtk.ScrolledWindow):
+    """Class diagram: one column per inheritance level, the selected class in the middle.
+
+    Each class is a button that navigates to its declaration; arrows point from a type to its supertype.
+    """
+
+    def __init__(self, on_activate: Callable[[str, int, int], None]) -> None:
+        super().__init__()
+        from .. import diagram as _diagram
+        self._diagram = _diagram
+        self.grid = Gtk.Grid(column_spacing=6, row_spacing=6)
+        self.grid.set_border_width(12)
+        self._on_activate = on_activate
+        self.boxes: list = []
+        self.edges: list = []
+        self.add(self.grid)
+
+    def show(self, tree: dict) -> None:
+        for child in self.grid.get_children():
+            self.grid.remove(child)
+        self.boxes, self.edges, _size = self._diagram.layout(tree)
+        by_name = {box.name: box for box in self.boxes}
+        for box in self.boxes:
+            label = box.name.rsplit("\\", 1)[-1]
+            text = f"<b>{GLib.markup_escape_text(label)}</b>" if box.root else GLib.markup_escape_text(label)
+            caption = Gtk.Label()
+            caption.set_markup(f"{text}\n<small>{GLib.markup_escape_text(box.kind)}</small>")
+            button = Gtk.Button()
+            button.add(caption)
+            button.set_tooltip_text(box.name)
+            button.connect("clicked", lambda _b, target=box: self._activate(target))
+            self.grid.attach(button, 2 * box.grid_column, box.grid_row, 1, 1)
+        for edge in self.edges:
+            child, parent = by_name.get(edge.child), by_name.get(edge.parent)
+            if child is None or parent is None:
+                continue
+            arrow = Gtk.Label(label="◁──")
+            self.grid.attach(arrow, 2 * min(child.grid_column, parent.grid_column) + 1, child.grid_row, 1, 1)
+        self.grid.show_all()
+
+    def _activate(self, box) -> None:
+        if box.file:
+            self._on_activate(box.file, box.line, box.column)
+
+
 class HierarchyView(Gtk.ScrolledWindow):
-    """Supertypes and subtypes of one class as a tree; nodes with a file navigate on activation."""
+    """Supertypes, subtypes and dependencies of one class as a tree; nodes with a file navigate on activation."""
 
     def __init__(self, on_activate: Callable[[str, int, int], None]) -> None:
         super().__init__()
@@ -51,13 +97,17 @@ class HierarchyView(Gtk.ScrolledWindow):
         self._on_activate = on_activate
         self.add(self.view)
 
-    def show(self, tree: dict) -> None:
+    def show(self, tree: dict, dependencies=()) -> None:
         self.store.clear()
         title = tree.get("name", "")
         root = self.store.append(None, [f"{title}", "", 0, 0])
         for heading, nodes in (("supertypes", tree.get("up", [])), ("subtypes", tree.get("down", []))):
             section = self.store.append(root, [heading, "", 0, 0])
             self._fill(section, nodes)
+        section = self.store.append(root, ["dependencies", "", 0, 0])
+        for name, file, line, column in dependencies:
+            label = name if file else f"{name}  (external)"
+            self.store.append(section, [label, file, line, column])
         self.view.expand_all()
 
     def _fill(self, parent, nodes) -> None:

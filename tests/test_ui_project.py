@@ -87,3 +87,43 @@ class ProjectToolTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DiagramTests(unittest.TestCase):
+    def test_layout_puts_supertypes_left_and_subtypes_right(self):
+        from ogmkdev import diagram
+        from ogmkdev.index import Symbol
+
+        class_symbol = Symbol("App\\Circle", "class", "/p/Circle.php", 5, 1)
+        tree = {"name": "App\\Circle", "symbol": class_symbol,
+                "up": [{"name": "App\\Shape", "symbol": None, "children": []}],
+                "down": [{"name": "App\\Square", "symbol": Symbol("App\\Square", "class", "/p/Square.php", 3, 1),
+                          "children": []}]}
+        boxes, edges, (width, height) = diagram.layout(tree)
+        by_name = {b.name: b for b in boxes}
+        self.assertLess(by_name["App\\Shape"].x, by_name["App\\Circle"].x)
+        self.assertLess(by_name["App\\Circle"].x, by_name["App\\Square"].x)
+        self.assertEqual(by_name["App\\Shape"].kind, "external")
+        self.assertIn(diagram.Edge("App\\Circle", "App\\Shape"), edges)
+        self.assertIn(diagram.Edge("App\\Square", "App\\Circle"), edges)
+        self.assertIsNotNone(diagram.box_at(boxes, by_name["App\\Circle"].x + 1, by_name["App\\Circle"].y + 1))
+
+    @unittest.skipUnless(GTK_AVAILABLE, "PyGObject/GTK 3 and a display are required")
+    def test_hierarchy_panel_has_dependencies_and_diagram(self):
+        root = tempfile.mkdtemp()
+        try:
+            write(root, "src/Shape.php", SHAPE)
+            write(root, "src/Circle.php", CIRCLE)
+            win = EditorWindow(os.path.join(root, "src/Circle.php"), project_dir=root)
+            win.show_all()
+            place(win, 5, 14)
+            win.show_hierarchy()
+            labels = []
+            win.hierarchy_view.store.foreach(lambda m, p, it: labels.append(m[it][0]))
+            self.assertIn("dependencies", labels)
+            self.assertEqual(len(win.diagram_view.boxes), len({b.name for b in win.diagram_view.boxes}))
+            self.assertTrue(any(b.name == "App\\Shape" for b in win.diagram_view.boxes))
+            win.destroy()
+        finally:
+            import shutil
+            shutil.rmtree(root, ignore_errors=True)
