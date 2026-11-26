@@ -43,6 +43,21 @@ class OrganizeTests(unittest.TestCase):
         self.assertIsNone(O.top_level_uses(source))
         self.assertEqual(O.organize(source), source)
 
+    def test_code_between_two_groups_of_imports_stays(self):
+        source = "<?php\nuse Zeta\\Lib;\nuse App\\Shape;\nclass Between {}\nuse Countable;\n" \
+                 "function f(Shape $s, Countable $c) {}\n"
+        self.assertEqual(O.organize(source), "<?php\nuse App\\Shape;\nclass Between {}\nuse Countable;\n"
+                                             "function f(Shape $s, Countable $c) {}\n")
+
+    def test_a_string_or_a_method_with_the_name_is_no_use_of_an_import(self):
+        source = "<?php\nuse App\\Lib;\nclass C { public function Lib() {} public $x = 'Lib'; }\n"
+        self.assertEqual([s.fqn for s in O.unused_imports(source)], ["App\\Lib"])
+
+    def test_a_file_with_a_syntax_error_is_left_alone(self):
+        source = "<?php\nuse App\\Shape;\nclass C { function f( {} }\n"
+        self.assertEqual(O.unused_imports(source), [])
+        self.assertEqual(O.organize(source), source)
+
     def test_no_imports_no_change(self):
         source = "<?php\nclass C {}\n"
         self.assertEqual(O.organize(source), source)
