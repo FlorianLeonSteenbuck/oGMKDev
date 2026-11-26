@@ -211,6 +211,11 @@ the types `OgmkdevGdbConfigurationType` (options `PROGRAM`, `ARGUMENTS`, `WORKIN
 - **Resources** (Tools > Show Resources, the Resources tab): the memory and the threads of the IDE and of the program
   the Run tab started, and the size of the index. The tab refreshes every two seconds while it is shown.
 - The inspection of a project is Tools > Inspect Project; it covers every folder of the project.
+- **Background services** (Run tab): a configuration started from the Run tab runs in a process group of its own.
+  Run > Stop Process ends the whole group, also a service whose shell has ended (a command with `&`, such as
+  `php -S localhost:8000 &`). Closing the frame ends the service too.
+- **PHP paths**: a Ctrl+click on a path that a PHP file builds from its own folder, such as `__DIR__ . "/style.css"`
+  or `dirname(__FILE__) . '/x.php'`, opens that file next to the PHP file.
 
 ## Settings
 
