@@ -63,7 +63,8 @@ grammar or language server. Every language here is implemented in this repositor
 - Breakpoints (F9) in the gutter, run configurations, and GDB (GDB/MI) and XDebug (DBGp)
   debugging: continue, step over, step into, step out, stop, watch expressions, current-line marker.
 - Find next, undo and redo.
-- Light and dark mode (View > Dark Theme, switched while the frame runs, or `--mode dark`), and three
+- Light and dark mode: the setting Light or dark colours (Preferences) sets it when the frame starts and when
+  the preferences are saved; View > Dark Theme switches it while the frame runs, and `--mode` overrides it. Three
   colour schemes: `blend` (JetBrains structure with Eclipse's purple accent, the default), `jetbrains`
   and `eclipse` (View > Color scheme, or `--scheme NAME`). All colours are checked for WCAG contrast in
   the tests.

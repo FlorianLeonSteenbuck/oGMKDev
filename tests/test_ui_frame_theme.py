@@ -17,7 +17,9 @@ try:
 
     from ogmkdev.frame import theme as frame_theme  # noqa: E402
     from ogmkdev.frame.howl import LIBRARY  # noqa: E402
+    from ogmkdev.frame.settings_dialog import SettingsDialog  # noqa: E402
     from ogmkdev.frame.window import Frame, theme_folder  # noqa: E402
+    from ogmkdev.settings import SettingsStore  # noqa: E402
 
     GTK_AVAILABLE = bool(os.environ.get("DISPLAY")) and os.path.isfile(LIBRARY)
 except Exception:  # pragma: no cover - reported as a skip
@@ -42,6 +44,9 @@ class ThemeTests(unittest.TestCase):
         self._directory = tempfile.TemporaryDirectory()
         self.folder = self._directory.name
         os.mkdir(os.path.join(self.folder, "tests"))  # a test folder: its row has a role colour
+        self._config = tempfile.TemporaryDirectory()  # the global settings of the frame go here, not to the user's
+        self._previous_config = os.environ.get("XDG_CONFIG_HOME")
+        os.environ["XDG_CONFIG_HOME"] = self._config.name
         self.app = Gtk.Application(application_id="org.ogmkdev.test.theme", flags=Gio.ApplicationFlags.NON_UNIQUE)
         self.app.register(None)
         self._frames = []
@@ -49,6 +54,11 @@ class ThemeTests(unittest.TestCase):
     def tearDown(self):
         for frame in self._frames:
             frame.close()  # stops the frame's status poll and autosave
+        if self._previous_config is None:
+            os.environ.pop("XDG_CONFIG_HOME", None)
+        else:
+            os.environ["XDG_CONFIG_HOME"] = self._previous_config
+        self._config.cleanup()
         self._directory.cleanup()
 
     def _frame(self, mode="light", scheme="blend"):
@@ -121,6 +131,37 @@ class ThemeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             frame.set_theme("light", "solarized")
         self.assertEqual((frame.mode, frame.scheme), ("light", "blend"))
+
+    def _write_global_appearance(self, mode):
+        """Writes the light or dark colours of the setting into the global settings of the test."""
+        folder = os.path.join(self._config.name, "ogmkdev")
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, ".editorconfig"), "w", encoding="utf-8") as handle:
+            handle.write(f"[*]\nogmkdev_appearance = {mode}\n")
+
+    def _save_appearance(self, frame, mode):
+        """Saves the preferences with the light or dark colours set to ``mode``, as the settings dialog does."""
+        dialog = SettingsDialog(frame, SettingsStore(self.folder), "global", "Colors / Appearance",
+                                frame._after_settings_saved)
+        self.addCleanup(dialog.destroy)
+        dialog._rows["ogmkdev_appearance"][1].set_selected(("light", "dark").index(mode))
+        dialog.save()
+
+    def test_the_appearance_setting_gives_the_mode_at_the_start_and_follows_a_save(self):
+        self._write_global_appearance("dark")
+        frame = self._frame(mode=None)
+        self.assertEqual(frame.mode, "dark")
+        self.assertFalse(frame.mode_pinned)
+        self._save_appearance(frame, "light")
+        self.assertEqual(frame.mode, "light")
+        self.assertFalse(self._state(frame, "dark-theme").get_boolean())
+
+    def test_a_mode_given_at_the_start_is_kept_when_the_settings_are_saved(self):
+        self._write_global_appearance("dark")
+        frame = self._frame(mode="light")
+        self.assertTrue(frame.mode_pinned)
+        self._save_appearance(frame, "dark")
+        self.assertEqual(frame.mode, "light")
 
 
 if __name__ == "__main__":

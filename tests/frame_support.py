@@ -1,6 +1,6 @@
 """Set-up shared by the frame tests: a GTK 4 application, a temporary project folder, the frames a test opens
-(closed afterwards), and waiting for the GLib main loop. Each test has its own data and cache folders, so the
-local history and the index cache of the frame never touch the user's.
+(closed afterwards), and waiting for the GLib main loop. Each test has its own data, cache and configuration
+folders, so the local history, the index cache and the global settings of the frame never touch the user's.
 
 The frame needs PyGObject with GTK 4, a display (run under xvfb-run) and libhowl.so; GTK_AVAILABLE tells.
 This module is not a test module (its name has no test_ prefix).
@@ -80,9 +80,12 @@ class FrameTestCase(unittest.TestCase):
         os.makedirs(self.folder)
         self._data = tempfile.TemporaryDirectory()
         self._cache = tempfile.TemporaryDirectory()
-        self._environment = {name: os.environ.get(name) for name in ("XDG_DATA_HOME", "XDG_CACHE_HOME")}
+        self._config = tempfile.TemporaryDirectory()
+        self._environment = {name: os.environ.get(name)
+                             for name in ("XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME")}
         os.environ["XDG_DATA_HOME"] = self._data.name  # the local history of the frames goes here
         os.environ["XDG_CACHE_HOME"] = self._cache.name  # the index cache goes here
+        os.environ["XDG_CONFIG_HOME"] = self._config.name  # the global settings go here
         self.app = Gtk.Application(application_id=APPLICATION_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
         self.app.register(None)
         self._frames = []
@@ -97,6 +100,7 @@ class FrameTestCase(unittest.TestCase):
                 os.environ[name] = value
         self._data.cleanup()
         self._cache.cleanup()
+        self._config.cleanup()
         self._directory.cleanup()
 
     def frame(self, files=(), mode="light", scheme="blend", autosave=None, clear_index=False):

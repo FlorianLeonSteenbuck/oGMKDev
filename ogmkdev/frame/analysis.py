@@ -17,7 +17,7 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 from .. import diagnostics, docblocks, editorconfig, index as index_module, indexbuild, languages  # noqa: E402
 from .. import templates  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
-from ..settings import SettingsStore  # noqa: E402
+from ..settings import SettingsStore, appearance_mode  # noqa: E402
 from .panels import _scrolled  # noqa: E402
 from .settings_dialog import SettingsDialog  # noqa: E402
 
@@ -352,6 +352,10 @@ class AnalysisMixin:
     def _after_settings_saved(self, values: Dict[str, str]) -> None:
         """What the frame does once the settings are saved: the open editors, the templates and the problems follow."""
         self._settings_changed()
+        if not self.mode_pinned:  # the light or dark colours of the setting, unless the start gave a --mode
+            mode = appearance_mode(SettingsStore(self.folder))
+            if mode != self.mode:
+                self.set_theme(mode)
         for open_path in self.editors.files():
             self.publish_templates(open_path)
         self.refresh_problems()

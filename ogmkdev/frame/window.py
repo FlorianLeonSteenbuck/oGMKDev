@@ -13,7 +13,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from ogmkdev import __version__, filetemplates, index as index_module, markup, newclass, scaffold  # noqa: E402
-from ogmkdev.settings import SettingsStore  # noqa: E402
+from ogmkdev.settings import SettingsStore, appearance_mode  # noqa: E402
 from ogmkdev.theme import MODES, SCHEMES  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from ogmkdev.preview import kind_of as preview_kind  # noqa: E402
@@ -84,10 +84,13 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
     _edge_key: Optional[tuple] = None
     _loose_root = None  # the tree entry 'Loose files' (a Gtk.TreeIter) while it exists
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
-                 mode: str = "light", scheme: str = "blend", autosave: Optional[bool] = None,
+                 mode: Optional[str] = None, scheme: str = "blend", autosave: Optional[bool] = None,
                  clear_index: bool = False) -> None:
-        self.mode, self.scheme = mode, scheme
-        install_frame_css(mode, scheme)
+        # A mode given at the start (--mode) stays; without one, the light or dark colours of the setting apply
+        self.mode_pinned = mode is not None
+        self.mode = mode if mode is not None else appearance_mode(SettingsStore(folder))
+        self.scheme = scheme
+        install_frame_css(self.mode, scheme)
         super().__init__(application=app, title="oGMKDev")
         self.set_icon_name(APP_ICON)
         self.add_css_class("ogmkdev-frame")

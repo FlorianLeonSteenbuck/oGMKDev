@@ -15,7 +15,8 @@ from .window import Frame  # noqa: E402
 def main(argv):
     parser = argparse.ArgumentParser(prog="ogmkdev")
     parser.add_argument("--folder", default=os.getcwd(), help="folder (default: the current folder)")
-    parser.add_argument("--mode", choices=("light", "dark"), default="light", help="colours (default: light)")
+    parser.add_argument("--mode", choices=("light", "dark"), default=None,
+                        help="light or dark colours (default: the Light or dark colours setting, which this overrides)")
     parser.add_argument("--scheme", choices=("blend", "jetbrains", "eclipse"), default="blend",
                         help="colour scheme (default: blend)")
     parser.add_argument("--autosave", action="store_true",

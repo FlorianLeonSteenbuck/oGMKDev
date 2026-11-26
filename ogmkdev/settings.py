@@ -184,6 +184,13 @@ class SettingsStore:
         return props.get(key, SETTINGS_BY_KEY[key].default)
 
 
+def appearance_mode(store: SettingsStore) -> str:
+    """The light or dark colours of the global setting; the default when the file holds another text."""
+    setting = SETTINGS_BY_KEY["ogmkdev_appearance"]
+    value = store.value(setting.key)
+    return value if value in setting.choices else setting.default
+
+
 def groups(schema: Sequence[Setting] = SCHEMA):
     """Settings grouped by their group path, in schema order."""
     result: Dict[str, list] = {}
