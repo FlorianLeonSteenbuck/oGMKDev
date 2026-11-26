@@ -104,6 +104,27 @@ int howl_open(const char *file, int line, int column)
   return 0;
 }
 
+/* Saves the text of the editor that has the focus to `file`, which becomes the file of that editor. No prompt is
+   shown: the frame names the file in its Save As dialog. Returns 0 on success. */
+int howl_save_as(const char *file)
+{
+  if (embedded == NULL)
+    return 1;
+
+  lua_getglobal(embedded, "HOWL_EMBED_SAVE_AS");
+  if (!lua_isfunction(embedded, -1)) {
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  lua_pushstring(embedded, file);
+  if (lua_pcall(embedded, 1, 0, 0)) {
+    g_warning("Failed to save as %s: %s", file, lua_tostring(embedded, -1));
+    lua_pop(embedded, 1);
+    return 1;
+  }
+  return 0;
+}
+
 /* Runs a Howl command (for example "save", "editor-undo") in the editor that has the focus. */
 int howl_command(const char *name)
 {

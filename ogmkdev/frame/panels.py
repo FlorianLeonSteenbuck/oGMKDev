@@ -215,6 +215,10 @@ class PanelsMixin:
 
     def _on_todo_activated(self, _view, path, _column) -> None:
         todo = self.todo_store[self.todo_store.get_iter(path)][4]
+        if not os.path.isfile(todo.path):  # the list is older than the file: it is read again
+            self.refresh_todos()
+            self.set_status(f"{todo.path} is no file any more: the TODO list is updated")
+            return
         self.open_file(todo.path, todo.line, 1)
 
     # ------------------------------------------- Quick Open, Search Everywhere

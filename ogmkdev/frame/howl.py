@@ -63,11 +63,15 @@ class Editors:
         self._lib.howl_close.argtypes = [ctypes.c_void_p]
         self._lib.howl_focus.restype = ctypes.c_int
         self._lib.howl_focus.argtypes = [ctypes.c_void_p]
+        self._lib.howl_save_as.restype = ctypes.c_int
+        self._lib.howl_save_as.argtypes = [ctypes.c_char_p]
         self._root = root.encode()
         self.count = 0
 
     def add(self, container, path: Optional[str] = None) -> bool:
         """Puts a new Howl editor (with ``path`` if given) into ``container`` (a Gtk.Box)."""
+        if path and os.path.isdir(path):
+            return False  # Howl edits files: a folder is never given to it
         file = os.path.abspath(path).encode() if path else None
         status = self._lib.howl_embed(raw_pointer(container), self._root, file)
         if status == 0:
@@ -75,8 +79,16 @@ class Editors:
         return status == 0
 
     def open(self, path: str, line: int = 0, column: int = 0) -> bool:
-        """Opens ``path`` in the Howl editor that has the focus (line and column 1-based, 0 for none)."""
+        """Opens ``path`` in the Howl editor that has the focus (line and column 1-based, 0 for none). A folder is never
+        given to Howl: it cannot be edited."""
+        if os.path.isdir(path):
+            return False
         return self._lib.howl_open(os.path.abspath(path).encode(), line, column) == 0
+
+    def save_as(self, path: str) -> bool:
+        """Saves the text of the focused editor to ``path``, which becomes the file of that editor. Howl shows no prompt:
+        the frame names the file."""
+        return self._lib.howl_save_as(os.path.abspath(path).encode()) == 0
 
     def command(self, name: str) -> bool:
         """Runs a Howl command ("save", "editor-undo", ...) in the editor that has the focus."""

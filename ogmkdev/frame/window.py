@@ -558,16 +558,51 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
     def open_file(self, path: str, line: int = 0, column: int = 0) -> None:
         """Shows a file in its tab (opened in a new Howl editor if needed) and moves to a line. An image is shown in
         the Preview page instead: Howl edits text."""
+        if os.path.isdir(path):
+            self.set_status(f"{path} is a folder, not a file")
+            return
         if preview_kind(path) == "image":
             self.preview_image(path)
             self.set_status(f"preview of {path}")
             return
-        if self.area.open(path) is None:
+        page = self.area.open(path)
+        if page is None:
             self.set_status(f"could not open {path}")
             return
+        # the editor of the page takes the keyboard focus first: Howl opens the line in the editor that has the focus
+        self.editors.focus(page)
         if line:
             self.editors.open(path, line, column)
         self.set_status(f"opened {path}")
+
+    def save_current(self) -> None:
+        """Save: the file of the focused editor. A buffer without a file gets its name in the Save As dialog."""
+        if self.editors.status() is None:
+            self.save_as()
+            return
+        self.editors.command("save")
+
+    def save_as(self) -> None:
+        """Save As: a native dialog names the file, which gets the text of the focused editor. Howl shows no prompt."""
+        info = self.editors.status()
+        folder = os.path.dirname(info["path"]) if info else self.folder
+        native = Gtk.FileChooserNative.new("Save As", self, Gtk.FileChooserAction.SAVE, "Save", "Cancel")
+        native.set_current_folder(Gio.File.new_for_path(folder))
+        if info:
+            native.set_current_name(os.path.basename(info["path"]))
+        native.set_do_overwrite_confirmation(True)
+        self._save_native = native  # kept until the dialog answers
+        native.connect("response", self._on_save_as_response)
+        native.show()
+
+    def _on_save_as_response(self, native, response) -> None:
+        if response == Gtk.ResponseType.ACCEPT and native.get_file() is not None:
+            target = native.get_file().get_path()
+            if self.editors.save_as(target):
+                self.set_status(f"saved as {target}")
+            else:
+                self.set_status(f"could not save as {target}")
+        self._save_native = None
 
     # ------------------------------------------------------- new components
 

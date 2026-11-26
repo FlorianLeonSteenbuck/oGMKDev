@@ -74,7 +74,7 @@ command.register
   handler: ->
     buffer = app.editor.buffer
     if not buffer.file
-      command.run 'save-as'
+      log.warn "The buffer has no file yet: Save As names it"
       return
 
     if buffer.modified_on_disk
@@ -97,24 +97,16 @@ command.alias 'save', 'w'
 
 command.register
   name: 'save-as',
-  description: 'Save the current buffer to a given file'
-  input: (opts) ->
-    parent = app.editor.buffer.file and app.editor.buffer.file.parent
-    file = interact.select_file prompt: ':save-as ', text: opts.text, allow_new: true, path: parent and parent.path
-    return unless file
-
-    if file.exists
-      unless interact.yes_or_no prompt: "File '#{file}' already exists, overwrite? "
-        log.info "Not overwriting; buffer not saved"
-        return
+  description: 'Save the current buffer to the given file: the frame names it, Howl shows no prompt'
+  handler: (file) ->
+    unless file
+      log.warn "Save As needs a file name"
+      return
 
     unless auto_mkdir file.parent
       log.info "Parent directory doesn't exist; buffer not saved"
       return
 
-    return file
-
-  handler: (file) ->
     buffer = app.editor.buffer
     buffer\save_as file
     buffer.mode = mode.for_file file

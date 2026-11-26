@@ -58,7 +58,6 @@
     ctrl_shift_i:      'editor-indent-all'
     ctrl_h:            'buffer-replace'
     ctrl_s:            'save'
-    ctrl_shift_s:      'save-as'
     ctrl_v:            'editor-paste'
     ctrl_shift_v:      'editor-paste..'
 
@@ -137,7 +136,6 @@
         meta_n:            'new-buffer'
         meta_w:            'buffer-close'
         meta_s:            'save'
-        meta_shift_s:      'save-as'
         meta_v:            'editor-paste'
         meta_shift_v:      'editor-paste..'
         meta_x:            'editor-cut'

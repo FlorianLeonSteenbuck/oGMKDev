@@ -186,6 +186,14 @@ class Application extends PropertyObject
         if column and column > 0
           text_line = editor.buffer.lines[line]
           editor.cursor.column = math.min column, text_line.size + 1 if text_line
+    -- saves the text of the editor that has the focus to `path`, which becomes the file of that editor. No prompt is
+    -- shown: the frame names the file in its Save As dialog (src/embed.c howl_save_as)
+    _G.HOWL_EMBED_SAVE_AS = (path) ->
+      editor = @editor
+      error 'no editor has the focus' unless editor
+      file = File(path)
+      editor.buffer\save_as file
+      editor.buffer.mode = mode.for_file file
     -- runs a Howl command, e.g. "save" (src/embed.c howl_command)
     _G.HOWL_EMBED_COMMAND = (name) -> howl.timer.asap -> howl.command.run name
     -- "path<TAB>line:column<TAB>mode<TAB>modified" of the editor that has the focus (src/embed.c howl_status)
