@@ -86,6 +86,9 @@ SCHEMA: Tuple[Setting, ...] = (
             "artifacts,coverage,reports,logs"),
     Setting("ogmkdev_asset_roots", "Asset folders (coloured as assets)", "Workspace / Folders", "text",
             "assets,static,public,resources,images,fonts"),
+    Setting("ogmkdev_folder_rules", "Folder rules, the first match wins: NAME=ROLE pairs separated by ';' (ROLE: test, "
+            "source, build, artifacts, assets or none; NAME may use * and ?, e.g. *_api=build; ui_*=assets; tests=none)",
+            "Custom", "text", ""),
     Setting(ATTACHED_KEY, "Attached folders, relative to the project (File > Add Folder adds one)",
             "Workspace / Folders", "folders", "", scopes=("project",)),
     Setting("ogmkdev_exclude", "Ignored folders (not in the tree, not indexed, not searched)", "Workspace / Ignored",

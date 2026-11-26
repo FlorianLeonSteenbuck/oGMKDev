@@ -39,6 +39,20 @@ def _items(text: str) -> Tuple[str, ...]:
     return tuple(result)
 
 
+FOLDER_ROLES = ("test", "source", "build", "artifacts", "assets", "none")
+
+
+def _rules(text: str) -> Tuple[Tuple[str, str], ...]:
+    """``*_api=build; ui_*=assets`` as ((pattern, role), ...): entries that do not parse are skipped."""
+    rules = []
+    for entry in text.split(";"):
+        pattern, _, role = entry.partition("=")
+        pattern, role = pattern.strip(), role.strip().lower()
+        if pattern and role in FOLDER_ROLES:
+            rules.append((pattern, role))
+    return tuple(rules)
+
+
 @dataclass
 class Workspace:
     folders: List[str] = field(default_factory=list)
@@ -48,6 +62,7 @@ class Workspace:
     build_roots: Tuple[str, ...] = DEFAULT_BUILD_NAMES
     artifact_roots: Tuple[str, ...] = DEFAULT_ARTIFACT_NAMES
     asset_roots: Tuple[str, ...] = DEFAULT_ASSET_NAMES
+    rules: Tuple[Tuple[str, str], ...] = ()  # (pattern, role) of the Custom settings: the first match wins
 
     @classmethod
     def from_properties(cls, folders: Sequence[str], props: Dict[str, str]) -> "Workspace":
@@ -59,6 +74,7 @@ class Workspace:
             build_roots=_items(props.get("ogmkdev_build_roots", ",".join(DEFAULT_BUILD_NAMES))),
             artifact_roots=_items(props.get("ogmkdev_artifact_roots", ",".join(DEFAULT_ARTIFACT_NAMES))),
             asset_roots=_items(props.get("ogmkdev_asset_roots", ",".join(DEFAULT_ASSET_NAMES))),
+            rules=_rules(props.get("ogmkdev_folder_rules", "")),
         )
 
     def folder_of(self, path: str) -> Optional[Tuple[str, str]]:
@@ -112,6 +128,9 @@ class Workspace:
         relative = located[1]
         if relative in ("", "."):
             return None
+        for pattern, rule_role in self.rules:  # a rule names the folder by its path or name and beats the default names
+            if fnmatch.fnmatch(relative, pattern) or fnmatch.fnmatch(os.path.basename(relative), pattern):
+                return None if rule_role == "none" else rule_role
         sources = self.source_roots or DEFAULT_SOURCE_NAMES
         for role, entries in (("test", self.test_roots), ("source", sources), ("build", self.build_roots),
                               ("artifacts", self.artifact_roots), ("assets", self.asset_roots)):
