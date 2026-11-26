@@ -247,6 +247,21 @@ class BareDownReferencesTest(unittest.TestCase):
             self.assertNotIn(word, names)
 
 
+MARKDOWN_SAMPLE = ("# Shape\nUse `Shape` and `$total` here. See [the cart](Cart) or [order](docs/Order.md).\n"
+                   "```php\n$s = new Shape(1);\n```\n```\nfoo(bar);\n```\n")
+
+
+class MarkdownReferencesTest(unittest.TestCase):
+    def test_code_spans_blocks_and_link_names_are_occurrences(self):
+        self.assertEqual(I.extract_references("guide.md", MARKDOWN_SAMPLE), [
+            ("Shape", 2, 6), ("Cart", 2, 47), ("Shape", 4, 10), ("foo", 7, 1), ("bar", 7, 5)])
+
+    def test_prose_variables_and_links_to_files_hold_none(self):
+        names = [name for name, _line, _column in I.extract_references("guide.md", MARKDOWN_SAMPLE)]
+        for word in ("Use", "and", "here", "order", "Order", "total", "cart"):
+            self.assertNotIn(word, names)
+
+
 class TemplateReferencesTest(unittest.TestCase):
     def test_names_in_twig_tags_and_in_the_base_markup(self):
         self.assertEqual(I.extract_references("page.twig.html", TWIG_SAMPLE), [

@@ -37,8 +37,9 @@ SQL_EXTENSIONS = frozenset({".sql"})
 STYLE_EXTENSIONS = frozenset({".css", ".scss", ".less", ".sass"})
 JSON_EXTENSIONS = frozenset({".json"})
 BAREDOWN_EXTENSIONS = frozenset({".bd", ".baredown"})
+MARKDOWN_EXTENSIONS = frozenset({".md", ".markdown", ".mdown"})
 INDEXED = (PHP_EXTENSIONS | PYTHON_EXTENSIONS | SCRIPT_EXTENSIONS | markup.MARKUP_EXTENSIONS | SQL_EXTENSIONS
-           | STYLE_EXTENSIONS | JSON_EXTENSIONS | BAREDOWN_EXTENSIONS)
+           | STYLE_EXTENSIONS | JSON_EXTENSIONS | BAREDOWN_EXTENSIONS | MARKDOWN_EXTENSIONS)
 # lock files of the package managers: generated, large, and full of keys that say nothing about the code
 GENERATED_FILES = frozenset({"package-lock.json", "npm-shrinkwrap.json"})
 
@@ -420,6 +421,69 @@ def _link_name(source: str, start: int, end: int) -> List[Reference]:
     return [(last, line, column)]
 
 
+def _code_block_references(language: str, text: str, opened: int) -> List[Reference]:
+    """The names of a code block whose fence is on line ``opened``: read with the rules of its language when the
+    index knows the language (see FENCE_EXTENSIONS), otherwise its identifiers."""
+    extension = FENCE_EXTENSIONS.get(language.lower())
+    if extension is None:
+        found: List[Reference] = []
+        for number, line in enumerate(text.split("\n"), start=1):
+            for match in GENERIC_NAME.finditer(line):
+                found.append((match.group(0), opened + number, match.start() + 1))
+        return found
+    # PHP in a document often has no open tag: it is read after one, which takes up a line of its own
+    shift = 1 if extension == ".php" else 0
+    code = "<?php\n" + text if shift else text
+    return [(name, opened + line - shift, column) for name, line, column in _references_by_extension(extension, code)]
+
+
+MARKDOWN_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*([^`\s]*)")
+MARKDOWN_CODE_SPAN = re.compile(r"(`+)(.+?)\1")
+MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)")
+
+
+def _markdown_line_references(line: str, number: int) -> List[Reference]:
+    """The names in the code spans of a line of prose, and the name a link on the line points to."""
+    found: List[Reference] = []
+    for match in MARKDOWN_CODE_SPAN.finditer(line):
+        for name in GENERIC_NAME.finditer(match.group(2)):
+            found.append((name.group(0), number, match.start(2) + name.start() + 1))
+    for match in MARKDOWN_LINK.finditer(line):
+        target = match.group(1)
+        if TARGET_NAME.fullmatch(target):
+            last = re.split(r"[\\/]", target)[-1]
+            found.append((last, number, match.start(1) + len(target) - len(last) + 1))
+    return found
+
+
+def _references_markdown(source: str) -> List[Reference]:
+    """The names a Markdown document uses: the identifiers of its code spans and of its code blocks (a block in a
+    language the index reads is read with that language's rules), and the last part of a link target that is a
+    name. Its prose and its images hold none."""
+    found: List[Reference] = []
+    fence = None  # (the marker of the opening fence, its language, the line it is on)
+    body: List[str] = []
+    for number, line in enumerate(source.split("\n"), start=1):
+        if fence is None:
+            match = MARKDOWN_FENCE.match(line)
+            if match:
+                fence = (match.group(1), match.group(2), number)
+                body = []
+            else:
+                found.extend(_markdown_line_references(line, number))
+            continue
+        marker, language, opened = fence
+        stripped = line.strip()
+        if stripped and set(stripped) == {marker[0]} and len(stripped) >= len(marker):
+            found.extend(_code_block_references(language, "\n".join(body), opened))
+            fence = None
+        else:
+            body.append(line)
+    if fence is not None:  # a fence that is never closed reads to the end of the file
+        found.extend(_code_block_references(fence[1], "\n".join(body), fence[2]))
+    return sorted(found, key=lambda reference: (reference[1], reference[2]))
+
+
 def _references_baredown(source: str) -> List[Reference]:
     """The names a BareDown document uses: the identifiers of its code spans (|code|) and code blocks, a block in a
     language the index reads being read with that language's rules, and the last part of a link target. Its prose
@@ -431,19 +495,8 @@ def _references_baredown(source: str) -> List[Reference]:
         elif token.kind == "link":
             found.extend(_link_name(source, token.start, token.end))
     for block in baredown.parse(source):
-        if block.kind != "code":
-            continue
-        extension = FENCE_EXTENSIONS.get(block.language.lower())
-        if extension is None:
-            for number, text_line in enumerate(block.text.split("\n"), start=1):
-                for match in GENERIC_NAME.finditer(text_line):
-                    found.append((match.group(0), block.line + number, match.start() + 1))
-            continue
-        # PHP in a document often has no open tag: it is read after one, which takes up a line of its own
-        shift = 1 if extension == ".php" else 0
-        code = "<?php\n" + block.text if shift else block.text
-        for name, line, column in _references_by_extension(extension, code):
-            found.append((name, block.line + line - shift, column))
+        if block.kind == "code":
+            found.extend(_code_block_references(block.language, block.text, block.line))
     return sorted(found, key=lambda reference: (reference[1], reference[2]))
 
 
@@ -486,6 +539,8 @@ def _references_by_extension(extension: str, source: str) -> List[Reference]:
         return _references_json(source)
     if extension in BAREDOWN_EXTENSIONS:
         return _references_baredown(source)
+    if extension in MARKDOWN_EXTENSIONS:
+        return _references_markdown(source)
     return []
 
 

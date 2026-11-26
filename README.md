@@ -80,7 +80,7 @@ grammar or language server. Every language here is implemented in this repositor
 | Shift+F9 | debug the selected run configuration (GDB or XDebug type) |
 | F5 / F8 / F7 / Shift+F7 | while debugging: continue / step over / step into / step out |
 | Shift+F5 | stop debugging |
-| Shift+F12 | Find Usages: the occurrences of a name in the PHP, Python, JavaScript, TypeScript, SQL, markup, style and JSON files, in BareDown documents (code and link targets) and in Mustache and Twig templates, listed in the Search tab. Generated lock files such as `package-lock.json` are not read |
+| Shift+F12 | Find Usages: the occurrences of a name in the PHP, Python, JavaScript, TypeScript, SQL, markup, style and JSON files, in Markdown and BareDown documents (code and link targets) and in Mustache and Twig templates, listed in the Search tab. Plain text has none. Generated lock files such as `package-lock.json` are not read |
 | Ctrl+Alt+J | select the word at the cursor, then each next occurrence of the selection |
 | Ctrl+Shift+Alt+J | select all occurrences of the selection, or of the word at the cursor |
 | Escape | end the extra carets, the cursor stays |
@@ -354,6 +354,5 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
 
 ## Open items
 
-- Markdown and plain-text files have no references yet.
 - The `.rpm` package is built with rpmbuild and its frame starts from the extracted tree; it has not been
   installed on openSUSE yet.
