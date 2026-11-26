@@ -14,7 +14,8 @@ frame's layout, not a separate window. Details: `howl/OGMKDEV.md`.
 - Left: Files, Run configurations, Hierarchy (index), History (local history, patch sets, revert),
   Git (stage, unstage, diff, commit).
 - Bottom: Console (run output), Watches, Problems (diagnostics of the open file, inspections of the
-  folder), Search (search in files), TODO (TODO words in comments with priorities).
+  folder), Search (search in files), TODO (TODO words in comments with priorities), Preview (Markdown, BareDown
+  and image files, see below).
 - Tools: go to definition, find implementations, show type hierarchy, inspect folder, refresh and clear
   the index; Search Everywhere and Quick Open.
 - Settings > Preferences edits the global settings; the frame is a single window per session: starting it
@@ -118,7 +119,7 @@ Paragraphs are lines up to the next blank line. Files use the extensions `.bd` a
 | Python 2 / 3 / PyPy | dialect detection; highlighting by Howl | own parser |
 | TypeScript, TSX, JSX | own lexer (`ogmkdev/lexers/typescript_lexer.py`); the parser of `ogmkdev/parsers/javascript.py` reads TypeScript when typed (types, interfaces, generics, enums, namespaces, decorators, `import type`, `as`, `satisfies`) and JSX; syntax diagnostics for .ts, .tsx, .jsx and .js | - |
 | Mustache, Twig | detection of compound extensions, templates; highlighting of the base language; references of the names in the tags | own grammar |
-| Markdown, HTML, CSS | Howl highlighting; XML, SVG and HTML: structure, element menu (selectors, XPath), diagnostics; CSS: brace diagnostics, references | - |
+| Markdown, HTML, CSS | Howl highlighting; Markdown: preview, references in code and link targets; XML, SVG and HTML: structure, element menu (selectors, XPath), diagnostics; CSS: brace diagnostics, references | - |
 | C++ | KDevelop `plugins/clang` in the source tree | rewrite to Python or bind |
 | Java | excluded | - |
 
@@ -245,6 +246,12 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
   tree (tag, id, class), and the outline of a JavaScript or TypeScript file: its classes with their methods,
   accessors and fields, its functions and variables, and in TypeScript its interfaces, type aliases, enums and
   namespaces. A row opens its line. A script is read when the tab is shown, and again after each save.
+- **Preview** (bottom panel, Tools > Show Preview, Ctrl+Alt+P): the saved text of the focused file, drawn as it
+  reads: a Markdown (`.md`) or BareDown (`.bd`) file with headings, bold, italic, code, lists, quotes, code blocks,
+  rules and links; a Markdown image is placed in the text. An image file (PNG, JPEG, GIF, BMP, WebP, TIFF, ICO)
+  opened from the project tree is shown as the picture, not in the editor. The page follows its file when it is
+  saved. Links are shown but not followed, and Markdown tables are plain text. An SVG has no preview: it is text
+  and stays in the editor.
 - **Element menu** (Ctrl+right-click on an element in an XML, SVG or HTML file): the CSS selectors and the XPath
   expressions of the element (unique, explicit, implicit, full), its id, class and tag, and its location. A click
   copies the entry. `ogmkdev_markup_inspection = off` switches the element parts off; the outline of a script
