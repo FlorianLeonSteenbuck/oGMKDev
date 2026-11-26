@@ -8,7 +8,9 @@ version declared ``IOException``.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Union
+
+from ..outcome import Failure
 
 
 class Settings(ABC):
@@ -31,20 +33,20 @@ class Settings(ABC):
         """Whether a setting with this id exists."""
 
     @abstractmethod
-    def get(self, id: str) -> Any:
-        """The value of a setting, whatever its type."""
+    def get(self, id: str) -> Union[Any, Failure]:
+        """The value of a setting, whatever its type; a Failure with the reason when there is no such setting."""
 
     @abstractmethod
-    def get_string(self, id: str) -> Optional[str]:
-        """The value of a setting as text."""
+    def get_string(self, id: str) -> Union[str, Failure]:
+        """The value of a setting as text, or the reason it has none."""
 
     @abstractmethod
-    def get_number(self, id: str) -> Optional[float]:
-        """The value of a setting as a number."""
+    def get_number(self, id: str) -> Union[float, Failure]:
+        """The value of a setting as a number, or the reason it has none."""
 
     @abstractmethod
-    def get_boolean(self, id: str) -> Optional[bool]:
-        """The value of a setting as a boolean."""
+    def get_boolean(self, id: str) -> Union[bool, Failure]:
+        """The value of a setting as a boolean, or the reason it has none."""
 
 
 class WriteableSettings(Settings, ABC):

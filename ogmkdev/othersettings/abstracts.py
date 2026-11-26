@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Union
+
+from ..outcome import Failure, failed
 
 from .helper import dispatch_set
 from .interfaces import DynamicWriteableSettings, WriteableSettings
@@ -68,14 +70,22 @@ class OverrideDynamicSettings(PreSupportDynamicWriteableSettings, ABC):
     def has(self, id: str) -> bool:
         return id in self.get_setting_providers()
 
-    def get(self, id: str) -> Any:
+    def get(self, id: str) -> Union[Any, Failure]:
+        if not self.has(id):
+            return failed(f"{id}: there is no such setting")
         return self.get_setting_providers()[id].data
 
-    def get_string(self, id: str) -> Optional[str]:
+    def get_string(self, id: str) -> Union[str, Failure]:
+        if not self.has(id):
+            return failed(f"{id}: there is no such setting")
         return self.get_setting_providers()[id].data
 
-    def get_number(self, id: str) -> Optional[float]:
+    def get_number(self, id: str) -> Union[float, Failure]:
+        if not self.has(id):
+            return failed(f"{id}: there is no such setting")
         return self.get_setting_providers()[id].data
 
-    def get_boolean(self, id: str) -> Optional[bool]:
+    def get_boolean(self, id: str) -> Union[bool, Failure]:
+        if not self.has(id):
+            return failed(f"{id}: there is no such setting")
         return self.get_setting_providers()[id].data

@@ -8,6 +8,7 @@ from ogmkdev.othersettings import (BooleanCheckboxProvider, EmptySettings, Numbe
                                    StringLineProvider, StringListProvider, UnsupportedSettingValueException,
                                    WrongSettingsDataException, WriteableSettings)
 from ogmkdev.othersettings.helper import instance_of_settings_typ
+from ogmkdev.outcome import Failure
 
 
 class TypeCheckTests(unittest.TestCase):
@@ -173,8 +174,10 @@ class EmptySettingsTests(unittest.TestCase):
     def test_nothing_is_found(self):
         settings = EmptySettings()
         self.assertFalse(settings.has("x"))
-        self.assertIsNone(settings.get("x"))
-        self.assertIsNone(settings.get_string("x"))
+        self.assertIsInstance(settings.get("x"), Failure)
+        self.assertIsInstance(settings.get_string("x"), Failure)
+        self.assertIsInstance(settings.get_number("x"), Failure)
+        self.assertIsInstance(settings.get_boolean("x"), Failure)
         self.assertEqual(settings.get_setting_providers(), {})
         self.assertIsInstance(settings, Settings)
         self.assertNotIsInstance(settings, WriteableSettings)

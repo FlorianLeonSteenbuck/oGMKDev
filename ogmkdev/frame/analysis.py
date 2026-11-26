@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import gi
 
@@ -19,6 +19,7 @@ from .. import templates  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore  # noqa: E402
 from .panels import _scrolled  # noqa: E402
+from .settings_dialog import SettingsDialog  # noqa: E402
 
 
 _HOWL_KINDS = {"error": "error", "warning": "warning", "hint": "hint"}
@@ -332,98 +333,26 @@ class AnalysisMixin:
     # ---------------------------------------------------------- settings
 
     def open_global_settings(self) -> None:
-        self._settings_window(None)
+        self._settings_window("")
 
     def open_project_settings(self) -> None:
-        self._settings_window(None, scope="project")
+        self._settings_window("", scope="project")
 
     def open_diagnostic_settings(self) -> None:
         self._settings_window("Diagnostics")
 
-    def _settings_window(self, only_group: Optional[str], scope: str = "global") -> None:
-        """The settings of one scope: global (Preferences) or project (the .editorconfig of the project)."""
-        store = SettingsStore(self.folder)
-        values = store.global_properties() if scope == "global" else store.read(scope)
-        window = Gtk.Window(title="Preferences" if scope == "global" else "Project Settings",
-                            transient_for=self, modal=True)
-        window.set_default_size(560, 520)
-        grid = Gtk.Grid(column_spacing=12, row_spacing=6)
-        grid.set_margin_start(12)
-        grid.set_margin_end(12)
-        grid.set_margin_top(12)
-        widgets = {}
-        row = 0
-        group_name = None
-        for setting in settings_module.SCHEMA:
-            if only_group and setting.group != only_group:
-                continue
-            if setting.group != group_name:
-                group_name = setting.group
-                heading = Gtk.Label(label=group_name, xalign=0)
-                heading.add_css_class("heading")
-                grid.attach(heading, 0, row, 2, 1)
-                row += 1
-            grid.attach(Gtk.Label(label=setting.label, xalign=0, wrap=True), 0, row, 1, 1)
-            current = values.get(setting.key, setting.default)
-            widget = self._setting_widget(setting, current)
-            widgets[setting.key] = (setting, widget)
-            grid.attach(widget, 1, row, 1, 1)
-            row += 1
-        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        buttons.set_halign(Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        save = Gtk.Button(label="Save")
-        save.add_css_class("suggested-action")
-        cancel.connect("clicked", lambda *_: window.destroy())
+    def _settings_window(self, only_group: str, scope: str = "global") -> SettingsDialog:
+        """The settings of one scope: global (Preferences) or project (the .editorconfig of the project). The
+        category ``only_group`` ("Diagnostics", or "Diagnostics / PHP") is selected when the dialog opens; "" selects
+        the first category."""
+        dialog = SettingsDialog(self, SettingsStore(self.folder), scope, only_group, self._after_settings_saved)
+        dialog.present()
+        return dialog
 
-        def apply_values(*_args) -> None:
-            new = {key: self._widget_value(setting, widget) for key, (setting, widget) in widgets.items()}
-            store.apply(scope, new)
-            self._settings_changed()
-            window.destroy()
-            for open_path in self.editors.files():
-                self.publish_templates(open_path)
-            self.refresh_problems()
-            self.set_status("preferences saved")
-
-        save.connect("clicked", apply_values)
-        buttons.append(cancel)
-        buttons.append(save)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        box.append(_scrolled(grid))
-        box.append(buttons)
-        window.set_child(box)
-        window.present()
-
-    @staticmethod
-    def _setting_widget(setting, current: str) -> Gtk.Widget:
-        if setting.kind == "choice":
-            choices = list(setting.choices)
-            dropdown = Gtk.DropDown.new_from_strings(choices)
-            dropdown.set_selected(choices.index(current) if current in choices else 0)
-            return dropdown
-        if setting.kind == "bool":
-            switch = Gtk.Switch()
-            switch.set_active(current == "true")
-            switch.set_halign(Gtk.Align.START)
-            return switch
-        if setting.kind == "int":
-            spin = Gtk.SpinButton.new_with_range(0, 1000, 1)
-            try:
-                spin.set_value(float(current))
-            except ValueError:
-                pass
-            return spin
-        entry = Gtk.Entry()
-        entry.set_text(current)
-        return entry
-
-    @staticmethod
-    def _widget_value(setting, widget: Gtk.Widget) -> str:
-        if setting.kind == "choice":
-            return setting.choices[widget.get_selected()]
-        if setting.kind == "bool":
-            return "true" if widget.get_active() else "false"
-        if setting.kind == "int":
-            return str(int(widget.get_value()))
-        return widget.get_text().strip()
+    def _after_settings_saved(self, values: Dict[str, str]) -> None:
+        """What the frame does once the settings are saved: the open editors, the templates and the problems follow."""
+        self._settings_changed()
+        for open_path in self.editors.files():
+            self.publish_templates(open_path)
+        self.refresh_problems()
+        self.set_status("preferences saved")
