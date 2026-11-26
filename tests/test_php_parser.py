@@ -174,5 +174,15 @@ class PartialParseTest(unittest.TestCase):
         self.assertEqual([item.text for item in items], ["App\\Util", "App\\Util"])
 
 
+class AsymmetricVisibilityTest(unittest.TestCase):
+    """PHP 8.4 asymmetric visibility: a property can be read more widely than it is written, as in private(set)."""
+
+    def test_the_properties_with_asymmetric_visibility_parse(self):
+        tree = P.parse("<?php class A { public private(set) int $x; protected(set) ?string $y = null; }")
+        properties = [node for node in tree.walk() if node.kind == "PropertyDeclaration"]
+        self.assertEqual(len(properties), 2)
+        self.assertEqual([node.children[-1].children[0].text for node in properties], ["$x", "$y"])
+
+
 if __name__ == "__main__":
     unittest.main()

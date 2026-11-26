@@ -793,7 +793,8 @@ class _Parser:
             return Node("EnumCase", start, self.prev_end, attributes + children)
         member_flags: List[str] = []
         while self.tok.kind == "keyword" and self._lower() in MODIFIERS and not (
-                self._is_op("(", self._at(1)) or self._is_op("::", self._at(1)) or self._is_op("=", self._at(1))
+                (self._is_op("(", self._at(1)) and self._lower() not in VISIBILITY)  # but private(set) is a modifier
+                or self._is_op("::", self._at(1)) or self._is_op("=", self._at(1))
                 or self._is_op(";", self._at(1)) or self._is_op(",", self._at(1))):
             member_flags.append(self._lower())
             self._advance()

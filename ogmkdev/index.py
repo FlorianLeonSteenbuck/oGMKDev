@@ -25,7 +25,9 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from . import diagnostics, editorconfig, languages, markup, organize
 from .lexers import ecmascript_lexer as js_lexer
 from .parsers import javascript as jsparser
+from . import php_analysis
 from .lexers import php_lexer
+from .parsers import php as phpparser
 from .lexers import sql_lexer
 
 SKIP_DIRS = frozenset({".git", "__pycache__", "node_modules"})
@@ -72,7 +74,7 @@ class FileEntry:
 # Occurrence of an identifier: name, line and column (both 1-based, column in characters)
 Reference = Tuple[str, int, int]
 # Version of the index cache: a cache of another version is ignored and rebuilt
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 REFERENCE_SCRIPT_EXTENSIONS = SCRIPT_EXTENSIONS
 # the parse options of a script: (typed, jsx); plain JavaScript reads JSX as the diagnostics do
 SCRIPT_DIALECTS = {".ts": (True, False), ".tsx": (True, True), ".jsx": (False, True)}
@@ -104,138 +106,22 @@ def _position(source: str, offset: int) -> Tuple[int, int]:
 # ------------------------------------------------------------------ extraction
 
 def _extract_php(source: str, path: str) -> List[Symbol]:
-    tokens = [t for t in php_lexer.tokenize(source) if t.kind not in ("html", "open", "close", "comment", "doc")]
-    texts = [source[t.start:t.end] for t in tokens]
-    lower = [t.lower() for t in texts]
-    kinds = [t.kind for t in tokens]
-    n = len(tokens)
-    namespace = ""
-    imports: Dict[str, str] = {}
-    records: List[dict] = []
-    functions: List[dict] = []
-    file_refs: List[str] = []
-    depth = 0
-    paren = 0
-    class_stack: List[dict] = []
-    pending: Optional[dict] = None
-
-    def resolve(name: str) -> str:
-        name = name.strip()
-        if name.startswith("\\"):
-            return name[1:]
-        first, _, rest = name.partition("\\")
-        if first.lower() in imports:
-            return imports[first.lower()] + ("\\" + rest if rest else "")
-        return f"{namespace}\\{name}" if namespace else name
-
-    i = 0
-    while i < n:
-        kind, text, low = kinds[i], texts[i], lower[i]
-        if kind == "operator" and text == "{":
-            depth += 1
-            if pending is not None:
-                class_stack.append({"rec": pending, "depth": depth, "paren": paren})
-                pending = None
-            i += 1
-            continue
-        if kind == "operator" and text == "}":
-            if class_stack and class_stack[-1]["depth"] == depth:
-                class_stack.pop()
-            depth -= 1
-            i += 1
-            continue
-        if kind == "operator" and text == "(":
-            paren += 1
-        elif kind == "operator" and text == ")":
-            paren -= 1
-        if kind == "keyword" and low == "namespace" and i + 1 < n and kinds[i + 1] == "name":
-            namespace = texts[i + 1].strip("\\")
-            i += 2
-            continue
-        if kind == "keyword" and low == "use" and not class_stack and depth == 0 \
-                and not (i + 1 < n and texts[i + 1] == "("):
-            j = i + 1
-            while j < n and texts[j] != ";":
-                if kinds[j] == "name":
-                    fqn = texts[j].strip("\\")
-                    alias = fqn.rsplit("\\", 1)[-1]
-                    if j + 2 < n and lower[j + 1] == "as" and kinds[j + 2] == "name":
-                        alias = texts[j + 2]
-                        j += 2
-                    imports[alias.lower()] = fqn
-                j += 1
-            i = j + 1
-            continue
-        if kind == "keyword" and low in ("class", "interface", "trait", "enum") and i + 1 < n \
-                and kinds[i + 1] == "name" and not (i > 0 and texts[i - 1] in ("::", "->", "new")):
-            line, column = _position(source, tokens[i + 1].start)
-            rec = {"name": f"{namespace}\\{texts[i + 1]}" if namespace else texts[i + 1], "kind": low,
-                   "line": line, "column": column, "supertypes": [], "traits": [], "refs": [], "members": [],
-                   "abstract": low == "interface" or (i > 0 and lower[i - 1] == "abstract")}
-            j, mode = i + 2, None
-            while j < n and texts[j] not in ("{", ";"):
-                if lower[j] == "extends":
-                    mode = "extends"
-                elif lower[j] == "implements":
-                    mode = "implements"
-                elif kinds[j] == "name" and mode:
-                    rec["supertypes"].append(resolve(texts[j]))
-                j += 1
-            records.append(rec)
-            pending = rec
-            i = j
-            continue
-        if class_stack and depth == class_stack[-1]["depth"] and paren == class_stack[-1]["paren"]:
-            rec = class_stack[-1]["rec"]
-            if kind == "keyword" and low == "use":
-                j = i + 1
-                while j < n and texts[j] not in (";", "{"):
-                    if kinds[j] == "name":
-                        rec["traits"].append(resolve(texts[j]))
-                    j += 1
-                i = j if j < n and texts[j] == "{" else j + 1
-                continue
-            if kind == "keyword" and low == "function" and i + 1 < n and kinds[i + 1] == "name":
-                line, column = _position(source, tokens[i + 1].start)
-                rec["members"].append(("method", texts[i + 1], line, column))
-            elif kind == "keyword" and low == "const":
-                j = i + 1
-                if j + 1 < n and kinds[j] != "operator" and kinds[j + 1] == "name":
-                    j += 1
-                if j < n and kinds[j] == "name":
-                    line, column = _position(source, tokens[j].start)
-                    rec["members"].append(("constant", texts[j], line, column))
-            elif kind == "variable" and i + 1 < n and texts[i + 1] in ("=", ";", "{", ","):
-                line, column = _position(source, tokens[i].start)
-                rec["members"].append(("property", texts[i], line, column))
-        if kind == "keyword" and low == "function" and depth == 0 and not class_stack \
-                and i + 1 < n and kinds[i + 1] == "name":
-            line, column = _position(source, tokens[i + 1].start)
-            full = f"{namespace}\\{texts[i + 1]}" if namespace else texts[i + 1]
-            functions.append({"name": full, "line": line, "column": column})
-        if kind == "name" and not (i + 1 < n and texts[i + 1] == "("):
-            before = texts[i - 1].lower() if i > 0 else ""
-            after = texts[i + 1] if i + 1 < n else ""
-            if before in ("new", "instanceof", "extends", "implements", "(", ",", ":", "|", "&", "?") \
-                    or after == "::":
-                target = resolve(texts[i])
-                if class_stack:
-                    class_stack[-1]["rec"]["refs"].append(target)
-                else:
-                    file_refs.append(target)
-        i += 1
-
+    """The declarations of a PHP file, read from its parse tree (see php_analysis): the classes, interfaces, traits and
+    enums with their members, then the functions. A broken statement is skipped: the rest of the file is indexed."""
+    tree, _errors = phpparser.parse_partial(source)
     symbols: List[Symbol] = []
-    for rec in records:
-        symbols.append(Symbol(rec["name"], rec["kind"], path, rec["line"], rec["column"],
-                              tuple(rec["supertypes"]), tuple(rec["traits"]), None,
-                              tuple(dict.fromkeys(rec["refs"])), rec["abstract"]))
-        for member_kind, member, line, column in rec["members"]:
-            symbols.append(Symbol(f"{rec['name']}::{member}", member_kind, path, line, column,
-                                  container=rec["name"]))
-    for function in functions:
-        symbols.append(Symbol(function["name"], "function", path, function["line"], function["column"]))
-    return symbols
+    functions: List[Symbol] = []
+    for declaration in php_analysis.declarations(tree, source):
+        if declaration.kind == "function":
+            functions.append(Symbol(declaration.name, "function", path, declaration.line, declaration.column))
+            continue
+        symbols.append(Symbol(declaration.name, declaration.kind, path, declaration.line, declaration.column,
+                              declaration.supertypes, declaration.traits, None, declaration.references,
+                              declaration.abstract))
+        for member in declaration.members:
+            symbols.append(Symbol(f"{declaration.name}::{member.name}", member.kind, path, member.line, member.column,
+                                  container=declaration.name))
+    return symbols + functions
 
 
 _PY_CLASS = re.compile(r"^class\s+(\w+)\s*(?:\(([^)]*)\))?\s*:", re.M)
@@ -384,18 +270,9 @@ def _references_script(source: str) -> List[Reference]:
 
 
 def _references_php(source: str) -> List[Reference]:
-    """The name tokens of a PHP file. A qualified name (App\\Circle) is one occurrence of its last part. Comments,
-    strings, doc comments and variables hold none; keywords are not names."""
-    found: List[Reference] = []
-    for token in php_lexer.tokenize(source):
-        if token.kind != "name":
-            continue
-        short = source[token.start:token.end].rsplit("\\", 1)[-1]
-        if not short:
-            continue
-        line, column = _position(source, token.end - len(short))
-        found.append((short, line, column))
-    return found
+    """The names of the code of a PHP file (see php_analysis.occurrences)."""
+    tree, _errors = phpparser.parse_partial(source)
+    return php_analysis.occurrences(tree, source)
 
 
 def _references_sql(source: str) -> List[Reference]:
