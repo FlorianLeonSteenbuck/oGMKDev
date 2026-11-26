@@ -1,12 +1,14 @@
-"""XML and HTML inspection in the frame: the Structure tab, and the context menu of an element.
+"""Structure and inspection in the frame: the Structure tab, and the context menu of an element.
 
-* The Structure tab shows the elements of the file as a tree (tag, id, class); a row opens its line.
+* The Structure tab shows the elements of an XML, SVG or HTML file as a tree (tag, id, class), and the outline of
+  a JavaScript or TypeScript file (its classes with their methods, accessors and fields, its functions, variables,
+  and in TypeScript its interfaces, type aliases, enums and namespaces). A row opens its line.
 * Ctrl+right-click in the editor, on an element (in a tag or in its text), opens a menu with the element's
   CSS selectors and XPath expressions (unique, explicit, implicit, full), its id, class and tag, and its
   location. A click copies the entry to the clipboard. A plain right-click keeps the normal menu.
 
-None of it applies to PHP files (also those with HTML in them) or when the setting
-``ogmkdev_markup_inspection`` is ``off``; see :meth:`StructureMixin._markup_enabled`.
+The element parts apply to markup files only: not to PHP files (also those with HTML in them), and not when
+the setting ``ogmkdev_markup_inspection`` is ``off``; see :meth:`StructureMixin._markup_enabled`.
 """
 
 from __future__ import annotations
@@ -20,10 +22,12 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from .. import languages, markup, selectors  # noqa: E402
+from .. import languages, markup, outline, selectors  # noqa: E402
+from ..diagnostics import JAVASCRIPT_LANGUAGES  # noqa: E402
 from .panels import _scrolled  # noqa: E402
 
 MARKUP_LANGUAGES = markup.MARKUP_LANGUAGES
+STRUCTURE_HINT = "Open an XML, SVG, HTML, JavaScript or TypeScript file (Tools > Show Structure)."
 XML_MENU_SLOTS = 24  # the menu entries are actions xml-copy-0 .. xml-copy-23
 
 
@@ -42,7 +46,7 @@ class StructureMixin:
         self.structure_view.append_column(Gtk.TreeViewColumn("", Gtk.CellRendererText(), text=0))
         self.structure_view.connect("row-activated", self._on_structure_activated)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.structure_hint = Gtk.Label(label="Open an XML, SVG or HTML file (Tools > Show Structure).",
+        self.structure_hint = Gtk.Label(label=STRUCTURE_HINT,
                                         xalign=0, wrap=True)
         box.append(self.structure_hint)
         box.append(_scrolled(self.structure_view))
@@ -74,13 +78,19 @@ class StructureMixin:
         except OSError:
             return
         if key != self._structure_key:
+            # a script is parsed when its tab is shown: until then the key stays old, so the next poll asks again
+            if self._outline_enabled(path) and not self._structure_visible():
+                return
             self._structure_key = key
             self.refresh_structure(path)
 
     def refresh_structure(self, path: Optional[str]) -> None:
         self.structure_store.clear()
         if not path or not os.path.isfile(path):
-            self.structure_hint.set_text("Open an XML, SVG or HTML file (Tools > Show Structure).")
+            self.structure_hint.set_text(STRUCTURE_HINT)
+            return
+        if self._outline_enabled(path):
+            self._refresh_outline(path)
             return
         if not self._markup_enabled(path):
             self.structure_hint.set_text(f"{os.path.basename(path)}: the XML and HTML inspection is off here")
@@ -98,6 +108,35 @@ class StructureMixin:
         self.structure_view.expand_all()
         note = f" · not well-formed: {error}" if error else ""
         self.structure_hint.set_text(f"{len(found)} element(s) in {os.path.basename(path)}{note}")
+
+    def _outline_enabled(self, path: Optional[str]) -> bool:
+        """The outline applies to JavaScript and TypeScript files, not to templates."""
+        if not path or not os.path.isfile(path):
+            return False
+        detection = languages.detect(path, self._settings_for(path).custom)
+        return detection.template is None and detection.language in JAVASCRIPT_LANGUAGES
+
+    def _structure_visible(self) -> bool:
+        return self.left.get_current_page() == self.left.page_num(self.structure_box)
+
+    def _refresh_outline(self, path: str) -> None:
+        detection = languages.detect(path, self._settings_for(path).custom)
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+        items, error = outline.script_outline(text, typed=detection.language in ("typescript", "tsx"),
+                                              jsx=detection.language != "typescript")
+        self._fill_outline(path, items)
+        self.structure_view.expand_all()
+        name = os.path.basename(path)
+        if error:
+            self.structure_hint.set_text(f"{name}: no outline, {error}")
+        else:
+            self.structure_hint.set_text(f"{outline.count(items)} declaration(s) in {name}")
+
+    def _fill_outline(self, path: str, items, parent=None) -> None:
+        for item in items:
+            iterator = self.structure_store.append(parent, [item.label, path, item.line, item.column])
+            self._fill_outline(path, item.children, iterator)
 
     def _on_structure_activated(self, _view, path, _column) -> None:
         row = self.structure_store[self.structure_store.get_iter(path)]

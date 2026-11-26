@@ -243,6 +243,14 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
   settings while you type; **Quick Open** (File > Quick Open..., Ctrl+P) lists only files. Up and Down move
   through the list, Enter opens the entry: a file opens, a symbol is navigated to, an action runs, a setting
   opens its group in the settings dialog.
+- **Structure** (left panel, Tools > Show Structure, Ctrl+Alt+S): the elements of an XML, SVG or HTML file as a
+  tree (tag, id, class), and the outline of a JavaScript or TypeScript file: its classes with their methods,
+  accessors and fields, its functions and variables, and in TypeScript its interfaces, type aliases, enums and
+  namespaces. A row opens its line. A script is read when the tab is shown, and again after each save.
+- **Element menu** (Ctrl+right-click on an element in an XML, SVG or HTML file): the CSS selectors and the XPath
+  expressions of the element (unique, explicit, implicit, full), its id, class and tag, and its location. A click
+  copies the entry. `ogmkdev_markup_inspection = off` switches the element parts off; the outline of a script
+  stays, and PHP files have neither.
 
 ## Workspace and keyboard
 
@@ -354,6 +362,5 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
   the GDB sessions through the frame.
 - Python and JavaScript references are identifier occurrences (comments and strings are skipped); the other
   languages have no references yet.
-- Outline and navigation on top of the ECMAScript tree of `ogmkdev/parsers/javascript.py`.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - The `.rpm` package is written but has not been built on openSUSE.
