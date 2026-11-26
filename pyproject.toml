@@ -1,6 +1,6 @@
 [project]
 name = "ogmkdev"
-version = "0.1.0"
+version = "0.1.1"
 description = "Lightweight IDE core in Python/GTK: EditorConfig, language detection, JetBrains run configs, GDB/XDebug debugging."
 requires-python = ">=3.10"
 dependencies = []

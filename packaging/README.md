@@ -20,8 +20,8 @@ works. It also needs `gcc`, `make`, `pkg-config`, `git` and the GTK 4 developmen
 Install:
 
 ```bash
-sudo apt install ./dist/ogmkdev_0.1.0_amd64.deb                  # Debian, Ubuntu
-sudo zypper install ./dist/rpmbuild/RPMS/x86_64/ogmkdev-0.1.0-1.x86_64.rpm   # openSUSE
+sudo apt install ./dist/ogmkdev_0.1.1_amd64.deb                  # Debian, Ubuntu
+sudo zypper install ./dist/rpmbuild/RPMS/x86_64/ogmkdev-0.1.1-1.x86_64.rpm   # openSUSE
 ```
 
 The layout is the same for both packages (`packaging/install-tree.sh`):

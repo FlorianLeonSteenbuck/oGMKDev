@@ -41,6 +41,10 @@ sh packaging/install-tree.sh %{buildroot} %{_libdir}
 %{_docdir}/ogmkdev
 
 %changelog
+* Thu Nov 26 2026 ogmkdev maintainers <ogmkdev@localhost> - 0.1.1-1
+- PHP analysis on the parse tree: feature checks, imports, index symbols and references.
+- Find Usages for JSON, BareDown, Markdown and Mustache or Twig templates.
+- Preview page in the bottom panel for Markdown, BareDown and image files.
 * Wed Nov 25 2026 ogmkdev maintainers <ogmkdev@localhost> - 0.1.0-1
 - First package: editor, workspace and project tools, debugging, PHP 8.0 to 8.6 checks.
 - The window runs on GTK 4 with Howl as a library (libhowl.so and the Howl Lua files).
