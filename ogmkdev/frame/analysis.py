@@ -18,6 +18,10 @@ from .. import diagnostics, docblocks, editorconfig, index as index_module, inde
 from .. import templates  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore, appearance_mode  # noqa: E402
+from .. import overview, resources  # noqa: E402
+from ..outcome import Failure  # noqa: E402
+from .index_view import IndexView  # noqa: E402
+from .resources_view import ResourcesView  # noqa: E402
 from .panels import _scrolled  # noqa: E402
 from .settings_dialog import SettingsDialog  # noqa: E402
 
@@ -164,7 +168,8 @@ class AnalysisMixin:
         if getattr(self, "_index_builder", None) is None:
             self._index_builder = indexbuild.IndexBuilder(self._deliver_index, self.task_progress)
         self.set_status(reason)
-        self._index_builder.request(self.workspace.folders, _cache_path(self.folder), self.workspace.is_hidden)
+        self._index_builder.request(self.workspace.folders, _cache_path(self.folder), self.workspace.is_hidden,
+                                    self._settings_for)  # the inspections use the settings of the editor
 
     def _deliver_index(self, built, folders, error) -> None:
         """Called on the builder's worker thread: the result is taken over on the GTK main thread."""
@@ -175,6 +180,7 @@ class AnalysisMixin:
             self.index = built
             self._watch_folders(folders)
             self.set_status(f"index ready: {len(built.symbols)} symbols in {len(built.files)} files")
+            self.refresh_index_view()
         else:
             self.set_status(f"index could not be built: {error}")
         return False
@@ -201,6 +207,53 @@ class AnalysisMixin:
         if getattr(self, "_rebuild_source", None):
             GLib.source_remove(self._rebuild_source)
         self._rebuild_source = GLib.timeout_add(700, self._rebuild_after_change)
+
+    # ------------------------------------------------------- index overview
+
+    def _build_index_view(self) -> None:
+        """The Index tab of the bottom panel: the index as bars per project folder and per folder below it."""
+        self.index_view = IndexView()
+        self.bottom.append_page(self.index_view, Gtk.Label(label="Index"))
+
+    def show_index_view(self) -> None:
+        """Tools > Show Index Overview: the Index tab, with the numbers of the index as it is now."""
+        if not hasattr(self, "index_view"):
+            self._build_index_view()
+        self.refresh_index_view()
+        self.bottom.set_current_page(self.bottom.page_num(self.index_view))
+
+    def refresh_index_view(self) -> None:
+        if hasattr(self, "index_view"):
+            self.index_view.show(overview.folder_counts(self.index, self.project_folders))
+
+    # ------------------------------------------------------- resources
+
+    def _build_resources_view(self) -> None:
+        """The Resources tab: memory and threads of the IDE and of the running program, and the size of the index. It is
+        refreshed every two seconds while the tab is shown."""
+        self.resources_view = ResourcesView()
+        self.bottom.append_page(self.resources_view, Gtk.Label(label="Resources"))
+        self._resources_source = GLib.timeout_add(2000, self._resources_tick)
+
+    def _resources_tick(self) -> bool:
+        if self.bottom.get_current_page() == self.bottom.page_num(self.resources_view):
+            self.refresh_resources_view()
+        return True
+
+    def show_resources_view(self) -> None:
+        """Tools > Show Resources: the Resources tab, with the numbers as they are now."""
+        self.refresh_resources_view()
+        self.bottom.set_current_page(self.bottom.page_num(self.resources_view))
+
+    def refresh_resources_view(self) -> None:
+        program = None
+        process = getattr(self, "_process", None)  # the process the Run tab started, while it runs
+        if self._service_running():
+            found = resources.process_resources(process.pid)
+            program = None if isinstance(found, Failure) else found
+        own = resources.process_resources(os.getpid())
+        index = resources.index_size(self.index, _cache_path(self.folder))
+        self.resources_view.show(resources.resource_lines(own, resources.python_threads(), program, index))
 
     def _rebuild_after_change(self) -> bool:
         self._rebuild_source = None
@@ -352,6 +405,7 @@ class AnalysisMixin:
     def _after_settings_saved(self, values: Dict[str, str]) -> None:
         """What the frame does once the settings are saved: the open editors, the templates and the problems follow."""
         self._settings_changed()
+        self._sync_attached_folders()  # the folders the project settings name are the attached ones
         if not self.mode_pinned:  # the light or dark colours of the setting, unless the start gave a --mode
             mode = appearance_mode(SettingsStore(self.folder))
             if mode != self.mode:

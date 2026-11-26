@@ -6,7 +6,7 @@ import os
 import tempfile
 import unittest
 
-from ogmkdev.settings import PHP_VERSIONS, SettingsStore
+from ogmkdev.settings import ATTACHED_KEY, PHP_VERSIONS, SettingsStore
 from tests.frame_support import GTK_AVAILABLE, SKIP_REASON, pump_until
 
 if GTK_AVAILABLE:
@@ -98,6 +98,23 @@ class SettingsDialogTests(unittest.TestCase):
         self.assertEqual(dialog.values()["ogmkdev_todo_keywords"], TODO_DEFAULT + ",BUG:1")
         rows[0][2].emit("clicked")  # removes FIXME
         self.assertEqual(dialog.values()["ogmkdev_todo_keywords"], "XXX:2,HACK:2,TODO:3,NOTE:5,BUG:1")
+
+    def test_an_attached_folder_is_listed_removed_and_saved_to_the_project_settings(self):
+        os.makedirs(os.path.join(self._directory.name, "lib"))
+        self.store.apply("project", {ATTACHED_KEY: "../lib"})
+        dialog = self.open_dialog(scope="project", select="Workspace / Folders")
+        rows_box = dialog._rows[ATTACHED_KEY][1].get_first_child()
+        line = rows_box.get_first_child()
+        self.assertEqual(line.get_first_child().get_label(), "../lib")
+        line.get_first_child().get_next_sibling().emit("clicked")  # the remove button of the row
+        self.assertEqual(dialog.values()[ATTACHED_KEY], "")
+        dialog.save()
+        self.assertEqual(SettingsStore(self.project).read("project"), {ATTACHED_KEY: ""})
+        self.assertEqual(self.saved[-1][ATTACHED_KEY], "")
+
+    def test_the_attached_folders_are_not_edited_in_the_global_preferences(self):
+        dialog = self.open_dialog(scope="global", select="Workspace / Folders")
+        self.assertNotIn(ATTACHED_KEY, dialog.shown_keys())
 
     def test_a_colour_is_chosen_with_the_picker_and_kept_in_capitals(self):
         dialog = self.open_dialog(select="Colors / Changes")

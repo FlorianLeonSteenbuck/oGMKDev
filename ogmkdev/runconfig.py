@@ -22,9 +22,12 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
+
+from .outcome import Failure, failed
 
 COMPONENT_NAMES = ("ProjectRunConfigurationManager", "RunManager")
 RUN_DIR = ".run"
@@ -200,3 +203,65 @@ def discover(project_dir: str) -> List[RunConfiguration]:
             except (RunConfigError, ET.ParseError, OSError):
                 continue
     return configs
+
+
+# ------------------------------------------------- shell configurations (the Run Configurations dialog)
+
+SHELL_FACTORY = "Shell Script"
+RUN_SUFFIX = ".run.xml"
+DEFAULT_WORKING_DIRECTORY = "$PROJECT_DIR$"
+
+
+def valid_name(name: str) -> Union[str, Failure]:
+    """The name of a run configuration, or the reason it cannot name a file: the name is the file name."""
+    text = name.strip()
+    if not text:
+        return failed("the name is empty")
+    if "/" in text or "\\" in text or text.startswith("."):
+        return failed(f"{text!r} cannot name a file: no slashes, and no leading dot")
+    return text
+
+
+def environment_from_text(text: str) -> Union[Dict[str, str], Failure]:
+    """The variables of a text with one KEY=VALUE line each. Blank lines and lines starting with # are skipped."""
+    values: Dict[str, str] = {}
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if not separator or not key.strip():
+            return failed(f"line {number}: expected KEY=VALUE, got {line!r}")
+        values[key.strip()] = value
+    return values
+
+
+def environment_text(envs: Dict[str, str]) -> str:
+    """The variables as environment_from_text reads them: one KEY=VALUE line each."""
+    return "\n".join(f"{key}={value}" for key, value in envs.items())
+
+
+def reads_arguments(command: str) -> bool:
+    """Whether a shell command reads the arguments of its configuration: $@, $*, $1 to $9 or a ${...} expansion."""
+    return re.search(r"\$(?:[@*1-9]|\{)", command) is not None
+
+
+def shell_configuration(name: str, command: str, arguments: str = "", working_directory: str = DEFAULT_WORKING_DIRECTORY,
+                        envs: Optional[Dict[str, str]] = None,
+                        base: Optional[RunConfiguration] = None) -> RunConfiguration:
+    """A shell run configuration: the command is its script text, the arguments are its positional parameters. ``base``
+    is an existing configuration; its other options and elements stay as they are."""
+    config = base if base is not None else RunConfiguration(name=name, type=SHELL_TYPE, factory=SHELL_FACTORY)
+    config.set_option("SCRIPT_TEXT", command.strip())
+    if arguments.strip():
+        config.set_option("PARAMETERS", arguments.strip())
+    else:
+        config.options.pop("PARAMETERS", None)
+    config.set_option("WORKING_DIRECTORY", working_directory.strip() or DEFAULT_WORKING_DIRECTORY)
+    config.envs = dict(envs or {})
+    return config
+
+
+def configuration_path(project_dir: str, name: str) -> str:
+    """Where the configuration of this name is saved: .run/<name>.run.xml in the project folder."""
+    return os.path.join(project_dir, RUN_DIR, name + RUN_SUFFIX)

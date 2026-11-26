@@ -26,11 +26,14 @@ KEEP = 50  # the projects kept; the ones opened longest ago are dropped
 
 @dataclass(frozen=True)
 class Project:
-    """A project as the file holds it: its folder, the folders attached to it, and when it was opened last."""
+    """A project as the file holds it: its folder, the folders attached to it, when it was opened last, and the projects
+    it is linked to. Opening the project brings the folders of its links in, as the module links of a JetBrains project
+    bring other modules in; a link is not transitive."""
 
     folder: str
     attached: Tuple[str, ...]
     opened: str
+    linked: Tuple[str, ...] = ()
 
 
 def projects_path() -> str:
@@ -55,14 +58,17 @@ def read_projects(path: str) -> Union[List[Project], Failure]:
         if not isinstance(entry, dict):
             continue
         folder, attached, opened = entry.get("folder"), entry.get("attached", []), entry.get("opened", "")
-        if isinstance(folder, str) and isinstance(attached, list) and isinstance(opened, str):
-            projects.append(Project(folder, tuple(item for item in attached if isinstance(item, str)), opened))
+        linked = entry.get("linked", [])
+        if isinstance(folder, str) and isinstance(attached, list) and isinstance(opened, str) and isinstance(linked, list):
+            projects.append(Project(folder, tuple(item for item in attached if isinstance(item, str)), opened,
+                                    tuple(item for item in linked if isinstance(item, str))))
     return projects
 
 
 def write_projects(path: str, projects: Sequence[Project]) -> Union[str, Failure]:
     """Writes the projects through a temporary file, so that a failure leaves the old file whole. Returns the path."""
-    data = {"projects": [{"folder": project.folder, "attached": list(project.attached), "opened": project.opened}
+    data = {"projects": [{"folder": project.folder, "attached": list(project.attached), "opened": project.opened,
+                          "linked": list(project.linked)}
                          for project in projects]}
     folder = os.path.dirname(path)
     temporary = ""
@@ -87,7 +93,9 @@ def remember(folder: str, attached: Sequence[str]) -> Union[str, Failure]:
     if isinstance(existing, Failure):
         return existing
     opened = datetime.datetime.now().isoformat(timespec="seconds")
-    record = Project(folder, tuple(dict.fromkeys(attached)), opened)
+    previous = next((project for project in existing if project.folder == folder), None)
+    linked = previous.linked if previous is not None else ()  # saving the folders keeps the links of the project
+    record = Project(folder, tuple(dict.fromkeys(attached)), opened, linked)
     others = [project for project in existing if project.folder != folder]
     return write_projects(path, [record] + others[:KEEP - 1])
 
@@ -101,3 +109,65 @@ def attached_folders(folder: str) -> Union[List[str], Failure]:
         if project.folder == folder:
             return [path for path in project.attached if path != folder and os.path.isdir(path)]
     return []
+
+
+RECENT_LIMIT = 10  # the projects File > Open Recent offers
+START_LIMIT = 20  # the projects the start window offers
+
+
+def recent_projects(limit: int = RECENT_LIMIT, exclude: str = "") -> Union[List[Project], Failure]:
+    """The projects opened most recently, the most recent first. The folder ``exclude`` (the project that is open) is left
+    out, and so is every project whose folder no longer exists."""
+    projects = read_projects(projects_path())
+    if isinstance(projects, Failure):
+        return projects
+    found = [project for project in projects if project.folder != exclude and os.path.isdir(project.folder)]
+    return found[:limit]
+
+
+def start_choices(recent: Sequence[str], current: str) -> List[str]:
+    """The folders the start window offers: the recent projects in their order, then the current folder when it is not
+    one of them. Each folder is listed once."""
+    return list(dict.fromkeys([*recent, current] if current else recent))
+
+
+def linked_folders(folder: str) -> Union[List[str], Failure]:
+    """The folders of the projects linked to the project, without those whose folder no longer exists."""
+    projects = read_projects(projects_path())
+    if isinstance(projects, Failure):
+        return projects
+    for project in projects:
+        if project.folder == folder:
+            return [path for path in project.linked if path != folder and os.path.isdir(path)]
+    return []
+
+
+def _change_links(folder: str, other: str, add: bool) -> Union[str, Failure]:
+    """Adds or removes one link of the project and writes the file as a whole. A file that cannot be read is not written."""
+    path = projects_path()
+    existing = read_projects(path)
+    if isinstance(existing, Failure):
+        return existing
+    folder, other = os.path.abspath(folder), os.path.abspath(other)
+    if add and other == folder:
+        return failed(f"{folder} cannot be linked to itself")
+    current = next((project for project in existing if project.folder == folder), None)
+    if current is None:
+        current = Project(folder, (), datetime.datetime.now().isoformat(timespec="seconds"))
+    if add:
+        links = tuple(dict.fromkeys((*current.linked, other)))
+    else:
+        links = tuple(item for item in current.linked if item != other)
+    record = Project(current.folder, current.attached, current.opened, links)
+    others = [project for project in existing if project.folder != folder]
+    return write_projects(path, [record] + others[:KEEP - 1])
+
+
+def link_project(folder: str, other: str) -> Union[str, Failure]:
+    """Links the project ``other`` to ``folder``: when ``folder`` is opened, the folder of ``other`` comes with it."""
+    return _change_links(folder, other, add=True)
+
+
+def unlink_project(folder: str, other: str) -> Union[str, Failure]:
+    """Removes the link from ``folder`` to ``other``; the other project is not changed."""
+    return _change_links(folder, other, add=False)

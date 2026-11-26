@@ -8,6 +8,7 @@ Failures are return values (see ogmkdev.outcome). Nothing here returns None: a m
 
 from __future__ import annotations
 
+import os
 from typing import Callable, Dict, List, Optional, Tuple
 
 import gi
@@ -19,8 +20,8 @@ from gi.repository import Gdk, Gtk  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..othersettings import Pairs, PreStoredSettings  # noqa: E402
 from ..outcome import Failure  # noqa: E402
-from ..settings import (Setting, SettingsStore, build_model, category_tree, in_category, model_text,  # noqa: E402
-                        model_values, pairs_text, search, set_model_text)
+from ..settings import (Setting, SettingsStore, build_model, category_tree, folder_list, folders_text,  # noqa: E402
+                        in_category, in_scope, model_text, model_values, pairs_text, search, set_model_text)
 from .panels import _scrolled  # noqa: E402
 
 DIM_CSS = "dim-label"
@@ -152,10 +153,11 @@ class SettingsDialog(Gtk.Window):
         sub-categories."""
         query = self.search.get_text().strip()
         if query:
-            return f"Search: {query}", search(query)
+            return f"Search: {query}", [s for s in search(query) if in_scope(s, self.scope)]
         if not self._category:
             return "Preferences", []
-        return self._category, [s for s in settings_module.SCHEMA if in_category(s, self._category)]
+        return self._category, [s for s in settings_module.SCHEMA
+                                if in_category(s, self._category) and in_scope(s, self.scope)]
 
     def _show_page(self) -> None:
         heading, shown = self._shown_settings()
@@ -219,6 +221,8 @@ class SettingsDialog(Gtk.Window):
             return button
         if setting.kind == "pairs":
             return self._pairs_control(setting)
+        if setting.kind == "folders":
+            return self._folders_control(setting)
         entry = Gtk.Entry(text=current, hexpand=True)
         entry.set_width_chars(28)
         entry.connect("changed", lambda widget: self._changed(setting, widget.get_text()))
@@ -273,6 +277,71 @@ class SettingsDialog(Gtk.Window):
         box.append(rows_box)
         box.append(add_button)
         return box
+
+    def _folders_control(self, setting: Setting) -> Gtk.Widget:
+        """The attached folders as rows: the folder (dimmed when it does not exist), a button that removes it, and a button
+        that attaches another one. Every change puts all rows into the model as one text, the folders relative to the
+        project folder. A folder that does not exist stays in the list; it is attached again once it is back."""
+        folders: List[str] = folder_list(model_text(self.model, setting))
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        rows_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+
+        def row(number: int, folder: str) -> Gtk.Widget:
+            line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            label = Gtk.Label(label=folder, xalign=0, hexpand=True)
+            if not os.path.isdir(os.path.join(self.store.project_dir, folder)):
+                label.add_css_class(DIM_CSS)
+                label.set_tooltip_text("This folder does not exist: it is attached again once it does")
+            delete = Gtk.Button.new_from_icon_name("list-remove-symbolic")
+            delete.add_css_class("flat")
+            delete.set_tooltip_text("Remove this folder")
+            delete.connect("clicked", lambda _button: remove(number))
+            line.append(label)
+            line.append(delete)
+            return line
+
+        def redraw() -> None:
+            child = rows_box.get_first_child()
+            while child is not None:
+                following = child.get_next_sibling()
+                rows_box.remove(child)
+                child = following
+            for number, folder in enumerate(folders):
+                rows_box.append(row(number, folder))
+
+        def changed() -> None:
+            self._changed(setting, folders_text(folders))
+            redraw()
+
+        def remove(number: int) -> None:
+            del folders[number]
+            changed()
+
+        attach = Gtk.Button(label="Attach a folder...")
+        attach.set_halign(Gtk.Align.START)
+        attach.connect("clicked", lambda _button: self._attach_folder(folders, changed))
+        redraw()
+        box.append(rows_box)
+        box.append(attach)
+        return box
+
+    def _attach_folder(self, folders: List[str], changed: Callable[[], None]) -> None:
+        """Asks for a folder and attaches it, kept relative to the project folder. The project folder itself is not
+        attached again, and a folder that is attached already is not listed twice."""
+        native = Gtk.FileChooserNative.new("Attach a folder", self, Gtk.FileChooserAction.SELECT_FOLDER, "Attach",
+                                           "Cancel")
+        self._folder_native = native  # kept until the dialog answers
+
+        def answered(dialog, response) -> None:
+            if response == Gtk.ResponseType.ACCEPT and dialog.get_file() is not None:
+                relative = os.path.relpath(dialog.get_file().get_path(), self.store.project_dir)
+                if relative != "." and relative not in folders:
+                    folders.append(relative)
+                    changed()
+            self._folder_native = None
+
+        native.connect("response", answered)
+        native.show()
 
     def _update_reset(self, row: Row) -> None:
         setting, _control, reset = row

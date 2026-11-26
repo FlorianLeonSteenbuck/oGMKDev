@@ -34,6 +34,7 @@ SEVERITIES = ("error", "warning", "hint", "off")
 KEYWORD_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 COLOUR_PATTERN = re.compile(r"#[0-9A-Fa-f]{6}")
 CATEGORY_SEPARATOR = "/"
+ATTACHED_KEY = "ogmkdev_attached_folders"  # the folders attached to the project: in the project's .editorconfig
 
 
 @dataclass(frozen=True)
@@ -41,10 +42,11 @@ class Setting:
     key: str
     label: str
     group: str                      # the category path, parts separated by "/": "Diagnostics / PHP"
-    kind: str                       # choice | int | bool | text | color | pairs
+    kind: str                       # choice | int | bool | text | color | pairs | folders
     default: str
     choices: Tuple[str, ...] = ()
     section: str = "*"              # the EditorConfig section the value is written to
+    scopes: Tuple[str, ...] = ("global", "project")  # the settings dialogs that edit the setting
 
     @property
     def category(self) -> Tuple[str, ...]:
@@ -84,6 +86,8 @@ SCHEMA: Tuple[Setting, ...] = (
             "artifacts,coverage,reports,logs"),
     Setting("ogmkdev_asset_roots", "Asset folders (coloured as assets)", "Workspace / Folders", "text",
             "assets,static,public,resources,images,fonts"),
+    Setting(ATTACHED_KEY, "Attached folders, relative to the project (File > Add Folder adds one)",
+            "Workspace / Folders", "folders", "", scopes=("project",)),
     Setting("ogmkdev_exclude", "Ignored folders (not in the tree, not indexed, not searched)", "Workspace / Ignored",
             "text", ".git,node_modules,__pycache__,vendor,.idea,*.iml"),
     Setting("ogmkdev_diagnostics", "Error hinting", "Diagnostics / Problems", "choice", "on", ("on", "off")),
@@ -155,8 +159,9 @@ class SettingsStore:
         return values
 
     def write(self, scope: str, setting: Setting, value: str) -> None:
-        """Store ``value`` in the scope; the default value removes the key so it is inherited."""
-        stored = None if value == setting.default else value
+        """Store ``value`` in the scope; the default value removes the key so it is inherited. A list of folders keeps its
+        key even when it is empty: an empty list is a choice, which the projects file must not overrule."""
+        stored = value if setting.kind == "folders" or value != setting.default else None
         editorconfig.write_property(self.path_for(scope), setting.section, setting.key, stored)
 
     def apply(self, scope: str, values: Dict[str, str]) -> None:
@@ -175,8 +180,10 @@ class SettingsStore:
         return props
 
     def effective_for(self, file_path: str) -> Dict[str, str]:
+        """The settings of a file: the global ones, then the project's file, then the file's own EditorConfig files. The
+        project's file applies to the folders attached to the project too, as if they lay below it."""
         props = self.global_properties()
-        props.update(editorconfig.effective_properties(file_path))
+        props.update(editorconfig.effective_properties(file_path, base=self.path_for("project")))
         return props
 
     def value(self, key: str, file_path: Optional[str] = None) -> str:
@@ -276,6 +283,22 @@ def pairs_text(pairs: Pairs) -> str:
     return ",".join(f"{keyword}:{priority}" for keyword, priority in pairs)
 
 
+def folder_list(text: str) -> List[str]:
+    """The folders of a text such as "../lib, /opt/shared": comma separated, empty items dropped. A folder whose name holds
+    a comma cannot be written in this form."""
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def folders_text(folders: Sequence[str]) -> str:
+    """The folders as the EditorConfig file keeps them (the inverse of folder_list)."""
+    return ", ".join(folders)
+
+
+def in_scope(setting: Setting, scope: str) -> bool:
+    """Whether the settings dialog of the scope edits the setting."""
+    return scope in setting.scopes
+
+
 def parse_value(setting: Setting, text: str) -> Union[Value, Failure]:
     """The typed value of a text for the setting, or the reason it is not one. Nothing is raised for a bad text."""
     if setting.kind == "bool":
@@ -361,7 +384,7 @@ def set_model_text(model: PreStoredSettings, setting: Setting, text: str) -> Uni
     if setting.kind == "pairs" and isinstance(parsed, list):
         stored_pairs = model.set_pairs(setting.key, parsed)
         return stored_pairs if isinstance(stored_pairs, Failure) else parsed
-    if setting.kind in ("choice", "text") and isinstance(parsed, str):
+    if setting.kind in ("choice", "text", "folders") and isinstance(parsed, str):
         model.set_string(setting.key, parsed)
         return parsed
     return failed(f"{setting.key}: the value does not fit the setting")

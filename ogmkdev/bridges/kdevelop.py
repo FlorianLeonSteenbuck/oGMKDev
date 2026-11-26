@@ -15,10 +15,14 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
+import urllib.parse
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Union
 
 from . import KDEVELOP_SOURCE
+from .. import runconfig
+from ..outcome import Failure, failed
 
 MI_TEST_FILES = (
     os.path.join("plugins", "debuggercommon", "tests", "test_miparser.cpp"),
@@ -78,6 +82,97 @@ def _c_unescape(text: str) -> str:
             out.append(c)
             i += 1
     return "".join(out)
+
+
+NATIVE_APP_TYPE = "nativeAppConfigType"  # KDevelop's native application; the other types are reported as skipped
+
+
+def kconfig_list(text: str) -> List[str]:
+    """A KConfig list (a QStringList): items separated by commas, a comma inside an item written as a backslash and a
+    comma. Empty items are left out."""
+    items: List[str] = []
+    current: List[str] = []
+    index = 0
+    while index < len(text):
+        if text.startswith("\\,", index):
+            current.append(",")
+            index += 2
+        elif text[index] == ",":
+            items.append("".join(current))
+            current = []
+            index += 1
+        else:
+            current.append(text[index])
+            index += 1
+    items.append("".join(current))
+    return [item for item in items if item]
+
+
+def local_path(location: str) -> str:
+    """The local path of a KDevelop location: a file:// URL, or the text itself when it is a path already."""
+    parsed = urllib.parse.urlsplit(location)
+    if parsed.scheme == "file":
+        return urllib.parse.unquote(parsed.path)
+    return location
+
+
+def launch_configurations(project: KdevProject) -> Tuple[List[runconfig.RunConfiguration], List[str]]:
+    """The launch configurations of a project file as shell run configurations. A native application runs its executable
+    with its arguments in its working folder; the arguments are the positional parameters of the command, passed on by
+    "$@". The other types, and the entries without an executable, are returned as skipped, with the reason."""
+    configs: List[runconfig.RunConfiguration] = []
+    skipped: List[str] = []
+    for group in kconfig_list(project.get("Launch Configurations", "Configurations", "") or ""):
+        base = f"Launch Configurations][{group}"
+        name = project.groups.get(base, {}).get("Name", group)
+        kind = project.groups.get(base, {}).get("Type", "")
+        if kind != NATIVE_APP_TYPE:
+            skipped.append(f"{name}: the type {kind or 'missing'} is not imported")
+            continue
+        data = project.groups.get(base + "][Data", {})
+        executable = local_path(data.get("Executable", ""))
+        if not executable:
+            skipped.append(f"{name}: no executable")
+            continue
+        arguments = " ".join(shlex.quote(argument) for argument in kconfig_list(data.get("Arguments", "")))
+        working = local_path(data.get("Working Directory", "")) or runconfig.DEFAULT_WORKING_DIRECTORY
+        configs.append(runconfig.shell_configuration(name, f'{shlex.quote(executable)} "$@"', arguments, working))
+    return configs, skipped
+
+
+@dataclass
+class ImportResult:
+    written: List[str]    # the run configurations saved in the project's .run folder
+    existing: List[str]   # the names that have a file already: that file is kept
+    skipped: List[str]    # the entries that cannot be imported, with the reason
+
+
+def import_project(kdev4_path: str) -> Union[ImportResult, Failure]:
+    """Saves the launch configurations of a KDevelop project as run configurations in the project's folder, the folder of
+    its .kdev4 file. The files of the folder stay as they are: the project's tree is the same tree."""
+    try:
+        project = load_project(kdev4_path)
+    except OSError as problem:
+        return failed(f"{kdev4_path}: {problem}")
+    configs, skipped = launch_configurations(project)
+    folder = os.path.dirname(os.path.abspath(kdev4_path))
+    result = ImportResult(written=[], existing=[], skipped=list(skipped))
+    for config in configs:
+        name = runconfig.valid_name(config.name)
+        if isinstance(name, Failure):
+            result.skipped.append(f"{config.name}: {name}")
+            continue
+        config.name = name
+        path = runconfig.configuration_path(folder, name)
+        if os.path.exists(path):
+            result.existing.append(name)
+            continue
+        try:
+            runconfig.save(config, path)
+        except OSError as problem:
+            return failed(f"{path}: {problem}")
+        result.written.append(name)
+    return result
 
 
 def mi_corpus(kdevelop_root: str = KDEVELOP_SOURCE) -> List[str]:

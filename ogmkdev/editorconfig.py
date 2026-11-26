@@ -265,11 +265,18 @@ def find_config_files(file_path: str) -> List[EditorConfigFile]:
     return found
 
 
-def effective_properties(file_path: str) -> Dict[str, str]:
-    """Raw merged property map for ``file_path`` (keys and values lower-cased)."""
+def effective_properties(file_path: str, base: Optional[str] = None) -> Dict[str, str]:
+    """Raw merged property map for ``file_path`` (keys and values lower-cased). ``base`` names an .editorconfig file that
+    applies to a file outside its own folder too, with the lowest precedence: the project's file applies to the folders
+    attached to the project this way. A file inside the folder of ``base`` gets nothing extra from it."""
     absolute = os.path.abspath(file_path)
+    configs = find_config_files(absolute)  # nearest first
+    if base is not None and os.path.isfile(base):
+        base_folder = os.path.dirname(os.path.abspath(base))
+        if not absolute.startswith(base_folder + os.sep):
+            configs.append(load(base))  # the farthest of all: applied first, and every nearer file overrides it
     props: Dict[str, str] = {}
-    for config in reversed(find_config_files(absolute)):  # farthest first, nearest wins
+    for config in reversed(configs):  # farthest first, nearest wins
         base = os.path.dirname(config.path)
         relative = os.path.relpath(absolute, base).replace(os.sep, "/")
         for section in config.sections:

@@ -12,8 +12,9 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from .. import runconfig  # noqa: E402
+from .. import processes, runconfig  # noqa: E402
 from .panels import _scrolled  # noqa: E402
+from .runconfig_dialog import RunConfigurationDialog  # noqa: E402
 
 
 def _table(headings) -> tuple:
@@ -62,6 +63,21 @@ class TabsMixin:
             self.run_store.append([config.name, config.type, config.factory, config])
         self.set_status(f"{len(configs)} run configuration(s)")
 
+    def edit_run_configurations(self) -> RunConfigurationDialog:
+        """Run > Edit Run Configurations...: the shell configurations of the project are created and edited there."""
+        dialog = RunConfigurationDialog(self, self.folder, self._run_configuration_saved)
+        dialog.present()
+        return dialog
+
+    def _run_configuration_saved(self, name: str) -> None:
+        """Lists the saved configurations again and selects the one that was saved in the Run tab."""
+        self.refresh_run()
+        for row in self.run_store:
+            if row[0] == name:
+                self.run_view.get_selection().select_iter(row.iter)
+                break
+        self.set_status(f"run configuration {name} saved")
+
     def _selected_run_config(self) -> Optional[runconfig.RunConfiguration]:
         model, iterator = self.run_view.get_selection().get_selected()
         return model[iterator][3] if iterator is not None else None
@@ -77,7 +93,7 @@ class TabsMixin:
         if config.type in (runconfig.GDB_TYPE, runconfig.XDEBUG_TYPE):
             self.start_debugging(config)
             return
-        if self._process is not None and self._process.poll() is None:
+        if self._service_running():
             self.set_status("a process is still running (Run > Stop Process)")
             return
         try:
@@ -87,8 +103,10 @@ class TabsMixin:
             return
         self.log("$ " + " ".join(spec.argv))
         try:
+            # its own process group: the service and everything it starts can be ended together
             self._process = subprocess.Popen(spec.argv, cwd=spec.cwd, env=spec.env, stdout=subprocess.PIPE,
-                                             stderr=subprocess.STDOUT, text=True, errors="replace")
+                                             stderr=subprocess.STDOUT, text=True, errors="replace",
+                                             start_new_session=True)
         except OSError as error:
             self.set_status(f"cannot start {spec.argv[0]}: {error}")
             return
@@ -103,11 +121,23 @@ class TabsMixin:
         GLib.idle_add(self.set_status, f"process exited with code {code}")
 
     def stop_process(self) -> None:
+        """Run > Stop Process: ends the background service the Run tab started, with every process of it."""
         if self._debugger is not None:
             self.stop_debugging()
             return
-        if self._process is not None and self._process.poll() is None:
-            self._process.terminate()
-            self.set_status("process terminated")
+        if self._service_running():
+            ended = processes.terminate_group(self._process.pid)
+            self.set_status("process terminated" if ended else "the process did not end")
         else:
             self.set_status("no process is running")
+
+    def stop_services(self) -> None:
+        """Ends the background service the Run tab started, with every process of it: the frame does this when it closes."""
+        if self._service_running():
+            processes.terminate_group(self._process.pid)
+
+    def _service_running(self) -> bool:
+        """Whether a process of the service the Run tab started still runs: also when its shell has ended and the service
+        goes on in the background."""
+        process = getattr(self, "_process", None)
+        return process is not None and bool(processes.group_members(process.pid))

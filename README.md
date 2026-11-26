@@ -16,7 +16,7 @@ frame's layout, not a separate window. Details: `howl/OGMKDEV.md`.
 - Bottom: Console (run output), Watches, Problems (diagnostics of the open file, inspections of the
   folder), Search (search in files), TODO (TODO words in comments with priorities), Preview (Markdown, BareDown
   and image files, see below).
-- Tools: go to definition, find implementations, show type hierarchy, inspect folder, refresh and clear
+- Tools: go to definition, find implementations, show type hierarchy, inspect project, refresh and clear
   the index; Search Everywhere and Quick Open.
 - Settings > Preferences edits the global settings; the frame is a single window per session: starting it
   again with files hands them to the running frame.
@@ -180,8 +180,37 @@ the types `OgmkdevGdbConfigurationType` (options `PROGRAM`, `ARGUMENTS`, `WORKIN
 - **Implementations** (Ctrl+Alt+B): all classes that extend or implement the type under the cursor.
 - **Search in files** (Ctrl+Shift+F): text or regular expression over the project, results in the
   Search panel.
-- **Inspections** (Project > Inspect Project): diagnostics of every indexed file plus unresolved
+- **Inspections** (Tools > Inspect Project): diagnostics of every indexed file plus unresolved
   supertypes; results in the Problems panel.
+
+## Projects, run configurations and imports
+
+- **Recent projects** (File > Open Recent): the projects opened last, from the projects file (`projects.json`
+  in the configuration folder). Started without a folder and without files, the frame shows a start window with
+  them and the current folder; choosing one opens it.
+- **Attached folders**: File > Add Folder to Workspace adds a folder to the project. The attached folders are kept
+  in the project's `.editorconfig` as `ogmkdev_attached_folders`, relative to the project, and the Project Settings
+  dialog (Workspace / Folders) lists, adds and removes them.
+- **Linked projects** (File > Linked Projects...): a project can be linked to other projects, as JetBrains modules
+  are linked through their `.iml` files. The links are kept in the projects file; opening the project brings the
+  folders of its links in. A link is not transitive, and it does not change the other project.
+- **Project settings apply to every folder of the project**: a file in an attached folder takes the project's
+  `.editorconfig` (PHP version, diagnostics) unless its own folder has an `.editorconfig`; the global preferences
+  apply to the inspections as they do to the editor.
+- **Run configurations** (Run > Edit Run Configurations...): shell configurations in `.run/<name>.run.xml`. The
+  command is the script text, the arguments are its positional parameters: write `"$@"` in the command to pass them on.
+  The name is the file name and does not change when the configuration is edited.
+- **Import KDevelop Project** (File > Import KDevelop Project...): the launch configurations of a project file
+  (`.kdev4`) with a native application type become run configurations in the project's folder; the folder opens as the
+  project and its tree stays as it is. Other types are reported as skipped.
+- **Import JetBrains Project** (File > Import JetBrains Project...): the folder opens as the project. Its shared run
+  configurations (`.run` and `.idea/runConfigurations`) are used where they are, nothing is copied. The configurations
+  that can run here are reported; the others are listed. Module files, code styles and the workspace are not read.
+- **Index overview** (Tools > Show Index Overview, the Index tab): files, symbols and references per project folder and
+  per folder directly below it, as bars scaled to the largest folder.
+- **Resources** (Tools > Show Resources, the Resources tab): the memory and the threads of the IDE and of the program
+  the Run tab started, and the size of the index. The tab refreshes every two seconds while it is shown.
+- The inspection of a project is Tools > Inspect Project; it covers every folder of the project.
 
 ## Settings
 
@@ -230,7 +259,7 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
   are listed in the Search panel (classes first, then members with that name).
 - **Go to Implementation** (Ctrl+Alt+B): the classes that extend or implement the type under the cursor.
   One implementation jumps; several are listed.
-- **Inspections** (Project > Inspect Project) report, besides diagnostics: unused imports (warning),
+- **Inspections** (Tools > Inspect Project) report, besides diagnostics: unused imports (warning),
   imports that the project does not define (hint), and concrete classes that do not implement a method of
   an interface or abstract class they inherit (error).
 - **Organise Imports** (Edit > Organize Imports, Ctrl+Alt+O): sorts the top-level PHP `use` statements,
@@ -364,3 +393,6 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
 
 - The `.rpm` package is built with rpmbuild and its frame starts from the extracted tree; it has not been
   installed on openSUSE yet.
+- KDevelop import: the launch configurations of a project file are imported; the user settings of KDevelop 4 and
+  KDevelop (the session and the `kdeveloprc` files) are not, because no sample files of them are in the repository.
+- A crash with SIGABRT (seen once, not reproduced) is not explained yet.

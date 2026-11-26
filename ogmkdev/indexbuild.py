@@ -18,7 +18,7 @@ from .index import ProjectIndex
 from .progress import Progress
 
 Deliver = Callable[[Optional[ProjectIndex], List[str], Optional[str]], None]
-Request = Tuple[Sequence[str], Optional[str], Optional[Callable[[str], bool]]]
+Request = Tuple[Sequence[str], Optional[str], Optional[Callable[[str], bool]], Optional[Callable]]
 
 
 def watched_directories(roots: Sequence[str], excluded: Optional[Callable[[str], bool]] = None) -> List[str]:
@@ -44,22 +44,24 @@ class IndexBuilder:
         return self._running
 
     def request(self, roots: Sequence[str], cache_path: Optional[str] = None,
-                excluded: Optional[Callable[[str], bool]] = None) -> None:
-        """Starts a build, or keeps the request for after the running build."""
+                excluded: Optional[Callable[[str], bool]] = None, settings_for: Optional[Callable] = None) -> None:
+        """Starts a build, or keeps the request for after the running build. ``settings_for`` gives the settings a file is
+        inspected with; the default is the EditorConfig files of the file alone."""
         with self._lock:
             if self._running:
-                self._pending = (list(roots), cache_path, excluded)
+                self._pending = (list(roots), cache_path, excluded, settings_for)
                 return
             self._running = True
-        threading.Thread(target=self._work, args=(list(roots), cache_path, excluded), daemon=True).start()
+        threading.Thread(target=self._work, args=(list(roots), cache_path, excluded, settings_for), daemon=True).start()
 
-    def _work(self, roots: List[str], cache_path: Optional[str], excluded) -> None:
+    def _work(self, roots: List[str], cache_path: Optional[str], excluded, settings_for) -> None:
         index: Optional[ProjectIndex] = None
         folders: List[str] = []
         error: Optional[str] = None
         self.progress.start("Index")
         try:
-            index = ProjectIndex(roots, cache_path=cache_path, excluded=excluded, progress=self.progress)
+            index = ProjectIndex(roots, cache_path=cache_path, excluded=excluded, progress=self.progress,
+                                 settings_for=settings_for)
             folders = watched_directories(index.roots, excluded)
             if cache_path:
                 try:

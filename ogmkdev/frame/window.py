@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Union
 
 import gi
 
@@ -13,15 +13,19 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from ogmkdev import __version__, filetemplates, index as index_module, markup, newclass, projects, scaffold  # noqa: E402
-from ogmkdev.settings import SettingsStore, appearance_mode  # noqa: E402
+from ogmkdev.settings import ATTACHED_KEY, SETTINGS_BY_KEY, SettingsStore, appearance_mode, folder_list, folders_text  # noqa: E402
 from ogmkdev.theme import MODES, SCHEMES  # noqa: E402
 from ogmkdev.outcome import Failure  # noqa: E402
 from ogmkdev.progress import Progress  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
+from ogmkdev.bridges import kdevelop as kdevelop_bridge  # noqa: E402
+from ogmkdev import jetbrains as jetbrains_import  # noqa: E402
+from ogmkdev import php_paths  # noqa: E402
 from ogmkdev.preview import kind_of as preview_kind  # noqa: E402
 from . import theme  # noqa: E402
 from .editors import EditorArea  # noqa: E402
 from .howl import Editors  # noqa: E402
+from .links_dialog import LinksDialog  # noqa: E402
 from .menus import CONTEXT_MENU, MENUS, PENDING  # noqa: E402
 from .panels import PanelsMixin  # noqa: E402
 from .tabs import TabsMixin  # noqa: E402
@@ -59,7 +63,7 @@ TOOLBAR = (
     ("go-up", "Step out", "step_out"),
     ("media-playback-stop", "Stop", "stop_process"),
     None,
-    ("dialog-warning", "Inspect folder", "inspect_folder"),
+    ("dialog-warning", "Inspect project (all its folders)", "inspect_folder"),
 )
 
 _frame_provider: Optional[Gtk.CssProvider] = None
@@ -111,6 +115,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         self.area = EditorArea(self)
         self.set_default_size(1500, 900)
         self._install_actions()
+        self._install_recent_actions()
         self._install_theme_actions()
         self._install_context_menu()
         self._install_xml_menu()
@@ -192,6 +197,8 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         self._build_todos()
         self._build_changes()
         self._build_preview()
+        self._build_index_view()
+        self._build_resources_view()
 
     def show_run_tab(self) -> None:
         self.left.set_current_page(self.left.page_num(self.run_box))
@@ -228,6 +235,10 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
                 submenu.append(label, f"win.{name}")
                 if accelerator:
                     app.set_accels_for_action(f"win.{name}", [accelerator])
+                if name == "open-folder":
+                    # File > Open Recent follows Open Folder; _refresh_recent_menu fills it
+                    self._recent_menu = Gio.Menu()
+                    submenu.insert_submenu(submenu.get_n_items(), "Open Recent", self._recent_menu)
             if title == "View":
                 self._theme_items(submenu)
             menu.append_submenu(title, submenu)
@@ -764,10 +775,15 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         return True
 
     def _on_close_request(self, _window) -> bool:
-        """The window is closing: its status poll stops (a closed frame must not act on the Howl editors)."""
+        """The window is closing: its status poll and its resources timer stop (a closed frame must not act on the Howl
+        editors)."""
         if self._poll_source:
             GLib.source_remove(self._poll_source)
             self._poll_source = 0
+        if getattr(self, "_resources_source", 0):
+            GLib.source_remove(self._resources_source)
+            self._resources_source = 0
+        self.stop_services()  # a background service of the Run tab does not outlive the frame
         return False
 
     def _autosave_tick(self, info, path: Optional[str]) -> None:
@@ -784,10 +800,19 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
             self.set_status(f"autosaved {os.path.basename(path)}")
 
     def _follow_click(self, word: str, column: int, line: str) -> None:
-        """Ctrl+click: a file reference (href, src, url(...)) opens its file; anything else goes to the
-        definition of the word."""
-        value = markup.reference_at(line, column) if column and self._markup_enabled(self.area.current_path()) \
-            else None
+        """Ctrl+click: a file reference (href, src, url(...)) opens its file, and in a PHP file a path built from
+        __DIR__ opens the file next to it; anything else goes to the definition of the word."""
+        current = self.area.current_path()
+        if current and column and os.path.splitext(current)[1].lower() in index_module.PHP_EXTENSIONS:
+            target = php_paths.path_at(line, column, os.path.dirname(current))
+            if target is not None:
+                if os.path.isfile(target):
+                    self.open_file(target)
+                    self.set_status(f"opened {target}")
+                else:
+                    self.set_status(f"{target} is not a file")
+                return
+        value = markup.reference_at(line, column) if column and self._markup_enabled(current) else None
         if value and not value.startswith("#") and "://" not in value and not value.startswith("mailto:"):
             target = value.split("#", 1)[0].split("?", 1)[0]
             current = self.area.current_path()
@@ -855,6 +880,48 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         """File > Add Folder to Workspace: another folder joins the tree and the index of the project."""
         self._choose_folder("Add Folder to Workspace", "Add", self._add_workspace_folder)
 
+    def import_kdevelop_project(self) -> None:
+        """File > Import KDevelop Project...: the launch configurations of a KDevelop project (its .kdev4 file) become run
+        configurations in the project's folder, and that folder is opened as the project. Its tree stays as it is."""
+        native = Gtk.FileChooserNative.new("Import KDevelop Project", self, Gtk.FileChooserAction.OPEN, "Import",
+                                           "Cancel")
+        self._kdevelop_native = native  # kept until the dialog answers
+        native.connect("response", self._on_kdevelop_chosen)
+        native.show()
+
+    def _on_kdevelop_chosen(self, native, response) -> None:
+        if response == Gtk.ResponseType.ACCEPT and native.get_file() is not None:
+            path = native.get_file().get_path()
+            result = kdevelop_bridge.import_project(path)
+            if isinstance(result, Failure):
+                self.set_status(f"not imported: {result}")
+            else:
+                self.set_project(os.path.dirname(os.path.abspath(path)))
+                report = (f"KDevelop project imported: {len(result.written)} run configuration(s), "
+                          f"{len(result.existing)} kept, {len(result.skipped)} skipped")
+                self.set_status(report + (f" ({'; '.join(result.skipped)})" if result.skipped else ""))
+        self._kdevelop_native = None
+
+    def import_jetbrains_project(self) -> None:
+        """File > Import JetBrains Project...: the folder of a JetBrains project opens as the project. Its shared run
+        configurations (.run and .idea/runConfigurations) are used where they are."""
+        native = Gtk.FileChooserNative.new("Import JetBrains Project", self, Gtk.FileChooserAction.SELECT_FOLDER,
+                                           "Import", "Cancel")
+        self._jetbrains_native = native  # kept until the dialog answers
+        native.connect("response", self._on_jetbrains_chosen)
+        native.show()
+
+    def _on_jetbrains_chosen(self, native, response) -> None:
+        if response == Gtk.ResponseType.ACCEPT and native.get_file() is not None:
+            result = jetbrains_import.import_project(native.get_file().get_path())
+            if isinstance(result, Failure):
+                self.set_status(f"not imported: {result}")
+            else:
+                self.set_project(result.folder)
+                listed = f"; listed only: {', '.join(result.listed)}" if result.listed else ""
+                self.set_status(f"JetBrains project: {len(result.runnable)} run configuration(s) can run here{listed}")
+        self._jetbrains_native = None
+
     def _choose_folder(self, title: str, accept: str, on_chosen) -> None:
         native = Gtk.FileChooserNative.new(title, self, Gtk.FileChooserAction.SELECT_FOLDER, accept, "Cancel")
         self._folder_native = native  # kept until the dialog answers
@@ -867,23 +934,129 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         self._folder_native = None
 
     def _restore_project(self) -> str:
-        """Attaches the folders the project had the last time it was open. Returns what to tell the user: how many
-        folders came back, or why the projects file could not be read (the project then opens with its own folder)."""
-        attached = projects.attached_folders(self.folder)
-        if isinstance(attached, Failure):
-            return f"projects file not read: {attached}"
+        """Attaches the folders the project had the last time it was open: the ones its project settings name, or, when
+        the settings name none, the ones the projects file remembers. Returns what to tell the user: how many folders
+        came back, or why the projects file could not be read (the project then opens with its own folder)."""
+        self._linked = []  # the folders of the projects linked to this one: they are project folders too
+        configured = self._configured_folders()
+        if configured is not None:
+            attached = [folder for folder in configured if os.path.isdir(folder)]
+        else:
+            remembered = projects.attached_folders(self.folder)
+            if isinstance(remembered, Failure):
+                return f"projects file not read: {remembered}"
+            attached = remembered
         for folder in attached:
             if folder not in self.project_folders:
                 self.project_folders.append(folder)
+        linked = projects.linked_folders(self.folder)
+        if isinstance(linked, Failure):
+            return f"projects file not read: {linked}"
+        for folder in linked:
+            if folder not in self.project_folders:
+                self.project_folders.append(folder)
+                self._linked.append(folder)
         restored = len(self.project_folders) - 1
         return f"{restored} attached folder(s) restored" if restored else ""
 
     def _remember_project(self) -> None:
         """Saves the project with the folders attached to it, so that opening it again restores them. A projects file
         that cannot be read is not overwritten; the status bar tells why nothing was saved."""
-        saved = projects.remember(self.folder, self.project_folders[1:])
+        saved = projects.remember(self.folder, [folder for folder in self.project_folders[1:]
+                                                if folder not in self._linked])
         if isinstance(saved, Failure):
             self.set_status(f"project not saved: {saved}")
+        self._refresh_recent_menu()
+
+    def _install_recent_actions(self) -> None:
+        """The actions of File > Open Recent: one opens the project whose folder is the string parameter, the other is the
+        placeholder of an empty list (disabled)."""
+        opener = Gio.SimpleAction.new("open-recent", GLib.VariantType.new("s"))
+        opener.connect("activate", lambda _action, parameter: self.set_project(parameter.get_string()))
+        self.add_action(opener)
+        none = Gio.SimpleAction.new("recent-none", None)
+        none.set_enabled(False)
+        self.add_action(none)
+
+    def _refresh_recent_menu(self) -> None:
+        """File > Open Recent lists the projects opened last, except the project that is open now. A projects file that
+        cannot be read leaves the placeholder, the status bar tells why nothing was saved."""
+        menu = self._recent_menu
+        menu.remove_all()
+        found = projects.recent_projects(exclude=self.folder)
+        if isinstance(found, Failure) or not found:
+            menu.append_item(Gio.MenuItem.new("No other recent project", "win.recent-none"))
+            return
+        for project in found:
+            item = Gio.MenuItem.new(project.folder, None)
+            item.set_action_and_target_value("win.open-recent", GLib.Variant.new_string(project.folder))
+            menu.append_item(item)
+
+    def _configured_folders(self) -> Optional[list]:
+        """The folders the project settings (the project's .editorconfig) name, as absolute paths; None when the settings
+        name none. A key that is there with an empty value names none on purpose."""
+        values = SettingsStore(self.folder).read("project")
+        if ATTACHED_KEY not in values:
+            return None
+        return [os.path.normpath(os.path.join(self.folder, item)) for item in folder_list(values[ATTACHED_KEY])]
+
+    def _store_attached_folders(self) -> None:
+        """Writes the attached folders into the project settings, relative to the project folder, so that opening the
+        project again finds them there, whichever way they were attached."""
+        relative = [os.path.relpath(folder, self.folder) for folder in self.project_folders[1:]
+                    if folder not in self._linked]  # the links are kept in the projects file, not here
+        SettingsStore(self.folder).write("project", SETTINGS_BY_KEY[ATTACHED_KEY], folders_text(relative))
+
+    def _sync_attached_folders(self) -> None:
+        """After the settings are saved: the folders the project settings name become the attached folders, so that the
+        settings dialog and File > Add Folder agree. Settings that name no folders change nothing."""
+        configured = self._configured_folders()
+        if configured is None:
+            return
+        attached = [folder for folder in configured if os.path.isdir(folder) and folder != self.folder]
+        linked = [folder for folder in self._linked if os.path.isdir(folder) and folder not in attached]
+        if attached + linked != self.project_folders[1:]:
+            self.project_folders = [self.folder] + attached + linked
+            self._linked = linked
+            self._reload_project()
+            self.set_status(f"workspace: {len(self.project_folders)} folder(s)")
+            self._remember_project()
+
+    def show_linked_projects(self) -> LinksDialog:
+        """File > Linked Projects...: the projects linked to this one; a link brings its folder into the project."""
+        dialog = LinksDialog(self, lambda: list(self._linked), self.link_project_folder, self.unlink_project_folder)
+        dialog.present()
+        return dialog
+
+    def link_project_folder(self, path: str) -> Union[str, Failure]:
+        """Links another project to this one: its folder becomes part of this project now, and again whenever this project
+        is opened. The link is kept in the projects file. Returns the path of that file, or the reason it was not saved."""
+        folder = os.path.abspath(path)
+        saved = projects.link_project(self.folder, folder)
+        if isinstance(saved, Failure):
+            self.set_status(f"link not saved: {saved}")
+            return saved
+        if folder not in self.project_folders:
+            self.project_folders.append(folder)
+            self._linked.append(folder)
+        self._reload_project()
+        self.set_status(f"linked project {folder}")
+        return saved
+
+    def unlink_project_folder(self, path: str) -> Union[str, Failure]:
+        """Removes the link to another project. A folder that the project settings attach stays attached."""
+        folder = os.path.abspath(path)
+        saved = projects.unlink_project(self.folder, folder)
+        if isinstance(saved, Failure):
+            self.set_status(f"unlink not saved: {saved}")
+            return saved
+        if folder in self._linked:
+            self._linked.remove(folder)
+            if folder not in (self._configured_folders() or []) and folder in self.project_folders:
+                self.project_folders.remove(folder)
+        self._reload_project()
+        self.set_status(f"unlinked project {folder}")
+        return saved
 
     def set_project(self, folder: str) -> None:
         """The folder becomes the project: its tree, its run configurations, its settings and its index."""
@@ -900,6 +1073,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
             self.project_folders.append(folder)
         self._reload_project()
         self.set_status(f"workspace: {len(self.project_folders)} folder(s)")
+        self._store_attached_folders()  # the project settings keep the folders, so that they come back
         self._remember_project()
 
     def _reload_project(self) -> None:

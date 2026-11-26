@@ -584,9 +584,11 @@ class ProjectIndex:
     """Index of one or more project folders; ``excluded`` drops paths the workspace ignores."""
 
     def __init__(self, roots, cache_path: Optional[str] = None, excluded=None,
-                 progress: Optional[Progress] = None) -> None:
+                 progress: Optional[Progress] = None, settings_for=None) -> None:
         self.roots: List[str] = [os.path.abspath(r) for r in ([roots] if isinstance(roots, str) else roots)]
         self.excluded = excluded
+        # the settings a file is inspected with (an EditorSettings); the frame passes the settings of its editor
+        self.settings_for = settings_for if settings_for is not None else editorconfig.settings_for
         self.cache_path = cache_path
         self.progress = progress if progress is not None else Progress()  # the files read again are its steps
         self.files: Dict[str, FileEntry] = {}
@@ -844,7 +846,7 @@ class ProjectIndex:
         for path in sorted(self.files):
             with open(path, encoding="utf-8", errors="replace") as handle:
                 text = handle.read()
-            settings = editorconfig.settings_for(path)
+            settings = self.settings_for(path)
             detection = languages.detect_file(path, settings.custom)
             for item in diagnostics.analyze(text, detection, settings):
                 results.append(Inspection(path, item.line, item.column, item.severity, item.code, item.message))
