@@ -212,6 +212,17 @@ class Application extends PropertyObject
       line_width: 1
       line_type: 'solid'
 
+    -- TODO words in comments: a soft background with bold text; the message is the tooltip
+    highlight.define_default 'todo',
+      type: highlight.RECTANGLE
+      background: '#F7D774'
+      foreground: '#F7D774'
+      text_color: '#1E1B26'
+      height: 'text'
+      bold: true
+      line_width: 1
+      line_type: 'solid'
+
     _G.HOWL_EMBED_INSPECT = (path, rows) ->
       buffer = @_buffer_for_file File(path)
       return unless buffer
@@ -660,7 +671,7 @@ class Application extends PropertyObject
     }
 
     for b in *@buffers
-      continue unless b.file
+      continue unless b.file and not b.file.is_directory
       append session.buffers, {
         file: b.file.path
         last_shown: b.last_shown
@@ -854,7 +865,7 @@ class Application extends PropertyObject
       if restore_buffers
         for entry in *session.buffers
           file = File(entry.file)
-          continue unless file.exists
+          continue unless file.exists and not file.is_directory  -- a folder is never a buffer
           status, err = pcall ->
             buffer = @new_buffer mode.for_file file
             buffer.file = file

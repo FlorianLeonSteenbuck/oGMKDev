@@ -14,7 +14,7 @@ frame's layout, not a separate window. Details: `howl/OGMKDEV.md`.
 - Left: Files, Run configurations, Hierarchy (index), History (local history, patch sets, revert),
   Git (stage, unstage, diff, commit).
 - Bottom: Console (run output), Watches, Problems (diagnostics of the open file, inspections of the
-  folder), Search (search in files), TODO (TODO words in comments with priorities), Preview (Markdown, BareDown
+  folder), Search (search in files), TODO (TODO words in comments with priorities; in the editor they have a yellow background and bold text), Preview (Markdown, BareDown
   and image files, see below).
 - Tools: go to definition, find implementations, show type hierarchy, inspect project, refresh and clear
   the index; Search Everywhere and Quick Open.

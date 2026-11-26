@@ -3,7 +3,8 @@
 
 {:RGBA} = require 'ljglibs.gdk'
 require 'ljglibs.cairo.context'
-{:SCALE, :Layout, :Attribute, :Color, :cairo} = require 'ljglibs.pango'
+Pango = require 'ljglibs.pango'
+{:SCALE, :Layout, :Attribute, :Color, :cairo} = Pango
 
 styles = require 'aullar.styles'
 Styling = require 'aullar.styling'
@@ -204,13 +205,17 @@ get_text_object = (display_line, start_offset, end_offset, flair) ->
   if flair.text_color
     color = Color flair.text_color
     attributes\insert_before Attribute.Foreground(color.red, color.green, color.blue)
+  if flair.bold
+    attributes\insert_before Attribute.Weight(Pango.WEIGHT_BOLD)
+  if flair.italic
+    attributes\insert_before Attribute.Style(Pango.STYLE_ITALIC)
   layout.attributes = attributes
 
   width, height = layout\get_pixel_size!
   :layout, :width, :height
 
 need_text_object = (flair) ->
-  flair.text_color or flair.height == 'text'
+  flair.text_color or flair.height == 'text' or flair.bold or flair.italic
 
 {
   CUSTOM: 'custom'

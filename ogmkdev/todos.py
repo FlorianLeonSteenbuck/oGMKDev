@@ -124,6 +124,18 @@ def todos_in_file(path: str, keywords: Sequence[Tuple[str, int]]) -> List[Todo]:
     return todos_in_text(path, text, keywords)
 
 
+def todo_marks(path: str, text: str, keywords: Sequence[Tuple[str, int]]) -> List[Tuple[int, int, int, str, str]]:
+    """The TODO words of a file as editor hints: (line, start, end, "todo", message) with columns 1-based and end
+    exclusive. The span is the keyword's first occurrence in its line; the message is the comment from the keyword."""
+    lines = text.split("\n")
+    marks: List[Tuple[int, int, int, str, str]] = []
+    for todo in todos_in_text(path, text, keywords):
+        column = lines[todo.line - 1].find(todo.keyword)
+        if column >= 0:
+            marks.append((todo.line, column + 1, column + 1 + len(todo.keyword), "todo", todo.text))
+    return marks
+
+
 def todos_in_files(paths: Iterable[str], keywords: Sequence[Tuple[str, int]]) -> List[Todo]:
     found: List[Todo] = []
     for path in paths:

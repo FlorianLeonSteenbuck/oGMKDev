@@ -14,7 +14,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from .. import diagnostics, docblocks, editorconfig, index as index_module, indexbuild, languages  # noqa: E402
+from .. import diagnostics, docblocks, editorconfig, index as index_module, indexbuild, languages, todos  # noqa: E402
 from .. import templates  # noqa: E402
 from .. import settings as settings_module  # noqa: E402
 from ..settings import SettingsStore, appearance_mode  # noqa: E402
@@ -137,7 +137,14 @@ class AnalysisMixin:
                     continue
                 start, end = _hint_span(lines[item.line - 1], item.column)
                 rows.append((item.line, start, end, kind, f"{item.message} [{item.code}]"))
+        rows.extend(self._todo_marks(path, text))  # one call replaces the marks of the file: the TODOs go with them
         self.editors.hints(path, rows)
+
+    def _todo_marks(self, path: str, text: str):
+        """The TODO words of the file as hints of kind todo: the Howl editor draws them with a background."""
+        keywords = todos.parse_keywords(SettingsStore(self.folder).value("ogmkdev_todo_keywords", path)
+                                        or todos.DEFAULT_KEYWORDS)
+        return todos.todo_marks(path, text, keywords)
 
     def inspect_folder(self) -> None:
         """Inspections of the whole folder: unused and unresolved imports, missing methods, supertypes."""
