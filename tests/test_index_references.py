@@ -61,7 +61,7 @@ class ScriptReferencesTest(unittest.TestCase):
         self.assertEqual(sum(1 for name, _l, _c in found if name == "helper"), 1)
 
     def test_other_languages_give_none_yet(self):
-        self.assertEqual([], I.extract_references("a.php", "<?php $helper = 1;"))
+        self.assertEqual([], I.extract_references("a.css", "a { color: red; }\n"))
 
 
 class ProjectReferencesTest(unittest.TestCase):
@@ -122,6 +122,23 @@ class PhpReferencesTest(unittest.TestCase):
         refs = I.extract_references("/project/circle.php", PHP_SAMPLE)
         self.assertIn(("Circle", 7, 15), refs)
         self.assertFalse(any(name.startswith("\\") or "\\" in name for name, _l, _c in refs))
+
+
+TSX_SAMPLE = 'const card = (props: Props) => <Panel className="wrap">Add to cart {props.total}</Panel>;\n'
+TS_SAMPLE = "interface Shape { area(): number }\nconst s: Shape = make(); // Shape in a comment\nconst t = 'Shape';\n"
+
+
+class TypedScriptReferencesTest(unittest.TestCase):
+    def test_a_jsx_element_name_is_an_occurrence_and_jsx_text_is_not(self):
+        names = [name for name, _line, _column in I.extract_references("card.tsx", TSX_SAMPLE)]
+        self.assertIn("Panel", names)
+        self.assertIn("props", names)
+        self.assertNotIn("cart", names)
+        self.assertNotIn("Add", names)
+
+    def test_types_are_occurrences_with_their_positions(self):
+        found = I.extract_references("shape.ts", TS_SAMPLE)
+        self.assertEqual([(line, column) for name, line, column in found if name == "Shape"], [(1, 11), (2, 10)])
 
 
 if __name__ == "__main__":

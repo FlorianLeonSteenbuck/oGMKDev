@@ -24,6 +24,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from . import diagnostics, editorconfig, languages, markup, organize
 from .lexers import ecmascript_lexer as js_lexer
+from .parsers import javascript as jsparser
 from .lexers import php_lexer
 
 SKIP_DIRS = frozenset({".git", "__pycache__", "node_modules"})
@@ -67,8 +68,10 @@ class FileEntry:
 # Occurrence of an identifier: name, line and column (both 1-based, column in characters)
 Reference = Tuple[str, int, int]
 # Version of the index cache: a cache of another version is ignored and rebuilt
-CACHE_VERSION = 4
-REFERENCE_SCRIPT_EXTENSIONS = frozenset({".js", ".mjs", ".cjs"})
+CACHE_VERSION = 5
+REFERENCE_SCRIPT_EXTENSIONS = SCRIPT_EXTENSIONS
+# the parse options of a script: (typed, jsx); plain JavaScript reads JSX as the diagnostics do
+SCRIPT_DIALECTS = {".ts": (True, False), ".tsx": (True, True), ".jsx": (False, True)}
 
 
 @dataclass(frozen=True)
@@ -348,6 +351,23 @@ def _references_python(source: str) -> List[Reference]:
     return found
 
 
+def _references_parsed(source: str, typed: bool, jsx: bool) -> Optional[List[Reference]]:
+    """The identifiers and JSX names of a parsed script; JSX text is no name. None: the script does not parse."""
+    try:
+        tree = jsparser.parse(source, typed=typed, jsx=jsx)
+    except (jsparser.ParseError, RecursionError):
+        return None
+    found: List[Reference] = []
+    pending = [tree]
+    while pending:
+        node = pending.pop()
+        if node.kind in ("Identifier", "JSXName"):
+            line, column = _position(source, node.start)
+            found.append((source[node.start:node.end], line, column))
+        pending.extend(getattr(node, "children", []))
+    return sorted(found, key=lambda reference: (reference[1], reference[2]))
+
+
 def _references_script(source: str) -> List[Reference]:
     starts = [0] + [index + 1 for index, char in enumerate(source) if char == "\n"]
     found: List[Reference] = []
@@ -375,15 +395,17 @@ def _references_php(source: str) -> List[Reference]:
 
 
 def extract_references(path: str, source: str) -> List[Reference]:
-    """Identifier occurrences of a PHP, Python or JavaScript file. Comments and strings hold none; keywords are
-    not identifiers. Other languages give no references yet."""
+    """Identifier occurrences of a PHP, Python or script file (JavaScript, TypeScript, JSX). Comments, strings and
+    JSX text hold none; keywords are not identifiers. A script that does not parse is read as tokens. Other
+    languages give no references yet."""
     extension = os.path.splitext(path)[1].lower()
     if extension in PHP_EXTENSIONS:
         return _references_php(source)
     if extension in PYTHON_EXTENSIONS:
         return _references_python(source)
     if extension in REFERENCE_SCRIPT_EXTENSIONS:
-        return _references_script(source)
+        parsed = _references_parsed(source, *SCRIPT_DIALECTS.get(extension, (False, True)))
+        return parsed if parsed is not None else _references_script(source)
     return []
 
 
