@@ -125,6 +125,13 @@ class SettingsDialogTests(unittest.TestCase):
         dialog.save()
         self.assertFalse(os.path.exists(os.path.join(self.project, ".editorconfig")))
 
+    def test_a_checkbox_toggles_the_boolean_setting(self):
+        dialog = self.open_dialog(select="Editor / Files")
+        dialog._rows["trim_trailing_whitespace"][1].set_active(True)
+        self.assertEqual(dialog.values()["trim_trailing_whitespace"], "true")
+        dialog._rows["trim_trailing_whitespace"][1].set_active(False)
+        self.assertEqual(dialog.values()["trim_trailing_whitespace"], "false")
+
     def test_a_php_setting_of_the_global_file_is_shown_from_its_own_section(self):
         os.makedirs(os.path.dirname(self.global_file))
         with open(self.global_file, "w", encoding="utf-8") as handle:

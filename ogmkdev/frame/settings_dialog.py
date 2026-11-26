@@ -198,11 +198,9 @@ class SettingsDialog(Gtk.Window):
     def _control_for(self, setting: Setting) -> Gtk.Widget:
         current = model_text(self.model, setting)
         if setting.kind == "bool":
-            switch = Gtk.Switch(active=current == "true")
-            switch.set_valign(Gtk.Align.CENTER)
-            switch.connect("notify::active", lambda widget, _p: self._changed(
-                setting, "true" if widget.get_active() else "false"))
-            return switch
+            check = Gtk.CheckButton(active=current == "true")
+            check.connect("toggled", lambda widget: self._changed(setting, "true" if widget.get_active() else "false"))
+            return check
         if setting.kind == "int":
             spin = Gtk.SpinButton.new_with_range(0, 100000, 1)
             spin.set_value(float(current))

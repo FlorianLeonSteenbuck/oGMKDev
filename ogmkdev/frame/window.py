@@ -82,7 +82,7 @@ def theme_folder() -> str:
 class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin, TabsMixin, PanelsMixin,
             Gtk.ApplicationWindow):
     _edge_key: Optional[tuple] = None
-    _loose_root = None  # the tree entry 'Loose files' (a Gtk.TreeIter) while it exists
+    _loose_ref: Optional[Gtk.TreeRowReference] = None  # the tree entry 'Loose files', as a row reference
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
                  mode: Optional[str] = None, scheme: str = "blend", autosave: Optional[bool] = None,
                  clear_index: bool = False) -> None:
@@ -417,6 +417,14 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         role = self.workspace.role(path)
         return theme.role_colour(self.mode, role) if role else None
 
+    def _loose_iter(self) -> Optional[Gtk.TreeIter]:
+        """The tree entry 'Loose files' as an iterator, or None when there is no such entry. A row reference follows
+        the entry through the changes of the tree; an iterator would be stale once the tree was cleared."""
+        if self._loose_ref is None or not self._loose_ref.valid():
+            self._loose_ref = None
+            return None
+        return self.tree_store.get_iter(self._loose_ref.get_path())
+
     def _sync_loose(self) -> None:
         """Open files the tree does not show (ignored, hidden or outside the folders) hang loose below the
         'Loose files' entry at the end of the tree; a file that is closed leaves it again."""
@@ -424,8 +432,9 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
                  if self.workspace.folder_of(path) is None or self.workspace.is_hidden(path)]
         shown = set(loose)
         present = set()
-        if self._loose_root is not None:
-            child = self.tree_store.iter_children(self._loose_root)
+        root = self._loose_iter()
+        if root is not None:
+            child = self.tree_store.iter_children(root)
             while child is not None:
                 following = self.tree_store.iter_next(child)
                 path = self.tree_store[child][1]
@@ -437,22 +446,26 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         for path in loose:
             if path in present:
                 continue
-            if self._loose_root is None:
-                self._loose_root = self.tree_store.append(None, [LOOSE_LABEL, "", "document-properties", None])
-            self.tree_store.append(self._loose_root, [os.path.basename(path), path, "text-x-generic", None])
-            self.tree.expand_row(self.tree_store.get_path(self._loose_root), False)
-        if self._loose_root is not None and not self.tree_store.iter_n_children(self._loose_root):
-            self.tree_store.remove(self._loose_root)
-            self._loose_root = None
+            root = self._loose_iter()
+            if root is None:
+                root = self.tree_store.append(None, [LOOSE_LABEL, "", "document-properties", None])
+                self._loose_ref = Gtk.TreeRowReference.new(self.tree_store, self.tree_store.get_path(root))
+            self.tree_store.append(root, [os.path.basename(path), path, "text-x-generic", None])
+            self.tree.expand_row(self.tree_store.get_path(root), False)
+        root = self._loose_iter()
+        if root is not None and not self.tree_store.iter_n_children(root):
+            self.tree_store.remove(root)
+            self._loose_ref = None
 
     def _reveal_loose(self, path: str) -> bool:
         """Selects an open file that hangs loose below 'Loose files'."""
-        if self._loose_root is None:
+        root = self._loose_iter()
+        if root is None:
             return False
-        child = self.tree_store.iter_children(self._loose_root)
+        child = self.tree_store.iter_children(root)
         while child is not None:
             if self.tree_store[child][1] == path:
-                self.tree.expand_row(self.tree_store.get_path(self._loose_root), False)
+                self.tree.expand_row(self.tree_store.get_path(root), False)
                 self.tree.get_selection().select_iter(child)
                 self.tree.scroll_to_cell(self.tree_store.get_path(child), None, True, 0.5, 0.0)
                 return True

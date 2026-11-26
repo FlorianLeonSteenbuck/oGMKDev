@@ -188,8 +188,11 @@ class List extends PropertyObject
         show_status = true
 
       @page_size = p_size
+      -- too short for one item: the list shows its status line, and the draw does not fail
       if @has_items and @page_size < 1
-        error 'insufficient height - cant display any items'
+        @page_size = 0
+        show_status = true
+        display_size = header_rows + 1
 
       items = {}
       last_idx = @page_start_idx + @page_size - 1

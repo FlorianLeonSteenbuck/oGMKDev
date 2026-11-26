@@ -238,7 +238,11 @@ class Application extends PropertyObject
         for item in *wanted
           line = buffer.lines[item[1]]
           if line
-            buffer.markers\add {{name: 'change-' .. item[2], start_offset: line.start_pos, end_offset: line.start_pos + 1}}
+            -- the mark covers one character of the line, but no further than the end of the buffer: the empty line
+            -- after the last newline starts at that end, and a mark beyond it is an Invalid offset
+            stop = line.start_pos + 1
+            stop = buffer.length + 1 if stop > buffer.length + 1
+            buffer.markers\add {{name: 'change-' .. item[2], start_offset: line.start_pos, end_offset: stop}}
         ed.view.gutter\refresh! if ed.view and ed.view.gutter
 
     -- the display options of the editors that show a file (EditorConfig's ogmkdev_syntax_highlight and
