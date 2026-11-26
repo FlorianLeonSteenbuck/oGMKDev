@@ -14,7 +14,7 @@ frame's layout, not a separate window. Details: `howl/OGMKDEV.md`.
 - Left: Files, Run configurations, Hierarchy (index), History (local history, patch sets, revert),
   Git (stage, unstage, diff, commit).
 - Bottom: Console (run output), Watches, Problems (diagnostics of the open file, inspections of the
-  folder), Search (search in files), TODO (TODO words in comments with priorities; in the editor they have a yellow background and bold text), Preview (Markdown, BareDown
+  folder), Search (search in files), TODO (TODO words in comments with priorities; in the editor they have a yellow background and bold text; the list follows saves and index builds), Preview (Markdown, BareDown
   and image files, see below).
 - Tools: go to definition, find implementations, show type hierarchy, inspect project, refresh and clear
   the index; Search Everywhere and Quick Open.
@@ -209,6 +209,10 @@ the types `OgmkdevGdbConfigurationType` (options `PROGRAM`, `ARGUMENTS`, `WORKIN
 - **Import KDevelop Project** (File > Import KDevelop Project...): the launch configurations of a project file
   (`.kdev4`) with a native application type become run configurations in the project's folder; the folder opens as the
   project and its tree stays as it is. Other types are reported as skipped.
+- **Import KDevelop Sessions** (File > Import KDevelop Sessions): the projects that were open in KDevelop's sessions
+  (`$XDG_DATA_HOME/kdevelop/sessions`, the `sessionrc` file of each session) become recent projects. Projects already
+  known keep their folders, and nothing is opened. KDevelop's `kdeveloprc` is not imported: it holds window layout only,
+  and ogmkdev has no setting for it.
 - **Import JetBrains Project** (File > Import JetBrains Project...): the folder opens as the project. Its shared run
   configurations (`.run` and `.idea/runConfigurations`) are used where they are, nothing is copied. The configurations
   that can run here are reported; the others are listed. Module files, code styles and the workspace are not read.
@@ -245,6 +249,11 @@ ogmkdev_diagnostic_php_match = off        # per PHP feature: ogmkdev_diagnostic_
 [*.php]
 ogmkdev_dialect = 8.6                     # PHP version of the files
 ```
+
+**Folder rules** (Settings > Custom, `ogmkdev_folder_rules`): `NAME=ROLE` pairs separated by `;`, for example
+`*_api=build; ui_*=assets; tests=none`. NAME is matched against the folder's path and against its name, with `*` and `?`.
+ROLE is `test`, `source`, `build`, `artifacts`, `assets` or `none`. The first matching rule decides the role of a folder
+and beats the default folder names; `none` leaves the folder without a role.
 
 ## PHP versions
 
@@ -404,6 +413,6 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
 
 - The `.rpm` package is built with rpmbuild and its frame starts from the extracted tree; it has not been
   installed on openSUSE yet.
-- KDevelop import: the launch configurations of a project file are imported; the user settings of KDevelop 4 and
-  KDevelop (the session and the `kdeveloprc` files) are not, because no sample files of them are in the repository.
+- KDevelop: the launch configurations of a project file and the projects of the sessions are imported. KDevelop's
+  `kdeveloprc` (window layout only) is not, because ogmkdev has no setting for it.
 - A crash with SIGABRT (seen once, not reproduced) is not explained yet.
