@@ -136,6 +136,33 @@ def todo_marks(path: str, text: str, keywords: Sequence[Tuple[str, int]]) -> Lis
     return marks
 
 
+class TodoCache:
+    """The TODO words of the workspace files, kept between refreshes: a file is read again only when its modification
+    time or size changed, or when the keywords did. The list is then updated like the index, not read anew each time."""
+
+    def __init__(self) -> None:
+        self._entries: Dict[str, Tuple[int, int, Tuple[Tuple[str, int], ...], List[Todo]]] = {}
+
+    def collect(self, paths: Iterable[str], keywords: Sequence[Tuple[str, int]]) -> List[Todo]:
+        key = tuple(keywords)
+        found: List[Todo] = []
+        seen = set()
+        for path in paths:
+            seen.add(path)
+            try:
+                stat = os.stat(path)
+            except OSError:
+                continue
+            entry = self._entries.get(path)
+            if entry is None or entry[0] != stat.st_mtime_ns or entry[1] != stat.st_size or entry[2] != key:
+                entry = (stat.st_mtime_ns, stat.st_size, key, todos_in_file(path, keywords))
+                self._entries[path] = entry
+            found.extend(entry[3])
+        for path in [path for path in self._entries if path not in seen]:
+            del self._entries[path]  # the file is gone or no longer in the workspace
+        return sorted(found, key=lambda todo: (todo.priority, todo.path, todo.line))
+
+
 def todos_in_files(paths: Iterable[str], keywords: Sequence[Tuple[str, int]]) -> List[Todo]:
     found: List[Todo] = []
     for path in paths:

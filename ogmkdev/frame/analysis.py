@@ -125,6 +125,7 @@ class AnalysisMixin:
                 for item in found]
         self._set_problems(rows)
         self._mark_in_editor(path, text, found)
+        self.refresh_todo_list()  # a saved file may have changed its TODO words
 
     def _mark_in_editor(self, path: str, text: str, found) -> None:
         """Error hints in the Howl editor of the file: wavy underlines, the message shows at the line."""
@@ -203,6 +204,7 @@ class AnalysisMixin:
             self._watch_folders(folders)
             self.set_status(f"index ready: {len(built.symbols)} symbols in {len(built.files)} files")
             self.refresh_index_view()
+            self.refresh_todo_list()  # the TODO words come with the index: the list follows the build
         else:
             self.set_status(f"index could not be built: {error}")
         return False

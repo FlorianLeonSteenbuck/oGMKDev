@@ -204,14 +204,22 @@ class PanelsMixin:
         return todos.parse_keywords(store.value("ogmkdev_todo_keywords") or settings_module.SETTINGS_BY_KEY[
             "ogmkdev_todo_keywords"].default)
 
-    def refresh_todos(self) -> None:
-        keywords = self._keywords()
-        found = todos.todos_in_files(workspace_files(self.workspace), keywords)
+    def refresh_todos(self, announce: bool = True) -> None:
+        """The TODO list of the workspace. The list keeps what it read: only the files that changed are read again."""
+        if not hasattr(self, "_todo_cache"):
+            self._todo_cache = todos.TodoCache()
+        found = self._todo_cache.collect(workspace_files(self.workspace), self._keywords())
         self.todo_store.clear()
         for todo in found:
             where = f"{os.path.relpath(todo.path, self.folder)}:{todo.line}"
             self.todo_store.append([f"P{todo.priority}", todo.keyword, where, todo.text, todo])
-        self.set_status(f"{len(found)} TODO(s) in comments")
+        if announce:
+            self.set_status(f"{len(found)} TODO(s) in comments")
+
+    def refresh_todo_list(self) -> None:
+        """After a save or an index build the TODO list is current, if the list is built at all."""
+        if hasattr(self, "todo_store"):
+            self.refresh_todos(announce=False)
 
     def _on_todo_activated(self, _view, path, _column) -> None:
         todo = self.todo_store[self.todo_store.get_iter(path)][4]
