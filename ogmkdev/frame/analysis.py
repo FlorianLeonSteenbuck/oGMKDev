@@ -162,7 +162,7 @@ class AnalysisMixin:
 
     def _request_index_build(self, reason: str) -> None:
         if getattr(self, "_index_builder", None) is None:
-            self._index_builder = indexbuild.IndexBuilder(self._deliver_index)
+            self._index_builder = indexbuild.IndexBuilder(self._deliver_index, self.task_progress)
         self.set_status(reason)
         self._index_builder.request(self.workspace.folders, _cache_path(self.folder), self.workspace.is_hidden)
 

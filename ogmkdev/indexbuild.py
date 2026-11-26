@@ -15,6 +15,7 @@ import threading
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from .index import ProjectIndex
+from .progress import Progress
 
 Deliver = Callable[[Optional[ProjectIndex], List[str], Optional[str]], None]
 Request = Tuple[Sequence[str], Optional[str], Optional[Callable[[str], bool]]]
@@ -31,8 +32,9 @@ def watched_directories(roots: Sequence[str], excluded: Optional[Callable[[str],
 
 
 class IndexBuilder:
-    def __init__(self, deliver: Deliver) -> None:
+    def __init__(self, deliver: Deliver, progress: Optional[Progress] = None) -> None:
         self._deliver = deliver
+        self.progress = progress if progress is not None else Progress()
         self._lock = threading.Lock()
         self._running = False
         self._pending: Optional[Request] = None
@@ -55,8 +57,9 @@ class IndexBuilder:
         index: Optional[ProjectIndex] = None
         folders: List[str] = []
         error: Optional[str] = None
+        self.progress.start("Index")
         try:
-            index = ProjectIndex(roots, cache_path=cache_path, excluded=excluded)
+            index = ProjectIndex(roots, cache_path=cache_path, excluded=excluded, progress=self.progress)
             folders = watched_directories(index.roots, excluded)
             if cache_path:
                 try:
@@ -65,6 +68,7 @@ class IndexBuilder:
                     pass  # the cache is an optimisation; the index is complete without it
         except Exception as problem:  # the worker must always finish and free the builder
             error = str(problem) or problem.__class__.__name__
+        self.progress.finish()  # before the builder is free again: a reader that sees it free sees the task ended
         with self._lock:
             self._running = False
             pending, self._pending = self._pending, None

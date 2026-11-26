@@ -12,9 +12,11 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from ogmkdev import __version__, filetemplates, index as index_module, markup, newclass, scaffold  # noqa: E402
+from ogmkdev import __version__, filetemplates, index as index_module, markup, newclass, projects, scaffold  # noqa: E402
 from ogmkdev.settings import SettingsStore, appearance_mode  # noqa: E402
 from ogmkdev.theme import MODES, SCHEMES  # noqa: E402
+from ogmkdev.outcome import Failure  # noqa: E402
+from ogmkdev.progress import Progress  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from ogmkdev.preview import kind_of as preview_kind  # noqa: E402
 from . import theme  # noqa: E402
@@ -96,13 +98,15 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         self.add_css_class("ogmkdev-frame")
         self.folder = os.path.abspath(folder)
         self.project_folders = [self.folder]  # the folders of the workspace (File > Add Folder)
+        self.task_progress = Progress()  # the background task the status bar shows
+        self._startup_notice = self._restore_project()  # the folders attached when the project was open last
         # Autosave saves a modified file AUTOSAVE_SECONDS after it was changed: the flag, or the setting
         self.autosave_enabled = autosave if autosave is not None else (
             SettingsStore(self.folder).value("ogmkdev_autosave") == "on")
         self._dirty_since: dict = {}
         self._poll_source = 0
         self.workspace = Workspace.from_properties(
-            [self.folder], SettingsStore(self.folder).effective_for(os.path.join(self.folder, "_")))
+            self.project_folders, SettingsStore(self.folder).effective_for(os.path.join(self.folder, "_")))
         self.editors = Editors()
         self.area = EditorArea(self)
         self.set_default_size(1500, 900)
@@ -140,12 +144,18 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         self.find_entry.set_margin_bottom(4)
         root.append(self.find_entry)
 
-        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         bar.add_css_class("ogmkdev-statusbar")
         self.status = Gtk.Label(xalign=0)
         self.status.set_hexpand(True)
+        self.progress_bar = Gtk.ProgressBar()  # the background task: shown while one runs
+        self.progress_bar.set_valign(Gtk.Align.CENTER)
+        self.progress_bar.set_show_text(True)
+        self.progress_bar.set_size_request(240, -1)
+        self.progress_bar.set_visible(False)
         self.position = Gtk.Label(xalign=1)
         bar.append(self.status)
+        bar.append(self.progress_bar)
         bar.append(self.position)
         root.append(bar)
 
@@ -161,7 +171,8 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
             self.open_file(path)
         # the Howl theme is selected once Howl runs (the first editor starts it)
         self._apply_howl_theme()
-        self.set_status(f"folder {self.folder}")
+        self.set_status(f"folder {self.folder}" + (f"; {self._startup_notice}" if self._startup_notice else ""))
+        self._remember_project()
         self._poll_source = GLib.timeout_add(500, self._poll)
         self.connect("close-request", self._on_close_request)
 
@@ -682,6 +693,21 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
 
     # ------------------------------------------------- live status, history
 
+    def _update_progress(self) -> None:
+        """The background task in the status bar: a bar with its share while the task knows its size, a bar that
+        pulses while it does not, and no bar while no task runs."""
+        task = self.task_progress
+        self.progress_bar.set_visible(task.running)
+        if not task.running:
+            return
+        if task.total > 0:
+            done = min(task.done, task.total)
+            self.progress_bar.set_fraction(done / task.total)
+            self.progress_bar.set_text(f"{task.label}: {done} of {task.total} files")
+        else:
+            self.progress_bar.pulse()
+            self.progress_bar.set_text(f"{task.label}: scanning the folders")
+
     def _poll(self) -> bool:
         info = self.editors.status()
         path = info["path"] if info else self.area.current_path()
@@ -694,6 +720,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
         self._follow_focus(path)
         self._follow_changes(info, path)
         self._sync_loose()
+        self._update_progress()
         self._follow_structure(path)
         self._follow_preview()
         click = self.editors.take_click()
@@ -804,12 +831,33 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
             on_chosen(native.get_file().get_path())
         self._folder_native = None
 
+    def _restore_project(self) -> str:
+        """Attaches the folders the project had the last time it was open. Returns what to tell the user: how many
+        folders came back, or why the projects file could not be read (the project then opens with its own folder)."""
+        attached = projects.attached_folders(self.folder)
+        if isinstance(attached, Failure):
+            return f"projects file not read: {attached}"
+        for folder in attached:
+            if folder not in self.project_folders:
+                self.project_folders.append(folder)
+        restored = len(self.project_folders) - 1
+        return f"{restored} attached folder(s) restored" if restored else ""
+
+    def _remember_project(self) -> None:
+        """Saves the project with the folders attached to it, so that opening it again restores them. A projects file
+        that cannot be read is not overwritten; the status bar tells why nothing was saved."""
+        saved = projects.remember(self.folder, self.project_folders[1:])
+        if isinstance(saved, Failure):
+            self.set_status(f"project not saved: {saved}")
+
     def set_project(self, folder: str) -> None:
         """The folder becomes the project: its tree, its run configurations, its settings and its index."""
         self.folder = os.path.abspath(folder)
         self.project_folders = [self.folder]
+        notice = self._restore_project()
         self._reload_project()
-        self.set_status(f"project {self.folder}")
+        self.set_status(f"project {self.folder}" + (f"; {notice}" if notice else ""))
+        self._remember_project()
 
     def _add_workspace_folder(self, folder: str) -> None:
         folder = os.path.abspath(folder)
@@ -817,6 +865,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
             self.project_folders.append(folder)
         self._reload_project()
         self.set_status(f"workspace: {len(self.project_folders)} folder(s)")
+        self._remember_project()
 
     def _reload_project(self) -> None:
         """Rebuilds what depends on the project folders: the workspace, the tree, the run list and the index

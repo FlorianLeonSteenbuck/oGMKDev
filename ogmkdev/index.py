@@ -28,6 +28,7 @@ from .parsers import javascript as jsparser
 from . import php_analysis
 from .parsers import php as phpparser
 from .lexers import sql_lexer
+from .progress import Progress
 
 SKIP_DIRS = frozenset({".git", "__pycache__", "node_modules"})
 PHP_EXTENSIONS = frozenset({".php", ".phtml"})
@@ -582,10 +583,12 @@ def _extract_markup(source: str, path: str) -> List[Symbol]:
 class ProjectIndex:
     """Index of one or more project folders; ``excluded`` drops paths the workspace ignores."""
 
-    def __init__(self, roots, cache_path: Optional[str] = None, excluded=None) -> None:
+    def __init__(self, roots, cache_path: Optional[str] = None, excluded=None,
+                 progress: Optional[Progress] = None) -> None:
         self.roots: List[str] = [os.path.abspath(r) for r in ([roots] if isinstance(roots, str) else roots)]
         self.excluded = excluded
         self.cache_path = cache_path
+        self.progress = progress if progress is not None else Progress()  # the files read again are its steps
         self.files: Dict[str, FileEntry] = {}
         self._by_name: Dict[str, List[Symbol]] = {}
         self._subtypes: Dict[str, List[str]] = {}
@@ -620,6 +623,7 @@ class ProjectIndex:
             if path not in current:
                 del self.files[path]
                 counts["removed"] += 1
+        todo: List[Tuple[str, int, int]] = []
         for path, (mtime, size) in current.items():
             entry = self.files.get(path)
             if entry is None:
@@ -628,7 +632,11 @@ class ProjectIndex:
                 counts["changed"] += 1
             else:
                 continue
+            todo.append((path, mtime, size))
+        self.progress.expect(len(todo))
+        for path, mtime, size in todo:
             self._index_file(path, mtime, size)
+            self.progress.step()
         if any(counts.values()):
             self._rebuild()
         return counts
