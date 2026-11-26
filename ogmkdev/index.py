@@ -67,7 +67,7 @@ class FileEntry:
 # Occurrence of an identifier: name, line and column (both 1-based, column in characters)
 Reference = Tuple[str, int, int]
 # Version of the index cache: a cache of another version is ignored and rebuilt
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 REFERENCE_SCRIPT_EXTENSIONS = frozenset({".js", ".mjs", ".cjs"})
 
 
@@ -233,6 +233,36 @@ def _extract_php(source: str, path: str) -> List[Symbol]:
 
 _PY_CLASS = re.compile(r"^class\s+(\w+)\s*(?:\(([^)]*)\))?\s*:", re.M)
 _PY_DEF = re.compile(r"^def\s+(\w+)\s*\(", re.M)
+_PY_METHOD = re.compile(r"(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(")
+
+
+def _python_methods(source: str) -> List[Tuple[str, str, int, int]]:
+    """(class, method, line, column) of the methods written directly in the body of a top-level class. The body is
+    the run of lines indented like its first statement; a line at column 0 that is neither blank nor a comment ends
+    it, so the functions of a method and the members of a nested class are left out."""
+    found: List[Tuple[str, str, int, int]] = []
+    owner: Optional[str] = None
+    body_indent: Optional[str] = None
+    for number, text in enumerate(source.split("\n"), start=1):
+        stripped = text.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not text[0].isspace():
+            header = _PY_CLASS.match(text)
+            owner = header.group(1) if header else None
+            body_indent = None
+            continue
+        if owner is None:
+            continue
+        indent = text[: len(text) - len(stripped)]
+        if body_indent is None:
+            body_indent = indent
+        if indent != body_indent:
+            continue
+        method = _PY_METHOD.match(text, len(indent))
+        if method:
+            found.append((owner, method.group(1), number, method.start(1) + 1))
+    return found
 
 
 def _extract_python(source: str, path: str) -> List[Symbol]:
@@ -244,6 +274,8 @@ def _extract_python(source: str, path: str) -> List[Symbol]:
     for match in _PY_DEF.finditer(source):
         line, column = _position(source, match.start(1))
         symbols.append(Symbol(match.group(1), "function", path, line, column))
+    for owner, method, line, column in _python_methods(source):
+        symbols.append(Symbol(f"{owner}::{method}", "method", path, line, column, container=owner))
     return symbols
 
 

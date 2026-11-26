@@ -353,8 +353,7 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
   of the stopped program and the watch expressions. `tests/test_ui_frame_debug.py` runs the XDebug and
   the GDB sessions through the frame.
 - Python and JavaScript references are identifier occurrences (comments and strings are skipped); the other
-  languages have no references yet. Methods of Python classes are not in the index, so the HTML export has no
-  page entry for them.
+  languages have no references yet.
 - Outline and navigation on top of the ECMAScript tree of `ogmkdev/parsers/javascript.py`.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - The `.rpm` package is written but has not been built on openSUSE.
