@@ -29,16 +29,19 @@ test -f howl/src/libhowl.so || sh packaging/build-howl.sh
 
 %install
 sh packaging/install-tree.sh %{buildroot} %{_libdir}
+# RPM installs the documents itself (%doc, %license); the copy install-tree.sh made is removed, so that
+# no document is left in the build root without being packaged.
+rm -rf %{buildroot}/usr/share/doc/ogmkdev
 
 %files
 %license LICENSE
+%license howl/LICENSE.md
 %doc README.md THIRD_PARTY_NOTICES.md
 %{_bindir}/ogmkdev
 %{_libdir}/ogmkdev/libhowl.so
 %{_datadir}/ogmkdev
 %{_datadir}/applications/ogmkdev.desktop
 %{_datadir}/icons/hicolor/scalable/apps/ogmkdev.svg
-%{_docdir}/ogmkdev
 
 %changelog
 * Thu Nov 26 2026 ogmkdev maintainers <ogmkdev@localhost> - 0.1.1-1
