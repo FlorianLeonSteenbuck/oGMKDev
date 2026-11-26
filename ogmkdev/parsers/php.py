@@ -553,10 +553,9 @@ class _Parser:
             while self._is_op("|"):
                 self._advance()
                 types.append(self._name())
-            if self.tok.kind == "variable":
-                self._variable_token()
+            variables = [self._variable_token()] if self.tok.kind == "variable" else []
             self._close(")", opener)
-            children.append(Node("CatchClause", catch_start, self.prev_end, types + [self._block()]))
+            children.append(Node("CatchClause", catch_start, self.prev_end, types + variables + [self._block()]))
         if self._is_word("finally"):
             self._advance()
             children.append(self._block())
@@ -802,6 +801,7 @@ class _Parser:
                 self._advance()
                 self._member_name()
                 self._expect_op(")")
+                member_flags.append("asymmetric")
         if self._is_word("const"):
             self._advance()
             children: List[Node] = []
@@ -832,8 +832,10 @@ class _Parser:
             if not self._is_op(","):
                 break
             self._advance()
-        if self._is_op("{"):  # property hooks (PHP 8.4): read as one balanced block
+        if self._is_op("{"):  # property hooks (PHP 8.4): read as one balanced block, which is a PropertyHooks node
+            hooks_start = self.tok.start
             self._balanced_block()
+            children.append(Node("PropertyHooks", hooks_start, self.prev_end, []))
         else:
             self._terminator()
         return Node("PropertyDeclaration", start, self.prev_end, attributes + children, flags=_flags(*member_flags))
@@ -1003,7 +1005,13 @@ class _Parser:
         args: List[Node] = []
         while not self._is_op(")") and self.tok.kind != "eof":
             start = self.tok.start
-            if self._is_op("..."):
+            if self._is_op("?") and (self._is_op(",", self._at(1)) or self._is_op(")", self._at(1))):
+                self._advance()  # a placeholder of a partial application (PHP 8.6): f(?, 1)
+                args.append(Node("ArgumentPlaceholder", start, self.prev_end, [], text="?"))
+            elif self._is_op("...") and (self._is_op(",", self._at(1)) or self._is_op(")", self._at(1))):
+                self._advance()  # f(1, ...): the rest of the arguments are placeholders too
+                args.append(Node("ArgumentPlaceholder", start, self.prev_end, [], text="..."))
+            elif self._is_op("..."):
                 self._advance()
                 args.append(Node("Spread", start, self.prev_end, [self.expression()]))
             elif self._is_name() and self._is_op(":", self._at(1)):
@@ -1116,6 +1124,11 @@ class _Parser:
                 return Node("IncludeExpression", token.start, self.prev_end, [self.expression()], text=word)
             if word == "clone":
                 self._advance()
+                if self._is_op("("):  # clone($object) or, since PHP 8.5, clone($object, ['property' => value])
+                    arguments = self._arguments()
+                    if len(arguments.children) == 1 and arguments.children[0].kind != "Spread":
+                        return Node("CloneExpression", token.start, self.prev_end, [self.postfix(arguments.children[0])])
+                    return Node("CloneExpression", token.start, self.prev_end, [arguments], flags=_flags("with"))
                 return Node("CloneExpression", token.start, self.prev_end, [self.postfix(self.primary())])
         return self.postfix(self.primary())
 
@@ -1168,11 +1181,14 @@ class _Parser:
                                     [node, variable, self._arguments()], flags=_flags("dynamic"))
                     else:
                         node = Node("StaticProperty", node.start, self.prev_end, [node, variable])
-                elif self._is_op("{"):
+                elif self._is_op("{"):  # a dynamic name: $class::{$name}(), or the constant $class::{$name}
                     self._advance()
                     expression = self.expression()
                     self._expect_op("}")
-                    node = Node("StaticCall", node.start, self.prev_end, [node, expression, self._arguments()])
+                    if self._is_op("("):
+                        node = Node("StaticCall", node.start, self.prev_end, [node, expression, self._arguments()])
+                    else:
+                        node = Node("ClassConstant", node.start, self.prev_end, [node, expression], flags=_flags("dynamic"))
                 elif self._is_name():
                     member = self._name()
                     if self._is_op("("):

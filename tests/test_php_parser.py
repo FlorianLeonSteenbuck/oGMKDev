@@ -184,5 +184,16 @@ class AsymmetricVisibilityTest(unittest.TestCase):
         self.assertEqual([node.children[-1].children[0].text for node in properties], ["$x", "$y"])
 
 
+class CatchVariableTest(unittest.TestCase):
+    """A catch clause keeps its variable as a node; a clause without one has no Variable child."""
+
+    def test_the_catch_variable_is_a_node_of_its_clause(self):
+        tree = P.parse("<?php try {} catch (E $e) {} catch (F) {}")
+        clauses = [node for node in tree.walk() if node.kind == "CatchClause"]
+        self.assertEqual(len(clauses), 2)
+        self.assertEqual([child.text for child in clauses[0].children if child.kind == "Variable"], ["$e"])
+        self.assertNotIn("Variable", [child.kind for child in clauses[1].children])
+
+
 if __name__ == "__main__":
     unittest.main()

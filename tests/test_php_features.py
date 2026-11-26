@@ -61,6 +61,28 @@ class FeatureDetectionTests(unittest.TestCase):
         self.assertIn("first-class-callable", {f.feature for f in F.analyze("<?php f(...);")})
         self.assertNotIn("partial-application", {f.feature for f in F.analyze("<?php f(...);")})
 
+    def test_a_catch_with_a_variable_is_not_a_non_capturing_catch(self):
+        self.assertNotIn("non-capturing-catch", {f.feature for f in F.analyze("<?php try {} catch (E $e) {}")})
+        self.assertIn("non-capturing-catch", {f.feature for f in F.analyze("<?php try {} catch (E) {}")})
+
+    def test_a_static_call_with_braces_is_a_call_not_a_constant(self):
+        self.assertNotIn("dynamic-class-constant", {f.feature for f in F.analyze("<?php A::{'b'}();")})
+        self.assertIn("dynamic-class-constant", {f.feature for f in F.analyze("<?php A::{'b'};")})
+
+    def test_findings_sit_on_the_keyword_or_operator_that_makes_them(self):
+        readonly = {f.feature: (f.line, f.column) for f in F.analyze("<?php class A { public readonly int $x = 1; }")}
+        self.assertEqual(readonly["readonly-property"], (1, 24))
+        self.assertEqual(readonly["readonly-defaults"], (1, 24))
+        hooks = {f.feature: (f.line, f.column) for f in F.analyze("<?php class A { public int $x { get => 1; } }")}
+        self.assertEqual(hooks["property-hooks"], (1, 28))
+        pipe = {f.feature: (f.line, f.column) for f in F.analyze("<?php $a |> strlen(?);")}
+        self.assertEqual(pipe["pipe-operator"], (1, 10))
+
+    def test_invalid_code_gives_no_feature_findings(self):
+        # "#[Attr]" before a statement is a syntax error (diagnostics report it); no feature is claimed for it
+        self.assertEqual(F.analyze("<?php\n#[Attr]\n$s = 1;\n"), [])
+        self.assertEqual(F.analyze("<?php if $a { }"), [])
+
     def test_diagnostics_use_per_feature_severity_settings(self):
         detection = Detection("php", "7.4", None, "extension")
         found = analyze("<?php match($x) { 1 => 2 };", detection, EditorSettings())

@@ -1,4 +1,4 @@
-"""PHP 8.0 to 8.6 language and library features, detected on the token stream.
+"""PHP 8.0 to 8.6 language and library features, detected on the parse tree of :mod:`ogmkdev.parsers.php`.
 
 Every feature has the PHP version that introduced it. :func:`analyze` lists the uses in a source file;
 :func:`findings_above` keeps those newer than the version a file targets (``ogmkdev_dialect``).
@@ -7,15 +7,18 @@ Sources for the 8.5 and 8.6 items: php.net/releases/8.5 and php.net/releases/8.6
 on 19 November 2026) and the RFCs they link: pipe operator v3, clone with v2, partial function
 application v2 (placeholders ``?`` and ``...``), array_first/array_last, #[\\NoDiscard], closures in
 constant expressions, readonly property defaults, clamp(), SortDirection, Time\\Duration, Io\\Poll.
-Detection is token-based: it is a heuristic per construct and does not replace a full parser.
+A feature is a node or a flag of the tree: a construct the parser reads is found wherever it stands.
+A finding is placed on the keyword or operator that makes the feature, as the token-based check did.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from .lexers import php_lexer as P
+from .parsers import php as phpparser
+from .parsers.syntax import Node, position
 
 Version = Tuple[int, int]
 
@@ -77,10 +80,6 @@ FUNCTIONS: Dict[str, Version] = {
 # classes by version
 CLASSES: Dict[str, Version] = {"SortDirection": (8, 6), "Time\\Duration": (8, 6), "Io\\Poll": (8, 6)}
 
-_EXPRESSION_BEFORE_THROW = frozenset({"??", "??=", "=", "=>", "?", "||", "&&", "("})
-_TYPE_KEYWORDS = frozenset({"int", "float", "string", "bool", "array", "object", "mixed", "null", "false", "true"})
-_VISIBILITY = frozenset({"public", "private", "protected"})
-
 
 @dataclass(frozen=True)
 class Finding:
@@ -97,200 +96,209 @@ class Finding:
         return f"{self.description} needs PHP {major}.{minor}"
 
 
-def _position(source: str, offset: int) -> Tuple[int, int]:
-    line = source.count("\n", 0, offset) + 1
-    column = offset - (source.rfind("\n", 0, offset) + 1) + 1
-    return line, column
-
-
-def _matching(sig: List[P.Token], source: str, index: int, open_text: str, close_text: str) -> int:
-    depth = 0
-    for position in range(index, len(sig)):
-        text = _text(source, sig[position])
-        if text == open_text:
-            depth += 1
-        elif text == close_text:
-            depth -= 1
-            if depth == 0:
-                return position
-    return -1
-
-
-def _text(source: str, token: P.Token) -> str:
-    return source[token.start:token.end]
-
-
 def analyze(source: str) -> List[Finding]:
-    """Every PHP 8.0 to 8.6 feature used in ``source`` (syntax, functions and classes)."""
-    tokens = P.tokenize(source)
-    sig = [t for t in tokens if t.kind not in ("html", "open", "close", "comment", "doc")]
-    found: List[Tuple[int, str]] = []  # (token offset, feature id)
-    texts = [_text(source, t).lower() if t.kind in ("keyword", "name") else _text(source, t) for t in sig]
-    kinds = [t.kind for t in sig]
-    in_attribute = 0
+    """The features of a PHP source, in source order, with the library functions and classes it uses."""
+    tree, _errors = phpparser.parse_partial(source)
+    found: List[Finding] = []
+    _visit(tree, None, source, False, found)
+    return sorted(set(found), key=lambda finding: (finding.line, finding.column, finding.feature))
 
-    def add(index: int, feature: str) -> None:
-        found.append((sig[index].start, feature))
 
-    for i, token in enumerate(sig):
-        text = texts[i]
-        prev = texts[i - 1] if i > 0 else ""
-        nxt = texts[i + 1] if i + 1 < len(sig) else ""
-        if token.kind == "attr":
-            in_attribute += 1
-            name = texts[i + 1].lstrip("\\") if i + 1 < len(sig) else ""
-            add(i, "attribute")
-            for attribute, feature in (("override", "override-attribute"), ("nodiscard", "nodiscard-attribute"),
-                                       ("deprecated", "deprecated-attribute"),
-                                       ("allowdynamicproperties", "allow-dynamic-properties")):
-                if name == attribute:
-                    add(i + 1, feature)
+ATTRIBUTE_FEATURES = {
+    "allowdynamicproperties": "allow-dynamic-properties",
+    "override": "override-attribute",
+    "deprecated": "deprecated-attribute",
+    "nodiscard": "nodiscard-attribute",
+}
+PROMOTION_FLAGS = frozenset({"public", "protected", "private", "readonly"})
+# a visibility keyword that makes the set side of an asymmetric property: public private(set)
+ASYMMETRIC_SET = re.compile(r"\b(?:public|protected|private)\s*\(\s*set\s*\)", re.IGNORECASE)
+# the nodes whose second child is a member after '::' or '->' (a name there is no class)
+MEMBER_PARENTS = frozenset({"ClassConstant", "StaticCall", "PropertyAccess", "MethodCall", "NullsafePropertyAccess"})
+
+
+def _feature(found: List[Finding], source: str, offset: int, feature: str) -> None:
+    version, description = FEATURES[feature]
+    line, column = position(source, offset)
+    found.append(Finding(line, column, feature, version, description, "feature"))
+
+
+def _head(node: Node) -> int:
+    """Where the modifiers of a declaration end: the start of its first child that is not an attribute group."""
+    for child in node.children:
+        if child.kind != "AttributeGroup":
+            return child.start
+    return node.end
+
+
+def _keyword(source: str, word: str, node: Node) -> int:
+    """Where the keyword ``word`` stands among the modifiers of a declaration; the node start if it is not there."""
+    match = re.compile(rf"\b{word}\b", re.IGNORECASE).search(source, node.start, _head(node))
+    return match.start() if match else node.start
+
+
+def _operator(source: str, node: Node, text: str) -> int:
+    """Where the operator ``text`` stands: after the first child of the node; the node start if it is not there."""
+    first = node.children[0] if node.children else None
+    index = source.find(text, first.end if first is not None else node.start, node.end)
+    return index if index >= 0 else node.start
+
+
+def _visit(node: Node, parent: Optional[Node], source: str, in_attribute: bool, found: List[Finding],
+           member: bool = False) -> None:
+    _check(node, parent, source, in_attribute, found, member)
+    inside = in_attribute or node.kind == "Attribute"
+    for index, child in enumerate(node.children):
+        _visit(child, node, source, inside, found, member=node.kind in MEMBER_PARENTS and index > 0)
+
+
+def _check(node: Node, parent: Optional[Node], source: str, in_attribute: bool, found: List[Finding],
+           member: bool) -> None:
+    kind, flags = node.kind, node.flags
+    if kind == "AttributeGroup":
+        _feature(found, source, node.start, "attribute")
+    elif kind == "Attribute":
+        name = _attribute_name(node, source)
+        if name in ATTRIBUTE_FEATURES:
+            _feature(found, source, node.start, ATTRIBUTE_FEATURES[name])
+    elif kind == "NullsafePropertyAccess" or (kind == "MethodCall" and "nullsafe" in flags):
+        _feature(found, source, _operator(source, node, "?->"), "nullsafe")
+    elif kind == "MatchExpression":
+        _feature(found, source, node.start, "match")
+    elif kind == "ThrowExpression" and not (parent is not None and parent.kind == "ExpressionStatement"):
+        _feature(found, source, node.start, "throw-expression")
+    elif kind == "NamedArgument":
+        _feature(found, source, node.start, "named-arguments")
+    elif kind == "MethodDeclaration":
+        _constructor_promotion(node, source, found)
+    elif kind == "ClassConstant":
+        _class_constant(node, source, found)
+    elif kind == "CatchClause":
+        if not any(child.kind == "Variable" for child in node.children):
+            _feature(found, source, node.start, "non-capturing-catch")
+    elif kind == "EnumDeclaration":
+        _feature(found, source, _keyword(source, "enum", node), "enum")
+    elif kind == "ClassDeclaration" and "readonly" in flags:
+        _feature(found, source, _keyword(source, "readonly", node), "readonly-class")
+    elif kind == "PropertyDeclaration":
+        _property(node, source, found)
+    elif kind == "Parameter" and "readonly" in flags:
+        _feature(found, source, _keyword(source, "readonly", node), "readonly-property")
+    elif kind == "PropertyHooks":
+        _feature(found, source, _hooked_variable(node, parent), "property-hooks")
+    elif kind == "Arguments" and "callable" in flags:
+        _feature(found, source, node.start, "first-class-callable")
+    elif kind == "ArgumentPlaceholder":
+        _feature(found, source, node.start, "partial-application")
+    elif kind == "Type":
+        _type(node, source, found)
+    elif kind == "Literal" and node.text[:2].lower() == "0o":
+        _feature(found, source, node.start, "octal-prefix")
+    elif kind == "BinaryExpression" and node.text == "|>":
+        _feature(found, source, _operator(source, node, "|>"), "pipe-operator")
+    elif kind == "CloneExpression" and "with" in flags:
+        _feature(found, source, node.start, "clone-with")
+    elif kind in ("Closure", "ArrowFunction") and in_attribute:
+        _feature(found, source, node.start, "closure-in-constant")
+    elif kind == "NewExpression" and _chained_without_parentheses(node, parent, source):
+        _feature(found, source, node.start, "new-without-parentheses")
+    elif kind == "Call":
+        _library_function(node, source, found)
+    elif kind == "Name" and not member:
+        _library_class(node, source, found)
+
+
+def _attribute_name(node: Node, source: str) -> str:
+    name = next((child for child in node.children if child.kind == "Name"), None)
+    return source[name.start:name.end].lstrip("\\").lower() if name is not None else ""
+
+
+def _constructor_promotion(node: Node, source: str, found: List[Finding]) -> None:
+    name = next((child for child in node.children if child.kind == "Name"), None)
+    if name is None or source[name.start:name.end].lower() != "__construct":
+        return
+    for parameters in node.children:
+        if parameters.kind != "ParameterList":
             continue
-        if token.kind == "operator" and text == "]" and in_attribute:
-            in_attribute -= 1
-            continue
-        if token.kind == "operator" and text == "?->":
-            add(i, "nullsafe")
-        elif token.kind == "operator" and text == "|>":
-            add(i, "pipe-operator")
-        elif token.kind == "keyword" and text == "match" and nxt == "(":
-            add(i, "match")
-        elif token.kind == "keyword" and text == "throw" and prev in _EXPRESSION_BEFORE_THROW:
-            add(i, "throw-expression")
-        elif token.kind == "name" and nxt == ":" and prev in ("(", ","):
-            add(i, "named-arguments")
-        elif token.kind == "variable" and nxt == "::" and texts[i + 2] == "class":
-            add(i, "class-on-object")
-        elif token.kind == "keyword" and text == "catch" and nxt == "(" and i + 3 < len(sig) \
-                and kinds[i + 2] == "name" and texts[i + 3] == ")":
-            add(i, "non-capturing-catch")
-        elif token.kind == "keyword" and text == "enum" and kinds[i + 1:i + 2] == ["name"] \
-                and texts[i + 2:i + 3] and texts[i + 2] in ("{", ":", "implements"):
-            add(i, "enum")
-        elif token.kind == "keyword" and text == "readonly":
-            if nxt in ("class", "abstract", "final"):
-                add(i, "readonly-class")
-            else:
-                add(i, "readonly-property")
-                if _readonly_has_default(sig, texts, kinds, i):
-                    add(i, "readonly-defaults")
-        elif token.kind == "operator" and text == "(" and nxt == "..." and texts[i + 2:i + 3] == [")"]:
-            add(i, "first-class-callable")
-        elif token.kind == "operator" and text == "..." and prev == "," and nxt == ")":
-            add(i, "partial-application")
-        elif token.kind == "operator" and text == "?" and prev in ("(", ",") and nxt in (",", ")"):
-            add(i, "partial-application")
-        elif token.kind == "keyword" and text == "never":
-            add(i, "never-type")
-        elif token.kind == "operator" and text == "&" and kinds[i - 1:i] == ["name"] and kinds[i + 1:i + 2] == ["name"] \
-                and texts[i + 2:i + 3] and (kinds[i + 2] == "variable" or texts[i + 2] in ("|", ")")):
-            add(i, "pure-intersection-types")
-        elif token.kind == "keyword" and text == "final" and nxt == "const":
-            add(i, "final-constants")
-        elif token.kind == "number" and text[:2].lower() == "0o":
-            add(i, "octal-prefix")
-        elif token.kind == "keyword" and text in ("true", "false", "null") and prev == ":" and nxt in ("{", ";"):
-            add(i, "true-type" if text == "true" else "null-false-type")
-        elif token.kind == "operator" and text == "(" and i + 4 < len(sig) and texts[i + 2] == "&" \
-                and kinds[i + 1] == "name" and kinds[i + 3] == "name" and texts[i + 4] == ")" \
-                and texts[i + 5:i + 6] == ["|"]:
-            add(i, "dnf-types")
-        elif token.kind == "keyword" and text == "const" and i + 3 < len(sig) and kinds[i + 1] in ("name", "keyword") \
-                and kinds[i + 2] == "name" and texts[i + 3] == "=":
-            add(i, "typed-class-constants")
-        elif token.kind == "operator" and text == "::" and nxt == "{":
-            add(i, "dynamic-class-constant")
-        elif token.kind == "keyword" and text in _VISIBILITY and nxt == "(" and texts[i + 2:i + 4] == ["set", ")"]:
-            add(i, "asymmetric-visibility")
-        elif token.kind == "keyword" and text == "new" and kinds[i + 1:i + 2] == ["name"] \
-                and texts[i + 2:i + 3] == ["("] and _chained_after_new(source, sig, texts, i + 2):
-            add(i, "new-without-parentheses")
-        elif token.kind == "variable" and nxt == "{" and prev not in ("function", "fn"):
-            add(i, "property-hooks")
-        elif token.kind == "keyword" and text == "clone" and nxt == "(" and _has_top_level_comma(sig, texts, i + 1):
-            add(i, "clone-with")
-        elif token.kind == "keyword" and text == "static" and nxt in ("fn", "function") and in_attribute:
-            add(i, "closure-in-constant")
-        elif token.kind == "name" and nxt == "(" and prev not in ("->", "?->", "::", "function", "new"):
-            if text in FUNCTIONS or text.lstrip("\\") in FUNCTIONS:
-                found.append((sig[i].start, "function:" + text.lstrip("\\").lower()))
-        original = _text(source, token).lstrip("\\")
-        if token.kind == "name" and original in CLASSES and prev != "::":
-            found.append((sig[i].start, "class:" + original))
-        if token.kind == "name" and text.lower() == "__construct" and nxt == "(" \
-                and _promotes(sig, texts, i + 1):
-            add(i, "constructor-promotion")
-
-    results: List[Finding] = []
-    for offset, feature in sorted(set(found)):
-        line, column = _position(source, offset)
-        if feature.startswith("function:"):
-            name = feature.split(":", 1)[1]
-            version = FUNCTIONS[name]
-            results.append(Finding(line, column, feature, version, f"{name}()", "function"))
-        elif feature.startswith("class:"):
-            name = feature.split(":", 1)[1]
-            results.append(Finding(line, column, feature, CLASSES[name], f"class {name}", "class"))
-        else:
-            version, description = FEATURES[feature]
-            results.append(Finding(line, column, feature, version, description, "feature"))
-    return results
+        if any(parameter.kind == "Parameter" and parameter.flags & PROMOTION_FLAGS for parameter in parameters.children):
+            _feature(found, source, name.start, "constructor-promotion")
 
 
-def _readonly_has_default(sig, texts, kinds, index: int) -> bool:
-    depth = 0
-    for position in range(index, len(sig)):
-        text = texts[position]
-        if text == "(":
-            depth += 1
-        elif text == ")":
-            depth -= 1
-            if depth < 0:
-                return False
-        elif depth == 0 and text in (";", "{"):
-            return False
-        elif depth == 0 and kinds[position] == "variable" and texts[position + 1:position + 2] == ["="]:
-            return True
-    return False
+def _class_constant(node: Node, source: str, found: List[Finding]) -> None:
+    if len(node.children) > 1 and node.children[-1].kind == "Name" and node.children[0].kind != "Name" \
+            and source[node.children[-1].start:node.children[-1].end].lower() == "class":
+        _feature(found, source, node.start, "class-on-object")  # $object::class
+    if "dynamic" in node.flags:
+        _feature(found, source, _operator(source, node, "::"), "dynamic-class-constant")
+    if "final" in node.flags:
+        _feature(found, source, _keyword(source, "final", node), "final-constants")
+    if any(child.kind == "Type" for child in node.children):
+        _feature(found, source, _keyword(source, "const", node), "typed-class-constants")
 
 
-def _chained_after_new(source: str, sig, texts, index: int) -> bool:
-    if index >= len(sig) or texts[index] != "(":
+def _hooked_variable(node: Node, parent: Optional[Node]) -> int:
+    """Where the property with the hooks is named: the variable of the element before the hooks."""
+    elements = [] if parent is None else [child for child in parent.children
+                                          if child.kind == "PropertyElement" and child.end <= node.start]
+    if not elements:
+        return node.start
+    element = max(elements, key=lambda child: child.end)
+    return element.children[0].start if element.children else element.start
+
+
+def _property(node: Node, source: str, found: List[Finding]) -> None:
+    if "asymmetric" in node.flags:
+        match = ASYMMETRIC_SET.search(source, node.start, _head(node))
+        _feature(found, source, match.start() if match else node.start, "asymmetric-visibility")
+    if "readonly" in node.flags:
+        readonly = _keyword(source, "readonly", node)
+        _feature(found, source, readonly, "readonly-property")
+        if any(element.kind == "PropertyElement" and len(element.children) > 1 for element in node.children):
+            _feature(found, source, readonly, "readonly-defaults")
+
+
+def _type(node: Node, source: str, found: List[Finding]) -> None:
+    members = node.children
+    if any(member.kind == "Type" for member in members):
+        _feature(found, source, node.start, "dnf-types")
+        return
+    names = [member for member in members if member.kind == "Name"]
+    if len(names) == 1:
+        word = source[names[0].start:names[0].end].lower()
+        if word == "never":
+            _feature(found, source, names[0].start, "never-type")
+        elif word == "true":
+            _feature(found, source, names[0].start, "true-type")
+        elif word in ("null", "false"):
+            _feature(found, source, names[0].start, "null-false-type")
+    elif len(names) > 1 and all("&" in source[a.end:b.start] for a, b in zip(names, names[1:])):
+        first_and = source.find("&", names[0].end, names[1].start)
+        _feature(found, source, first_and if first_and >= 0 else node.start, "pure-intersection-types")
+
+
+def _chained_without_parentheses(node: Node, parent: Optional[Node], source: str) -> bool:
+    """new A()->b(): the new expression is the object of a member access, with no parentheses around it."""
+    if parent is None or parent.kind not in ("PropertyAccess", "MethodCall") or not parent.children \
+            or parent.children[0] is not node:
         return False
-    close = _matching(sig, source, index, "(", ")")
-    return close >= 0 and close + 1 < len(sig) and texts[close + 1] in ("->", "?->", "::")
+    return source[node.end:].lstrip().startswith(("->", "?->"))
 
 
-def _has_top_level_comma(sig, texts, index: int) -> bool:
-    depth = 0
-    for position in range(index, len(sig)):
-        text = texts[position]
-        if text == "(":
-            depth += 1
-        elif text == ")":
-            depth -= 1
-            if depth == 0:
-                return False
-        elif text == "," and depth == 1:
-            return True
-    return False
+def _library_function(node: Node, source: str, found: List[Finding]) -> None:
+    callee = node.children[0] if node.children else None
+    if callee is None or callee.kind != "Name":
+        return
+    name = source[callee.start:callee.end].lstrip("\\").lower()
+    if name in FUNCTIONS:
+        line, column = position(source, callee.start)
+        found.append(Finding(line, column, "function:" + name, FUNCTIONS[name], f"{name}()", "function"))
 
 
-def _promotes(sig, texts, index: int) -> bool:
-    depth = 0
-    for position in range(index, len(sig)):
-        text = texts[position]
-        if text == "(":
-            depth += 1
-        elif text == ")":
-            depth -= 1
-            if depth == 0:
-                return False
-        elif depth == 1 and text in _VISIBILITY:
-            return True
-    return False
-
-
+def _library_class(node: Node, source: str, found: List[Finding]) -> None:
+    name = source[node.start:node.end].lstrip("\\")
+    if name in CLASSES:
+        line, column = position(source, node.start)
+        found.append(Finding(line, column, "class:" + name, CLASSES[name], f"class {name}", "class"))
 
 
 def findings_above(source: str, configured: str) -> List[Finding]:
