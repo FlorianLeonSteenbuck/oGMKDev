@@ -41,6 +41,7 @@ MENUS = (
         ("Find Implementations", "find-implementations", "", "find_implementations"),
         ("Show Type Hierarchy", "show-hierarchy", "", "show_hierarchy"),
         ("Show Structure", "show-structure", "<Control><Alt>s", "show_structure"),
+        ("Show Preview", "show-preview", "<Control><Alt>p", "show_preview"),
         ("New React Component...", "new-react", "", "new_react_component"),
         ("New Vue Component...", "new-vue", "", "new_vue_component"),
         ("New Svelte Component...", "new-svelte", "", "new_svelte_component"),

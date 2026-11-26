@@ -16,6 +16,7 @@ from ogmkdev import __version__, filetemplates, index as index_module, markup, n
 from ogmkdev.settings import SettingsStore  # noqa: E402
 from ogmkdev.theme import MODES, SCHEMES  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
+from ogmkdev.preview import kind_of as preview_kind  # noqa: E402
 from . import theme  # noqa: E402
 from .editors import EditorArea  # noqa: E402
 from .howl import Editors  # noqa: E402
@@ -26,6 +27,7 @@ from .tools import ToolsMixin  # noqa: E402
 from .analysis import AnalysisMixin  # noqa: E402
 from .debugging import DebugMixin  # noqa: E402
 from .structure import StructureMixin  # noqa: E402
+from .preview import PreviewMixin  # noqa: E402
 
 HIDDEN_NAMES = {".git", "node_modules", "__pycache__"}
 LOOSE_LABEL = "Loose files"  # the tree entry for open files the tree does not show
@@ -77,7 +79,8 @@ def theme_folder() -> str:
     return os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "ogmkdev", "themes")
 
 
-class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, PanelsMixin, Gtk.ApplicationWindow):
+class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin, TabsMixin, PanelsMixin,
+            Gtk.ApplicationWindow):
     _edge_key: Optional[tuple] = None
     _loose_root = None  # the tree entry 'Loose files' (a Gtk.TreeIter) while it exists
     def __init__(self, app: Gtk.Application, folder: str, files: Sequence[str] = (),
@@ -174,6 +177,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         self._build_search()
         self._build_todos()
         self._build_changes()
+        self._build_preview()
 
     def show_run_tab(self) -> None:
         self.left.set_current_page(self.left.page_num(self.run_box))
@@ -525,7 +529,12 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         return True
 
     def open_file(self, path: str, line: int = 0, column: int = 0) -> None:
-        """Shows a file in its tab (opened in a new Howl editor if needed) and moves to a line."""
+        """Shows a file in its tab (opened in a new Howl editor if needed) and moves to a line. An image is shown in
+        the Preview page instead: Howl edits text."""
+        if preview_kind(path) == "image":
+            self.preview_image(path)
+            self.set_status(f"preview of {path}")
+            return
         if self.area.open(path) is None:
             self.set_status(f"could not open {path}")
             return
@@ -670,6 +679,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, TabsMixin, Pa
         self._follow_changes(info, path)
         self._sync_loose()
         self._follow_structure(path)
+        self._follow_preview()
         click = self.editors.take_click()
         if click:
             self._follow_click(*click)
