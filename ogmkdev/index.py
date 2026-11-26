@@ -32,7 +32,10 @@ SKIP_DIRS = frozenset({".git", "__pycache__", "node_modules"})
 PHP_EXTENSIONS = frozenset({".php", ".phtml"})
 PYTHON_EXTENSIONS = frozenset({".py"})
 SCRIPT_EXTENSIONS = frozenset({".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"})
-INDEXED = PHP_EXTENSIONS | PYTHON_EXTENSIONS | SCRIPT_EXTENSIONS | markup.MARKUP_EXTENSIONS
+SQL_EXTENSIONS = frozenset({".sql"})
+STYLE_EXTENSIONS = frozenset({".css", ".scss", ".less", ".sass"})
+INDEXED = (PHP_EXTENSIONS | PYTHON_EXTENSIONS | SCRIPT_EXTENSIONS | markup.MARKUP_EXTENSIONS | SQL_EXTENSIONS
+           | STYLE_EXTENSIONS)
 
 
 @dataclass(frozen=True)
@@ -69,11 +72,10 @@ class FileEntry:
 # Occurrence of an identifier: name, line and column (both 1-based, column in characters)
 Reference = Tuple[str, int, int]
 # Version of the index cache: a cache of another version is ignored and rebuilt
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 REFERENCE_SCRIPT_EXTENSIONS = SCRIPT_EXTENSIONS
 # the parse options of a script: (typed, jsx); plain JavaScript reads JSX as the diagnostics do
 SCRIPT_DIALECTS = {".ts": (True, False), ".tsx": (True, True), ".jsx": (False, True)}
-REFERENCE_SQL_EXTENSIONS = frozenset({".sql"})
 
 
 @dataclass(frozen=True)
@@ -407,15 +409,78 @@ def _references_sql(source: str) -> List[Reference]:
     return found
 
 
+def _blank(match) -> str:
+    """The match with every character but the line breaks replaced by a space: the offsets stay the same."""
+    return re.sub(r"[^\n]", " ", match.group(0))
+
+
+_MARKUP_TAG = re.compile(r"</?\s*([A-Za-z_][\w:.\-]*)")
+_MARKUP_CLASS = re.compile(r"""(?<![\w:.\-])class\s*=\s*(["'])([^"'<>]*)\1""")
+_MARKUP_HASH_REFERENCE = re.compile(r"""(?<![\w:.\-])(?:href|src|xlink:href)\s*=\s*(["'])#([^"'<>\s]+)\1""")
+
+
+def _references_markup(source: str) -> List[Reference]:
+    """The names of a markup file: element names, the ids it declares and refers to (href="#id", url(#id)), and
+    the classes. Comments hold none."""
+    text = re.sub(r"<!--.*?-->", _blank, source, flags=re.S)
+    found: List[Reference] = []
+
+    def add(offset: int, name: str) -> None:
+        line, column = _position(source, offset)
+        found.append((name, line, column))
+
+    for match in _MARKUP_TAG.finditer(text):
+        add(match.start(1), match.group(1))
+    for match in markup.ID_ATTRIBUTE.finditer(text):
+        add(match.start(2), match.group(2))
+    for match in _MARKUP_CLASS.finditer(text):
+        for token in re.finditer(r"\S+", match.group(2)):
+            add(match.start(2) + token.start(), token.group(0))
+    for match in _MARKUP_HASH_REFERENCE.finditer(text):
+        add(match.start(2), match.group(2))
+    for match in markup.CSS_URL.finditer(text):
+        if match.group(2).startswith("#"):
+            add(match.start(2) + 1, match.group(2)[1:])
+    return sorted(found, key=lambda reference: (reference[1], reference[2]))
+
+
+_STYLE_STRING_OR_COMMENT = re.compile(r"/\*.*?\*/|\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*'", re.S)
+_STYLE_BLOCK = re.compile(r"([^{};]+)\{")
+_STYLE_ATTRIBUTE = re.compile(r"\[[^\]]*\]")
+_STYLE_CLASS = re.compile(r"\.(-?[A-Za-z_][\w-]*)")
+_STYLE_ID = re.compile(r"#([A-Za-z_][\w-]*)")
+_STYLE_TYPE = re.compile(r"(?<![\w.#:\-$%&@(\[])([A-Za-z][\w-]*)")
+
+
+def _references_style(source: str) -> List[Reference]:
+    """The names in the selectors of a style sheet: classes, ids and element names. Comments, strings, attribute
+    selectors, at-rules and declarations hold none."""
+    text = _STYLE_STRING_OR_COMMENT.sub(_blank, source)
+    found: List[Reference] = []
+    for block in _STYLE_BLOCK.finditer(text):
+        selector = block.group(1)
+        if selector.lstrip().startswith("@"):
+            continue
+        selector = _STYLE_ATTRIBUTE.sub(lambda match: " " * len(match.group(0)), selector)
+        for pattern in (_STYLE_CLASS, _STYLE_ID, _STYLE_TYPE):
+            for match in pattern.finditer(selector):
+                line, column = _position(source, block.start(1) + match.start(1))
+                found.append((match.group(1), line, column))
+    return sorted(found, key=lambda reference: (reference[1], reference[2]))
+
+
 def extract_references(path: str, source: str) -> List[Reference]:
-    """Identifier occurrences of a PHP, Python, SQL or script file (JavaScript, TypeScript, JSX). Comments, strings and
-    JSX text hold none; keywords are not identifiers. A script that does not parse is read as tokens. Other
-    languages give no references yet."""
+    """Identifier occurrences of a PHP, Python, SQL, script, markup or style file. Comments, strings and JSX text hold
+    none; keywords are not identifiers. A script that does not parse is read as tokens."""
     extension = os.path.splitext(path)[1].lower()
     if extension in PHP_EXTENSIONS:
         return _references_php(source)
-    if extension in REFERENCE_SQL_EXTENSIONS:
+    if extension in SQL_EXTENSIONS:
         return _references_sql(source)
+    if extension in STYLE_EXTENSIONS:
+        return _references_style(source)
+    if extension in markup.MARKUP_EXTENSIONS:
+        return _references_markup(source)
     if extension in PYTHON_EXTENSIONS:
         return _references_python(source)
     if extension in REFERENCE_SCRIPT_EXTENSIONS:

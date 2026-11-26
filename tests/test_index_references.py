@@ -61,7 +61,7 @@ class ScriptReferencesTest(unittest.TestCase):
         self.assertEqual(sum(1 for name, _l, _c in found if name == "helper"), 1)
 
     def test_other_languages_give_none_yet(self):
-        self.assertEqual([], I.extract_references("a.css", "a { color: red; }\n"))
+        self.assertEqual([], I.extract_references("a.json", '{"a": 1}\n'))
 
 
 class ProjectReferencesTest(unittest.TestCase):
@@ -152,6 +152,52 @@ class SqlReferencesTest(unittest.TestCase):
         names = [name for name, _line, _column in found]
         self.assertNotIn("SELECT", names)
         self.assertNotIn("WHERE", names)
+
+
+HTML_SAMPLE = ('<!-- <p id="hidden"> -->\n<div id="main" class="card wide">\n'
+               '  <a href="#main">Top</a>\n</div>\n')
+CSS_SAMPLE = ('/* .ghost { } */\n@media (max-width: 600px) { .card { color: red; } }\n'
+              '#main > a:hover, div.card[type="x"] { content: "a.b"; }\n')
+
+
+class MarkupReferencesTest(unittest.TestCase):
+    def test_element_names_ids_classes_and_references_to_ids_are_occurrences(self):
+        names = [name for name, _line, _column in I.extract_references("page.html", HTML_SAMPLE)]
+        self.assertEqual(names.count("main"), 2)  # the declaration and href="#main"
+        self.assertEqual(names.count("div"), 2)  # the start tag and the end tag
+        self.assertEqual(names.count("card"), 1)
+        self.assertEqual(names.count("wide"), 1)
+
+    def test_comments_hold_no_references(self):
+        names = [name for name, _line, _column in I.extract_references("page.html", HTML_SAMPLE)]
+        self.assertNotIn("hidden", names)
+        self.assertNotIn("p", names)
+
+
+class StyleReferencesTest(unittest.TestCase):
+    def test_classes_ids_and_element_names_in_the_selectors_are_occurrences(self):
+        names = [name for name, _line, _column in I.extract_references("site.css", CSS_SAMPLE)]
+        self.assertEqual(names.count("card"), 2)  # .card in the media rule and div.card
+        self.assertEqual(names.count("main"), 1)
+        self.assertEqual(names.count("a"), 1)
+        self.assertEqual(names.count("div"), 1)
+
+    def test_comments_strings_at_rules_attributes_and_declarations_hold_none(self):
+        names = [name for name, _line, _column in I.extract_references("site.css", CSS_SAMPLE)]
+        for name in ("ghost", "media", "hover", "x", "b", "color", "red", "max-width"):
+            self.assertNotIn(name, names)
+
+
+class IndexedFilesTest(unittest.TestCase):
+    def test_sql_and_style_sheets_are_read_into_the_references(self):
+        with tempfile.TemporaryDirectory() as root:
+            with open(os.path.join(root, "orders.sql"), "w", encoding="utf-8") as handle:
+                handle.write("SELECT total FROM orders;\n")
+            with open(os.path.join(root, "site.css"), "w", encoding="utf-8") as handle:
+                handle.write(".card { color: red; }\n")
+            index = I.ProjectIndex(root)
+            self.assertEqual([(line, column) for _path, line, column in index.references("orders")], [(1, 19)])
+            self.assertEqual(len(index.references("card")), 1)
 
 
 if __name__ == "__main__":

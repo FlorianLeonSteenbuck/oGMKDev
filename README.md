@@ -80,7 +80,7 @@ grammar or language server. Every language here is implemented in this repositor
 | Shift+F9 | debug the selected run configuration (GDB or XDebug type) |
 | F5 / F8 / F7 / Shift+F7 | while debugging: continue / step over / step into / step out |
 | Shift+F5 | stop debugging |
-| Shift+F12 | Find Usages: the occurrences of a name in the PHP, Python, JavaScript, TypeScript and SQL files, listed in the Search tab |
+| Shift+F12 | Find Usages: the occurrences of a name in the PHP, Python, JavaScript, TypeScript, SQL, markup and style files, listed in the Search tab |
 | Ctrl+Alt+J | select the word at the cursor, then each next occurrence of the selection |
 | Ctrl+Shift+Alt+J | select all occurrences of the selection, or of the word at the cursor |
 | Escape | end the extra carets, the cursor stays |
@@ -118,7 +118,7 @@ Paragraphs are lines up to the next blank line. Files use the extensions `.bd` a
 | Python 2 / 3 / PyPy | dialect detection; highlighting by Howl | own parser |
 | TypeScript, TSX, JSX | own lexer (`ogmkdev/lexers/typescript_lexer.py`); the parser of `ogmkdev/parsers/javascript.py` reads TypeScript when typed (types, interfaces, generics, enums, namespaces, decorators, `import type`, `as`, `satisfies`) and JSX; syntax diagnostics for .ts, .tsx, .jsx and .js | - |
 | Mustache, Twig | detection of compound extensions, templates; highlighting of the base language | own grammar |
-| Markdown, HTML, CSS | Howl highlighting; XML, SVG and HTML: structure, element menu (selectors, XPath), diagnostics; CSS: brace diagnostics | references (Find Usages) for ids, classes and tags |
+| Markdown, HTML, CSS | Howl highlighting; XML, SVG and HTML: structure, element menu (selectors, XPath), diagnostics; CSS: brace diagnostics, references | - |
 | C++ | KDevelop `plugins/clang` in the source tree | rewrite to Python or bind |
 | Java | excluded | - |
 
@@ -354,8 +354,8 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
 
 ## Open items
 
-- PHP, Python, JavaScript, TypeScript and SQL references are identifier occurrences (comments, strings and
-  JSX text are skipped); the markup and CSS files have no references yet.
+- References are identifier occurrences of PHP, Python, JavaScript, TypeScript, SQL, markup and style files
+  (comments, strings and JSX text are skipped); JSON, BareDown and the template files have none yet.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - The `.rpm` package is built with rpmbuild and its frame starts from the extracted tree; it has not been
   installed on openSUSE yet.

@@ -302,7 +302,7 @@ class AnalysisMixin:
         self._implementations_of(name)
 
     def find_usages(self) -> None:
-        """Edit > Find Usages: every occurrence of a name in the PHP, Python, JavaScript, TypeScript and SQL files."""
+        """Edit > Find Usages: every occurrence of a name in the PHP, Python, JavaScript, TypeScript, SQL, markup and style files."""
         self._ensure_index()
         self.ask_text("Find usages", "Name of the variable, function, class or member:", self._usages_of)
 
