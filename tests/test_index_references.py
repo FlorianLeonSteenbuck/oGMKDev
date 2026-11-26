@@ -107,5 +107,22 @@ class ProjectReferencesTest(unittest.TestCase):
             self.assertTrue(rebuilt.references("helper"))
 
 
+PHP_SAMPLE = ("<?php\nnamespace App;\n// Circle in a comment\nclass Circle {\n"
+              "    public function area() { return $this->Circle; }\n}\n"
+              "$c = new \\App\\Circle('Circle');\n")
+
+
+class PhpReferencesTest(unittest.TestCase):
+    def test_names_are_occurrences_and_comments_strings_and_variables_are_not(self):
+        refs = I.extract_references("/project/circle.php", PHP_SAMPLE)
+        circle = [(line, column) for name, line, column in refs if name == "Circle"]
+        self.assertEqual(circle, [(4, 7), (5, 44), (7, 15)])
+
+    def test_a_qualified_name_is_an_occurrence_of_its_last_part(self):
+        refs = I.extract_references("/project/circle.php", PHP_SAMPLE)
+        self.assertIn(("Circle", 7, 15), refs)
+        self.assertFalse(any(name.startswith("\\") or "\\" in name for name, _l, _c in refs))
+
+
 if __name__ == "__main__":
     unittest.main()

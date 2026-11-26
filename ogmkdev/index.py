@@ -67,7 +67,7 @@ class FileEntry:
 # Occurrence of an identifier: name, line and column (both 1-based, column in characters)
 Reference = Tuple[str, int, int]
 # Version of the index cache: a cache of another version is ignored and rebuilt
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 REFERENCE_SCRIPT_EXTENSIONS = frozenset({".js", ".mjs", ".cjs"})
 
 
@@ -359,10 +359,27 @@ def _references_script(source: str) -> List[Reference]:
     return found
 
 
+def _references_php(source: str) -> List[Reference]:
+    """The name tokens of a PHP file. A qualified name (App\\Circle) is one occurrence of its last part. Comments,
+    strings, doc comments and variables hold none; keywords are not names."""
+    found: List[Reference] = []
+    for token in php_lexer.tokenize(source):
+        if token.kind != "name":
+            continue
+        short = source[token.start:token.end].rsplit("\\", 1)[-1]
+        if not short:
+            continue
+        line, column = _position(source, token.end - len(short))
+        found.append((short, line, column))
+    return found
+
+
 def extract_references(path: str, source: str) -> List[Reference]:
-    """Identifier occurrences of a Python or JavaScript file. Comments and strings hold none; keywords are
+    """Identifier occurrences of a PHP, Python or JavaScript file. Comments and strings hold none; keywords are
     not identifiers. Other languages give no references yet."""
     extension = os.path.splitext(path)[1].lower()
+    if extension in PHP_EXTENSIONS:
+        return _references_php(source)
     if extension in PYTHON_EXTENSIONS:
         return _references_python(source)
     if extension in REFERENCE_SCRIPT_EXTENSIONS:
