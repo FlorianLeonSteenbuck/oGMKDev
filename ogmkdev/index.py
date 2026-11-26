@@ -26,7 +26,6 @@ from . import diagnostics, editorconfig, languages, markup, organize
 from .lexers import ecmascript_lexer as js_lexer
 from .parsers import javascript as jsparser
 from . import php_analysis
-from .lexers import php_lexer
 from .parsers import php as phpparser
 from .lexers import sql_lexer
 

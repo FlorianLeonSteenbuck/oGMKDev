@@ -1,12 +1,11 @@
-"""PHP tokenizer for PHP 8.0 to 8.6 syntax, used for highlighting and feature checks.
+"""PHP tokenizer for PHP 8.0 to 8.6 syntax, used for highlighting and by the parser (:mod:`ogmkdev.parsers.php`).
 
 Covers inline HTML and the open and close tags, comments and doc comments, attributes (``#[``),
 variables, names with namespaces (``\\Foo\\Bar``), keywords (including the PHP 8 keywords ``match``,
 ``enum``, ``readonly``, ``never``, ``mixed``), numbers with ``_`` separators and ``0o``/``0b``/``0x``
 prefixes, single, double and backtick strings, heredoc and nowdoc (scanned with the rules of
 :mod:`ogmkdev.heredoc`), casts, and the operators ``?->`` (PHP 8.0) and ``|>`` (PHP 8.5).
-Placeholders ``?`` and ``...`` are ordinary operators here; :mod:`ogmkdev.php_features` decides
-what they mean.
+Placeholders ``?`` and ``...`` are ordinary operators here; the parser reads them as argument placeholders.
 """
 
 from __future__ import annotations
