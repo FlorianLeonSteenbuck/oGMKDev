@@ -784,6 +784,7 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
             GLib.source_remove(self._resources_source)
             self._resources_source = 0
         self.stop_services()  # a background service of the Run tab does not outlive the frame
+        self.shutdown_background()  # the index build ends with the window: no build starts afterwards
         return False
 
     def _autosave_tick(self, info, path: Optional[str]) -> None:

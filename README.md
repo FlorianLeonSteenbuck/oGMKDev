@@ -171,6 +171,12 @@ the types `OgmkdevGdbConfigurationType` (options `PROGRAM`, `ARGUMENTS`, `WORKIN
   (classes, interfaces, functions). Files keep their size and modification time: `refresh()` re-reads
   only changed files, saving a file invalidates that file, and a JSON cache keeps the index between
   sessions (`$XDG_CACHE_HOME/ogmkdev/`).
+- **Thread services** (`ogmkdev/service.py`): background work runs in a thread of its own, as a subclass of the base
+  class `Service`. `request` starts a job with plain arguments; the latest request made while a job runs waits for it.
+  `cancel` ends the running job without a result, and `shutdown` ends the service when the window closes, so no job
+  starts afterwards. The index build (`ogmkdev/indexbuild.py`) is the first service; Tools > Stop Indexing cancels it.
+  Threads keep the window responsive and make a build cancellable, but they do not speed up the parsing: Python runs
+  one thread of Python code at a time.
 - **Type hierarchy** (Project > Show Type Hierarchy, Ctrl+H): supertypes and subtypes, transitive, and
   the dependencies of the class under the cursor. Items navigate to their declaration on activation.
 - **Class diagram**: the Hierarchy tab draws the inheritance levels as columns, the class in the middle, the

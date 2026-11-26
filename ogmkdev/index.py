@@ -20,7 +20,7 @@ import re
 import ast
 import bisect
 from dataclasses import asdict, dataclass, field
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from . import baredown, diagnostics, editorconfig, languages, markup, organize
 from .lexers import ecmascript_lexer as js_lexer
@@ -29,6 +29,7 @@ from . import php_analysis
 from .parsers import php as phpparser
 from .lexers import sql_lexer
 from .progress import Progress
+from .service import Cancelled
 
 SKIP_DIRS = frozenset({".git", "__pycache__", "node_modules"})
 PHP_EXTENSIONS = frozenset({".php", ".phtml"})
@@ -584,12 +585,14 @@ class ProjectIndex:
     """Index of one or more project folders; ``excluded`` drops paths the workspace ignores."""
 
     def __init__(self, roots, cache_path: Optional[str] = None, excluded=None,
-                 progress: Optional[Progress] = None, settings_for=None) -> None:
+                 progress: Optional[Progress] = None, settings_for=None,
+                 is_cancelled: Optional[Callable[[], bool]] = None) -> None:
         self.roots: List[str] = [os.path.abspath(r) for r in ([roots] if isinstance(roots, str) else roots)]
         self.excluded = excluded
         # the settings a file is inspected with (an EditorSettings); the frame passes the settings of its editor
         self.settings_for = settings_for if settings_for is not None else editorconfig.settings_for
         self.cache_path = cache_path
+        self.is_cancelled = is_cancelled  # asked between two files: a build that was cancelled raises Cancelled
         self.progress = progress if progress is not None else Progress()  # the files read again are its steps
         self.files: Dict[str, FileEntry] = {}
         self._by_name: Dict[str, List[Symbol]] = {}
@@ -637,11 +640,17 @@ class ProjectIndex:
             todo.append((path, mtime, size))
         self.progress.expect(len(todo))
         for path, mtime, size in todo:
+            self._check_cancel()
             self._index_file(path, mtime, size)
             self.progress.step()
         if any(counts.values()):
             self._rebuild()
         return counts
+
+    def _check_cancel(self) -> None:
+        """Raises Cancelled when the build was cancelled: the index is then incomplete, and the builder drops it."""
+        if self.is_cancelled is not None and self.is_cancelled():
+            raise Cancelled("the index build was cancelled")
 
     def invalidate(self, path: str) -> bool:
         """Re-index one file (after a save). Returns True when it is indexed now."""
@@ -668,6 +677,7 @@ class ProjectIndex:
         self._members = {}
         self._refs = {}
         for path, entry in self.files.items():
+            self._check_cancel()
             for name, line, column in entry.references:
                 self._refs.setdefault(name, []).append((path, line, column))
             for symbol in entry.symbols:

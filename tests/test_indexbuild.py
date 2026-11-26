@@ -1,9 +1,11 @@
 import os
 import tempfile
 import threading
+import time
 import unittest
 
 from ogmkdev import indexbuild as B
+from ogmkdev.progress import Progress
 
 
 class WatchedDirectoriesTest(unittest.TestCase):
@@ -70,6 +72,47 @@ class IndexBuilderTest(unittest.TestCase):
             builder.request([root])
             self.assertTrue(done.wait(20))
             self.assertEqual(2, len(deliveries))
+
+
+def wait_until_idle(builder, timeout=20.0):
+    deadline = time.monotonic() + timeout
+    while builder.busy and time.monotonic() < deadline:
+        time.sleep(0.005)
+    return not builder.busy
+
+
+class IndexBuildCancelTest(unittest.TestCase):
+    def test_a_cancelled_build_stops_between_two_files_and_delivers_nothing(self):
+        with tempfile.TemporaryDirectory() as root:
+            for number in range(40):
+                with open(os.path.join(root, f"module{number}.py"), "w", encoding="utf-8") as handle:
+                    handle.write(f"class Module{number}:\n    pass\n")
+            deliveries = []
+
+            class CancelAfterThree(Progress):
+                def step(self) -> None:
+                    super().step()
+                    if self.done == 3:
+                        builder.cancel()  # from the build's own thread, as the Tools menu's request arrives later
+
+            progress = CancelAfterThree()
+            builder = B.IndexBuilder(lambda index, folders, error: deliveries.append(index), progress)
+            builder.request([root])
+            self.assertTrue(wait_until_idle(builder))  # the build cancels itself at its third file
+            builder.shutdown()  # the build's thread has ended, so the delivery could not come later
+            self.assertEqual(3, progress.done)
+            self.assertEqual([], deliveries)
+            self.assertFalse(builder.busy)
+
+    def test_nothing_starts_after_shutdown(self):
+        with tempfile.TemporaryDirectory() as root:
+            deliveries = []
+            builder = B.IndexBuilder(lambda index, folders, error: deliveries.append(index))
+            builder.shutdown()
+            builder.request([root])
+            self.assertTrue(builder.closed)
+            self.assertFalse(builder.busy)
+            self.assertEqual([], deliveries)
 
 
 if __name__ == "__main__":

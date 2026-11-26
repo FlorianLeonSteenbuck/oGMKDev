@@ -171,6 +171,21 @@ class AnalysisMixin:
         self._index_builder.request(self.workspace.folders, _cache_path(self.folder), self.workspace.is_hidden,
                                     self._settings_for)  # the inspections use the settings of the editor
 
+    def stop_indexing(self) -> None:
+        """Tools > Stop Indexing: ends the index build that runs. The index stays as it was."""
+        builder = getattr(self, "_index_builder", None)
+        if builder is None or not builder.busy:
+            self.set_status("no index build is running")
+            return
+        builder.cancel()
+        self.set_status("index build stopped; the index stays as it was")
+
+    def shutdown_background(self) -> None:
+        """The window closes: the index build ends, and no build starts afterwards."""
+        builder = getattr(self, "_index_builder", None)
+        if builder is not None:
+            builder.shutdown()
+
     def _deliver_index(self, built, folders, error) -> None:
         """Called on the builder's worker thread: the result is taken over on the GTK main thread."""
         GLib.idle_add(self._index_built, built, folders, error)

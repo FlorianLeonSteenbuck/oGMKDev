@@ -53,6 +53,7 @@ MENUS = (
         ("Inspect Project", "inspect-folder", "", "inspect_folder"),
         ("Refresh Index", "refresh-index", "", "refresh_index"),
         ("Show Index Overview", "show-index-view", "", "show_index_view"),
+        ("Stop Indexing", "stop-indexing", "", "stop_indexing"),
         ("Show Resources", "show-resources", "", "show_resources_view"),
         ("Clear Index and Rebuild", "clear-index", "", "clear_index"),
         ("Show Git Changes", "show-git", "<Control><Alt>g", "show_git"),
