@@ -80,7 +80,7 @@ grammar or language server. Every language here is implemented in this repositor
 | Shift+F9 | debug the selected run configuration (GDB or XDebug type) |
 | F5 / F8 / F7 / Shift+F7 | while debugging: continue / step over / step into / step out |
 | Shift+F5 | stop debugging |
-| Shift+F12 | Find Usages: the occurrences of a name in the PHP, Python, JavaScript and TypeScript files, listed in the Search tab |
+| Shift+F12 | Find Usages: the occurrences of a name in the PHP, Python, JavaScript, TypeScript and SQL files, listed in the Search tab |
 | Ctrl+Alt+J | select the word at the cursor, then each next occurrence of the selection |
 | Ctrl+Shift+Alt+J | select all occurrences of the selection, or of the word at the cursor |
 | Escape | end the extra carets, the cursor stays |
@@ -111,14 +111,14 @@ Paragraphs are lines up to the next blank line. Files use the extensions `.bd` a
 
 | Language | Current source | Next step |
 |---|---|---|
-| ECMAScript (JavaScript) | lexer ported from KDevelop's QML/JS lexer; recursive-descent parser for ECMAScript 2022 (`ogmkdev/parsers/javascript.py`) for the syntax diagnostics; KDevelop's ES5 LALR driver kept as the reference (`tools/generate_ecmascript_tables.py`); own highlighting | outline and navigation on top of the parser's tree |
+| ECMAScript (JavaScript) | lexer ported from KDevelop's QML/JS lexer; recursive-descent parser for ECMAScript 2022 (`ogmkdev/parsers/javascript.py`) for the syntax diagnostics; KDevelop's ES5 LALR driver kept as the reference (`tools/generate_ecmascript_tables.py`); own highlighting | - |
 | BareDown | own tokenizer, parser and HTML renderer | - |
-| SQL (Oracle, Apache Hive, MySQL, MariaDB, MSSQL, PostgreSQL) | lexer rules and keyword list ported from Howl, `ENGINE=` checks, own highlighting | dialect-specific keyword sets |
+| SQL (Oracle, Apache Hive, MySQL, MariaDB, MSSQL, PostgreSQL) | lexer rules and keyword list ported from Howl, `ENGINE=` checks, own highlighting | - |
 | PHP | heredoc and nowdoc scanner, diagnostics; highlighting by Howl | own parser |
 | Python 2 / 3 / PyPy | dialect detection; highlighting by Howl | own parser |
-| TypeScript, TSX, JSX | own lexer (`ogmkdev/lexers/typescript_lexer.py`); the parser of `ogmkdev/parsers/javascript.py` reads TypeScript when typed (types, interfaces, generics, enums, namespaces, decorators, `import type`, `as`, `satisfies`) and JSX; syntax diagnostics for .ts, .tsx, .jsx and .js | outline on top of the tree |
+| TypeScript, TSX, JSX | own lexer (`ogmkdev/lexers/typescript_lexer.py`); the parser of `ogmkdev/parsers/javascript.py` reads TypeScript when typed (types, interfaces, generics, enums, namespaces, decorators, `import type`, `as`, `satisfies`) and JSX; syntax diagnostics for .ts, .tsx, .jsx and .js | - |
 | Mustache, Twig | detection of compound extensions, templates; highlighting of the base language | own grammar |
-| Markdown, HTML, CSS | Howl | none yet |
+| Markdown, HTML, CSS | Howl highlighting; XML, SVG and HTML: structure, element menu (selectors, XPath), diagnostics; CSS: brace diagnostics | references (Find Usages) for ids, classes and tags |
 | C++ | KDevelop `plugins/clang` in the source tree | rewrite to Python or bind |
 | Java | excluded | - |
 
@@ -354,8 +354,8 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
 
 ## Open items
 
-- PHP, Python, JavaScript and TypeScript references are identifier occurrences (comments, strings and
-  JSX text are skipped); the other languages have no references yet.
+- PHP, Python, JavaScript, TypeScript and SQL references are identifier occurrences (comments, strings and
+  JSX text are skipped); the markup and CSS files have no references yet.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
 - The `.rpm` package is built with rpmbuild and its frame starts from the extracted tree; it has not been
   installed on openSUSE yet.

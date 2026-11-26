@@ -26,6 +26,7 @@ from . import diagnostics, editorconfig, languages, markup, organize
 from .lexers import ecmascript_lexer as js_lexer
 from .parsers import javascript as jsparser
 from .lexers import php_lexer
+from .lexers import sql_lexer
 
 SKIP_DIRS = frozenset({".git", "__pycache__", "node_modules"})
 PHP_EXTENSIONS = frozenset({".php", ".phtml"})
@@ -68,10 +69,11 @@ class FileEntry:
 # Occurrence of an identifier: name, line and column (both 1-based, column in characters)
 Reference = Tuple[str, int, int]
 # Version of the index cache: a cache of another version is ignored and rebuilt
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 REFERENCE_SCRIPT_EXTENSIONS = SCRIPT_EXTENSIONS
 # the parse options of a script: (typed, jsx); plain JavaScript reads JSX as the diagnostics do
 SCRIPT_DIALECTS = {".ts": (True, False), ".tsx": (True, True), ".jsx": (False, True)}
+REFERENCE_SQL_EXTENSIONS = frozenset({".sql"})
 
 
 @dataclass(frozen=True)
@@ -394,13 +396,26 @@ def _references_php(source: str) -> List[Reference]:
     return found
 
 
+def _references_sql(source: str) -> List[Reference]:
+    """The identifiers of a SQL file: table, column and alias names. Keywords, comments and strings hold none."""
+    found: List[Reference] = []
+    for token in sql_lexer.tokenize(source):
+        if token.kind != "identifier":
+            continue
+        line, column = _position(source, token.start)
+        found.append((source[token.start:token.end], line, column))
+    return found
+
+
 def extract_references(path: str, source: str) -> List[Reference]:
-    """Identifier occurrences of a PHP, Python or script file (JavaScript, TypeScript, JSX). Comments, strings and
+    """Identifier occurrences of a PHP, Python, SQL or script file (JavaScript, TypeScript, JSX). Comments, strings and
     JSX text hold none; keywords are not identifiers. A script that does not parse is read as tokens. Other
     languages give no references yet."""
     extension = os.path.splitext(path)[1].lower()
     if extension in PHP_EXTENSIONS:
         return _references_php(source)
+    if extension in REFERENCE_SQL_EXTENSIONS:
+        return _references_sql(source)
     if extension in PYTHON_EXTENSIONS:
         return _references_python(source)
     if extension in REFERENCE_SCRIPT_EXTENSIONS:

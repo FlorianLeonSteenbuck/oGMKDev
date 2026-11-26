@@ -141,5 +141,18 @@ class TypedScriptReferencesTest(unittest.TestCase):
         self.assertEqual([(line, column) for name, line, column in found if name == "Shape"], [(1, 11), (2, 10)])
 
 
+SQL_SAMPLE = "SELECT id, total FROM orders -- orders\nWHERE total > 0 AND note = 'orders';\n"
+
+
+class SqlReferencesTest(unittest.TestCase):
+    def test_identifiers_are_occurrences_and_keywords_comments_and_strings_are_not(self):
+        found = I.extract_references("query.sql", SQL_SAMPLE)
+        self.assertEqual([(line, column) for name, line, column in found if name == "orders"], [(1, 23)])
+        self.assertEqual([(line, column) for name, line, column in found if name == "total"], [(1, 12), (2, 7)])
+        names = [name for name, _line, _column in found]
+        self.assertNotIn("SELECT", names)
+        self.assertNotIn("WHERE", names)
+
+
 if __name__ == "__main__":
     unittest.main()
