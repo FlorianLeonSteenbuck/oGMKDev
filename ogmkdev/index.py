@@ -22,7 +22,7 @@ import bisect
 from dataclasses import asdict, dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from . import diagnostics, editorconfig, languages, markup, organize
+from . import baredown, diagnostics, editorconfig, languages, markup, organize
 from .lexers import ecmascript_lexer as js_lexer
 from .parsers import javascript as jsparser
 from . import php_analysis
@@ -35,8 +35,17 @@ PYTHON_EXTENSIONS = frozenset({".py"})
 SCRIPT_EXTENSIONS = frozenset({".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"})
 SQL_EXTENSIONS = frozenset({".sql"})
 STYLE_EXTENSIONS = frozenset({".css", ".scss", ".less", ".sass"})
+JSON_EXTENSIONS = frozenset({".json"})
+BAREDOWN_EXTENSIONS = frozenset({".bd", ".baredown"})
 INDEXED = (PHP_EXTENSIONS | PYTHON_EXTENSIONS | SCRIPT_EXTENSIONS | markup.MARKUP_EXTENSIONS | SQL_EXTENSIONS
-           | STYLE_EXTENSIONS)
+           | STYLE_EXTENSIONS | JSON_EXTENSIONS | BAREDOWN_EXTENSIONS)
+# lock files of the package managers: generated, large, and full of keys that say nothing about the code
+GENERATED_FILES = frozenset({"package-lock.json", "npm-shrinkwrap.json"})
+
+
+def is_indexed(path: str) -> bool:
+    """Whether a file is read into the index: its extension is one of INDEXED and it is no generated lock file."""
+    return os.path.splitext(path)[1].lower() in INDEXED and os.path.basename(path).lower() not in GENERATED_FILES
 
 
 @dataclass(frozen=True)
@@ -73,7 +82,7 @@ class FileEntry:
 # Occurrence of an identifier: name, line and column (both 1-based, column in characters)
 Reference = Tuple[str, int, int]
 # Version of the index cache: a cache of another version is ignored and rebuilt
-CACHE_VERSION = 8
+CACHE_VERSION = 9
 REFERENCE_SCRIPT_EXTENSIONS = SCRIPT_EXTENSIONS
 # the parse options of a script: (typed, jsx); plain JavaScript reads JSX as the diagnostics do
 SCRIPT_DIALECTS = {".ts": (True, False), ".tsx": (True, True), ".jsx": (False, True)}
@@ -345,10 +354,121 @@ def _references_style(source: str) -> List[Reference]:
     return sorted(found, key=lambda reference: (reference[1], reference[2]))
 
 
-def extract_references(path: str, source: str) -> List[Reference]:
-    """Identifier occurrences of a PHP, Python, SQL, script, markup or style file. Comments, strings and JSX text hold
-    none; keywords are not identifiers. A script that does not parse is read as tokens."""
-    extension = os.path.splitext(path)[1].lower()
+# ---------------------------------------------------------------- references of JSON, BareDown and templates
+
+JSON_NAME = re.compile(r"[A-Za-z_]\w*(?:\\\\[A-Za-z_]\w*)*")
+JSON_STRING_OR_COMMENT = re.compile(r'"((?:[^"\\\n]|\\.)*)"|//[^\n]*|/\*.*?\*/', re.S)
+GENERIC_NAME = re.compile(r"(?<![\w$])[A-Za-z_]\w*")  # an identifier; a variable ($name) is none
+BAREDOWN_TARGET = re.compile(r"\[\[([^\]|]+)")
+TARGET_NAME = re.compile(r"[A-Za-z_]\w*(?:[\\/][A-Za-z_]\w*)*")
+# the language a code block names in its fence, and the extension whose reference rules read the block
+FENCE_EXTENSIONS = {"php": ".php", "python": ".py", "py": ".py", "javascript": ".js", "js": ".js",
+                    "typescript": ".ts", "ts": ".ts", "tsx": ".tsx", "jsx": ".jsx", "sql": ".sql",
+                    "html": ".html", "xml": ".xml", "svg": ".svg", "css": ".css", "scss": ".scss",
+                    "less": ".less", "sass": ".sass", "json": ".json"}
+# the tags of the template layers: Mustache {{name}}, {{{raw}}}, {{#section}}, {{! comment}};
+# Twig {{ value }}, {% tag %} and {# comment #}
+TEMPLATE_TAGS = {
+    "mustache": re.compile(r"\{\{\{.*?\}\}\}|\{\{.*?\}\}", re.S),
+    "twig": re.compile(r"\{#.*?#\}|\{\{.*?\}\}|\{%.*?%\}", re.S),
+}
+TEMPLATE_STRING = re.compile(r"\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*'")
+TWIG_KEYWORDS = frozenset({
+    "and", "apply", "as", "autoescape", "block", "cache", "deprecated", "do", "else", "elseif", "embed", "endapply",
+    "endautoescape", "endblock", "endcache", "endembed", "endfilter", "endfor", "endif", "endmacro", "endsandbox",
+    "endset", "endspaceless", "endverbatim", "endwith", "extends", "false", "filter", "flush", "for", "from", "if",
+    "ignore", "import", "in", "include", "is", "macro", "missing", "none", "not", "null", "only", "or", "sandbox",
+    "set", "spaceless", "true", "types", "use", "verbatim", "with",
+})
+
+
+def _names_in(source: str, text: str, base: int) -> List[Reference]:
+    """The identifiers of a code text that starts at offset ``base`` of the source."""
+    found: List[Reference] = []
+    for match in GENERIC_NAME.finditer(text):
+        line, column = _position(source, base + match.start())
+        found.append((match.group(0), line, column))
+    return found
+
+
+def _references_json(source: str) -> List[Reference]:
+    """The names in the strings of a JSON file, keys and values alike. A string is a name when it is an identifier,
+    or a qualified name, which counts as its last part, as in PHP. Comments, as tsconfig files have them, hold none."""
+    found: List[Reference] = []
+    for match in JSON_STRING_OR_COMMENT.finditer(source):
+        raw = match.group(1)
+        if raw is None or not JSON_NAME.fullmatch(raw):
+            continue
+        last = raw.rsplit("\\\\", 1)[-1]
+        line, column = _position(source, match.start(1) + len(raw) - len(last))
+        found.append((last, line, column))
+    return found
+
+
+def _link_name(source: str, start: int, end: int) -> List[Reference]:
+    """The name a BareDown link points to: [[Target]], or the last part of [[docs/Target|label]]."""
+    match = BAREDOWN_TARGET.match(source, start, end)
+    if match is None:
+        return []
+    raw = match.group(1)
+    target = raw.strip()
+    if not TARGET_NAME.fullmatch(target):
+        return []
+    last = re.split(r"[\\/]", target)[-1]
+    first = match.start(1) + len(raw) - len(raw.lstrip())
+    line, column = _position(source, first + len(target) - len(last))
+    return [(last, line, column)]
+
+
+def _references_baredown(source: str) -> List[Reference]:
+    """The names a BareDown document uses: the identifiers of its code spans (|code|) and code blocks, a block in a
+    language the index reads being read with that language's rules, and the last part of a link target. Its prose
+    and its comments hold none."""
+    found: List[Reference] = []
+    for token in baredown.tokenize(source):
+        if token.kind == "code-inline":
+            found.extend(_names_in(source, source[token.start + 1:token.end - 1], token.start + 1))
+        elif token.kind == "link":
+            found.extend(_link_name(source, token.start, token.end))
+    for block in baredown.parse(source):
+        if block.kind != "code":
+            continue
+        extension = FENCE_EXTENSIONS.get(block.language.lower())
+        if extension is None:
+            for number, text_line in enumerate(block.text.split("\n"), start=1):
+                for match in GENERIC_NAME.finditer(text_line):
+                    found.append((match.group(0), block.line + number, match.start() + 1))
+            continue
+        # PHP in a document often has no open tag: it is read after one, which takes up a line of its own
+        shift = 1 if extension == ".php" else 0
+        code = "<?php\n" + block.text if shift else block.text
+        for name, line, column in _references_by_extension(extension, code):
+            found.append((name, block.line + line - shift, column))
+    return sorted(found, key=lambda reference: (reference[1], reference[2]))
+
+
+def _references_template(layer: str, base: str, source: str) -> List[Reference]:
+    """The names of a Mustache or Twig template: the identifiers in its tags, such as user.name in {{ user.name }}
+    or items in {% for item in items %}. A filter after a pipe is no name, nor a Twig keyword, nor a string in a tag.
+    Comments hold none. The base language (the extension after the layer, such as .html) is read with the tags
+    left out."""
+    found: List[Reference] = []
+    for match in TEMPLATE_TAGS[layer].finditer(source):
+        text = match.group(0)
+        if text.startswith(("{#", "{{!", "{{=")):  # a comment, or a change of the delimiters
+            continue
+        masked = TEMPLATE_STRING.sub(_blank, text)
+        for name in re.finditer(r"(?<!\w)[A-Za-z_]\w*", masked):
+            word = name.group(0)
+            if masked[:name.start()].rstrip().endswith("|") or (layer == "twig" and word.lower() in TWIG_KEYWORDS):
+                continue
+            line, column = _position(source, match.start() + name.start())
+            found.append((word, line, column))
+    found.extend(_references_by_extension(base, TEMPLATE_TAGS[layer].sub(_blank, source)))
+    return sorted(found, key=lambda reference: (reference[1], reference[2]))
+
+
+def _references_by_extension(extension: str, source: str) -> List[Reference]:
     if extension in PHP_EXTENSIONS:
         return _references_php(source)
     if extension in SQL_EXTENSIONS:
@@ -362,7 +482,21 @@ def extract_references(path: str, source: str) -> List[Reference]:
     if extension in REFERENCE_SCRIPT_EXTENSIONS:
         parsed = _references_parsed(source, *SCRIPT_DIALECTS.get(extension, (False, True)))
         return parsed if parsed is not None else _references_script(source)
+    if extension in JSON_EXTENSIONS:
+        return _references_json(source)
+    if extension in BAREDOWN_EXTENSIONS:
+        return _references_baredown(source)
     return []
+
+
+def extract_references(path: str, source: str) -> List[Reference]:
+    """Identifier occurrences of a PHP, Python, SQL, script, markup, style, JSON or BareDown file, and of a Mustache or
+    Twig template (see _references_template). Comments, strings and JSX text hold none; keywords are not identifiers.
+    A script that does not parse is read as tokens."""
+    parts = os.path.basename(path).lower().split(".")
+    if len(parts) >= 3 and parts[-2] in languages.TEMPLATE_LAYERS:
+        return _references_template(parts[-2], "." + parts[-1], source)
+    return _references_by_extension(os.path.splitext(path)[1].lower(), source)
 
 
 XSD_DECLARATIONS = frozenset({"element", "complexType", "simpleType", "group", "attributeGroup", "attribute"})
@@ -418,7 +552,7 @@ class ProjectIndex:
     def _scan(self) -> Dict[str, Tuple[int, int]]:
         found: Dict[str, Tuple[int, int]] = {}
         for path in self._walk():
-            if os.path.splitext(path)[1].lower() in INDEXED and not (self.excluded and self.excluded(path)):
+            if is_indexed(path) and not (self.excluded and self.excluded(path)):
                 stat = os.stat(path)
                 found[path] = (stat.st_mtime_ns, stat.st_size)
         return found
@@ -448,7 +582,7 @@ class ProjectIndex:
         """Re-index one file (after a save). Returns True when it is indexed now."""
         path = os.path.abspath(path)
         ignored = self.excluded is not None and self.excluded(path)
-        if ignored or not os.path.isfile(path) or os.path.splitext(path)[1].lower() not in INDEXED:
+        if ignored or not os.path.isfile(path) or not is_indexed(path):
             removed = self.files.pop(path, None) is not None
             if removed:
                 self._rebuild()

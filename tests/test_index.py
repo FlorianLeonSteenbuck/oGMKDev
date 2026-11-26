@@ -112,12 +112,13 @@ class IndexTests(unittest.TestCase):
         self.assertEqual({s.short for s in self.index.subtypes("App\\Circle")}, {"Square", "Fresh"})
 
     def test_cache_round_trip_keeps_unchanged_files(self):
-        cache = os.path.join(self.root, "cache", "index.json")
-        self.index.save_cache(cache)
-        again = I.ProjectIndex(self.root, cache_path=cache)
-        self.assertEqual(len(again.files), len(self.index.files))
-        self.assertEqual({s.short for s in again.subtypes("App\\Shape")}, {"Base", "Circle", "Square"})
-        self.assertEqual(again.refresh(), {"added": 0, "changed": 0, "removed": 0})
+        with tempfile.TemporaryDirectory() as cache_dir:  # the cache lives outside the project, as in the app
+            cache = os.path.join(cache_dir, "index.json")
+            self.index.save_cache(cache)
+            again = I.ProjectIndex(self.root, cache_path=cache)
+            self.assertEqual(len(again.files), len(self.index.files))
+            self.assertEqual({s.short for s in again.subtypes("App\\Shape")}, {"Base", "Circle", "Square"})
+            self.assertEqual(again.refresh(), {"added": 0, "changed": 0, "removed": 0})
 
 
 class NavigationAndInspectionTests(unittest.TestCase):
@@ -158,11 +159,12 @@ class NavigationAndInspectionTests(unittest.TestCase):
         self.assertFalse(any(code == "unused-import" and "App\\Shape" in msg for code, msg in findings))
 
     def test_abstract_flag_is_kept_in_the_cache(self):
-        cache = os.path.join(self.root, "cache.json")
-        self.index.save_cache(cache)
-        again = I.ProjectIndex(self.root, cache_path=cache)
-        self.assertTrue(again.find("App\\Half")[0].abstract)
-        self.assertFalse(again.find("App\\Good")[0].abstract)
+        with tempfile.TemporaryDirectory() as cache_dir:  # outside the project, as in the app
+            cache = os.path.join(cache_dir, "index.json")
+            self.index.save_cache(cache)
+            again = I.ProjectIndex(self.root, cache_path=cache)
+            self.assertTrue(again.find("App\\Half")[0].abstract)
+            self.assertFalse(again.find("App\\Good")[0].abstract)
 
 
 if __name__ == "__main__":

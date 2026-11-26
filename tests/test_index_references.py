@@ -60,8 +60,8 @@ class ScriptReferencesTest(unittest.TestCase):
         found = I.extract_references("a.js", SCRIPT_SAMPLE)
         self.assertEqual(sum(1 for name, _l, _c in found if name == "helper"), 1)
 
-    def test_other_languages_give_none_yet(self):
-        self.assertEqual([], I.extract_references("a.json", '{"a": 1}\n'))
+    def test_plain_text_gives_no_references(self):
+        self.assertEqual([], I.extract_references("notes.txt", "Shape helper total\n"))
 
 
 class ProjectReferencesTest(unittest.TestCase):
@@ -198,6 +198,73 @@ class IndexedFilesTest(unittest.TestCase):
             index = I.ProjectIndex(root)
             self.assertEqual([(line, column) for _path, line, column in index.references("orders")], [(1, 19)])
             self.assertEqual(len(index.references("card")), 1)
+
+    def test_json_bare_down_and_template_files_are_read_into_the_references(self):
+        with tempfile.TemporaryDirectory() as root:
+            for name, text in (("config.json", JSON_SAMPLE), ("guide.bd", BAREDOWN_SAMPLE),
+                               ("page.twig.html", TWIG_SAMPLE)):
+                with open(os.path.join(root, name), "w", encoding="utf-8") as handle:
+                    handle.write(text)
+            index = I.ProjectIndex(root)
+            self.assertEqual(sorted(os.path.basename(path) for path, _l, _c in index.references("Shape")),
+                             ["config.json", "guide.bd", "guide.bd"])
+            self.assertEqual(index.references("Circle"), [(os.path.join(root, "config.json"), 2, 18)])
+            self.assertEqual(index.references("cls"), [(os.path.join(root, "page.twig.html"), 1, 15)])
+
+
+JSON_SAMPLE = '{\n  "Shape": "App\\\\Circle",\n  "tax": "1.5",\n  "label": "Add to cart" // "Quoted"\n}\n'
+BAREDOWN_SAMPLE = ("= Shape\nUse |Shape| and |$total|.\nSee [[Cart|the cart]] or [[docs/Order]].\n"
+                   "~~~ php\n$s = new Shape(1);\n~~~\n~~~\nfoo(bar);\n~~~\n")
+TWIG_SAMPLE = ('<h1 class="{{ cls }}">{{ title|upper }}</h1>\n{% for item in items %}<li>{{ item.name }}</li>'
+               '{% endfor %}\n{# hidden: note #}\n')
+MUSTACHE_SAMPLE = "<p>{{user.name}} {{{raw}}} {{#items}}{{.}}{{/items}} {{! hidden }}</p>\n"
+
+
+class JsonReferencesTest(unittest.TestCase):
+    def test_keys_and_names_in_values_are_occurrences_with_their_positions(self):
+        self.assertEqual(I.extract_references("config.json", JSON_SAMPLE), [
+            ("Shape", 2, 4), ("Circle", 2, 18), ("tax", 3, 4), ("label", 4, 4)])
+
+    def test_a_string_that_is_no_name_and_the_comments_hold_none(self):
+        names = [name for name, _line, _column in I.extract_references("config.json", JSON_SAMPLE)]
+        self.assertNotIn("Add", names)
+        self.assertNotIn("Quoted", names)
+
+    def test_json_files_are_indexed_but_generated_lock_files_are_not(self):
+        self.assertTrue(I.is_indexed("config.json"))
+        self.assertFalse(I.is_indexed("web/package-lock.json"))
+        self.assertTrue(I.is_indexed("guide.bd"))
+
+
+class BareDownReferencesTest(unittest.TestCase):
+    def test_code_spans_blocks_and_link_targets_are_occurrences(self):
+        self.assertEqual(I.extract_references("guide.bd", BAREDOWN_SAMPLE), [
+            ("Shape", 2, 6), ("Cart", 3, 7), ("Order", 3, 33), ("Shape", 5, 10), ("foo", 8, 1), ("bar", 8, 5)])
+
+    def test_prose_labels_and_variables_hold_none(self):
+        names = [name for name, _line, _column in I.extract_references("guide.bd", BAREDOWN_SAMPLE)]
+        for word in ("Use", "and", "See", "the", "cart", "total"):
+            self.assertNotIn(word, names)
+
+
+class TemplateReferencesTest(unittest.TestCase):
+    def test_names_in_twig_tags_and_in_the_base_markup(self):
+        self.assertEqual(I.extract_references("page.twig.html", TWIG_SAMPLE), [
+            ("h1", 1, 2), ("cls", 1, 15), ("title", 1, 26), ("h1", 1, 42), ("item", 2, 8), ("items", 2, 16),
+            ("li", 2, 25), ("item", 2, 31), ("name", 2, 36), ("li", 2, 45)])
+
+    def test_names_in_mustache_tags(self):
+        self.assertEqual(I.extract_references("view.mustache.html", MUSTACHE_SAMPLE), [
+            ("p", 1, 2), ("user", 1, 6), ("name", 1, 11), ("raw", 1, 21), ("items", 1, 31), ("items", 1, 46),
+            ("p", 1, 69)])
+
+    def test_filters_keywords_comments_and_strings_hold_none(self):
+        names = [name for name, _line, _column in I.extract_references("page.twig.html", TWIG_SAMPLE)]
+        for word in ("upper", "for", "in", "endfor", "hidden", "note"):
+            self.assertNotIn(word, names)
+        source = "{{ 'Shape' }} {{ name|upper }}"
+        names = [name for name, _line, _column in I.extract_references("page.twig.txt", source)]
+        self.assertEqual(names, ["name"])
 
 
 if __name__ == "__main__":
