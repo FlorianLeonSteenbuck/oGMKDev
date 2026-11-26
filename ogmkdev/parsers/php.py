@@ -76,14 +76,23 @@ class _Tok:
 
 
 class _Parser:
-    def __init__(self, source: str) -> None:
+    def __init__(self, source: str, partial: bool = False) -> None:
         self.src = source
-        self.toks: List[L.Token] = [t for t in L.tokenize(source) if t.kind not in ("comment", "doc")]
+        self.partial = partial  # collect the errors and go on (see parse_partial), instead of stopping at the first
+        self.errors: List[ParseError] = []
+        self.toks: List[L.Token] = []
+        for token in L.tokenize(source):
+            if token.kind in ("comment", "doc"):
+                continue
+            if token.kind == "error":
+                error = self._lexical_error(token.start, self._error_text(token))
+                if not partial:
+                    raise error
+                self.errors.append(error)
+                continue
+            self.toks.append(token)
         self.i = 0
         self.prev_end = 0
-        for token in self.toks:
-            if token.kind == "error":
-                raise self._lexical_error(token.start, self._error_text(token))
 
     # ------------------------------------------------------------ tokens
 
@@ -205,7 +214,9 @@ class _Parser:
                 continue
             if self._is_word("__halt_compiler"):
                 break
-            body.append(self._statement())
+            statement = self._guarded_statement()
+            if statement is not None:
+                body.append(statement)
         return Node("Program", 0, len(self.src), body)
 
     def _echo_tag(self) -> Node:
@@ -259,11 +270,52 @@ class _Parser:
         self._terminator()
         return Node("ExpressionStatement", start, self.prev_end, [expression])
 
+    def _guarded_statement(self) -> Optional[Node]:
+        """A statement. In partial mode a syntax error is recorded, the rest of the statement is skipped, and the
+        statement is None: the parser goes on with the next one."""
+        before = self.i
+        try:
+            return self._statement()
+        except ParseError as error:
+            if not self.partial:
+                raise
+            self.errors.append(error)
+            self._recover()
+            if self.i == before:  # a token no statement can start with: move past it
+                self._advance()
+            return None
+
+    def _recover(self) -> None:
+        """Skips the rest of a broken statement or member: up to the ';' (or '?>') that ends it at its own nesting
+        depth, or past the '}' that closes a block it opened. A '}' that closes the enclosing block stays."""
+        depth = 0
+        while self.tok.kind != "eof":
+            if self.tok.kind == "close" and depth == 0:
+                self._advance()
+                return
+            if self._is_op("(") or self._is_op("[") or self._is_op("{"):
+                depth += 1
+            elif self._is_op(")") or self._is_op("]"):
+                depth = max(0, depth - 1)
+            elif self._is_op("}"):
+                if depth == 0:
+                    return
+                depth -= 1
+                if depth == 0:
+                    self._advance()
+                    return
+            elif self._is_op(";") and depth == 0:
+                self._advance()
+                return
+            self._advance()
+
     def _block(self) -> Node:
         opener = self._expect_op("{")
         body: List[Node] = []
         while not self._is_op("}") and self.tok.kind != "eof":
-            body.append(self._statement())
+            statement = self._guarded_statement()
+            if statement is not None:
+                body.append(statement)
         self._close("}", opener)
         return Node("BlockStatement", opener.start, self.prev_end, body)
 
@@ -272,7 +324,9 @@ class _Parser:
         start = self.tok.start
         body: List[Node] = []
         while not (self.tok.kind == "keyword" and self._lower() in words) and self.tok.kind != "eof":
-            body.append(self._statement())
+            statement = self._guarded_statement()
+            if statement is not None:
+                body.append(statement)
         if self.tok.kind == "eof":
             raise self._error(self.tok.start, f"expected '{words[0]}' before end of file")
         return Node("BlockStatement", start, self.prev_end, body)
@@ -579,7 +633,7 @@ class _Parser:
                     group_name = self._name()
                     alias = self._alias()
                     children.append(Node("UseItem", group_start, self.prev_end,
-                                         [group_name] + ([alias] if alias else [])))
+                                         [group_name] + ([alias] if alias else []), text=name.text))
                     if not self._separator("}"):
                         break
                 self._close("}", opener)
@@ -710,7 +764,16 @@ class _Parser:
             if self._is_op(";"):
                 self._advance()
                 continue
-            members.append(self._member(keyword))
+            before = self.i
+            try:
+                members.append(self._member(keyword))
+            except ParseError as error:
+                if not self.partial:
+                    raise
+                self.errors.append(error)
+                self._recover()
+                if self.i == before:
+                    self._advance()
         self._close("}", opener)
         return Node("ClassBody", opener.start, self.prev_end, members)
 
@@ -1367,3 +1430,11 @@ class _Parser:
 def parse(source: str) -> Node:
     """Parse ``source`` as PHP. Raises :class:`ParseError` at the first error."""
     return _Parser(source).program()
+
+
+def parse_partial(source: str) -> Tuple[Node, List[ParseError]]:
+    """Parse ``source`` as far as it goes: the tree holds every statement and member that parsed, and the errors, in
+    source order, say what did not. An analysis uses it, so that one broken statement keeps the rest of the file."""
+    parser = _Parser(source, partial=True)
+    tree = parser.program()
+    return tree, sorted(parser.errors, key=lambda error: (error.line, error.column))

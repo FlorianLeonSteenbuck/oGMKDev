@@ -127,5 +127,52 @@ class PhpDiagnosticsTests(unittest.TestCase):
         self.assertTrue(all(d.code != "php-syntax" for d in found))
 
 
+def _class_names(tree):
+    """The names of the class declarations of a tree, in source order."""
+    return [next(c.text for c in node.children if c.kind == "Name")
+            for node in tree.walk() if node.kind == "ClassDeclaration"]
+
+
+def _method_names(node):
+    return [next(c.text for c in member.children if c.kind == "Name")
+            for member in node.walk() if member.kind == "MethodDeclaration"]
+
+
+class PartialParseTest(unittest.TestCase):
+    """parse_partial: the tree keeps what parses around a syntax error, and the errors say what did not."""
+
+    def test_a_broken_statement_keeps_the_declarations_around_it(self):
+        tree, errors = P.parse_partial("<?php\nclass A {}\n$x = ;\nclass B {}\n")
+        self.assertEqual(_class_names(tree), ["A", "B"])
+        self.assertEqual([(error.line, error.column) for error in errors], [(3, 6)])
+
+    def test_a_broken_method_keeps_the_class_and_its_other_methods(self):
+        source = "<?php\nclass C { public function ok() {} public function broken( {} public function after() {} }\n"
+        tree, errors = P.parse_partial(source)
+        self.assertEqual(_class_names(tree), ["C"])
+        self.assertEqual(_method_names(tree), ["ok", "after"])
+        self.assertEqual((errors[0].line, errors[0].column), (2, 59))
+
+    def test_a_stray_brace_is_skipped_and_the_parser_moves_on(self):
+        tree, errors = P.parse_partial("<?php } class D {}\n")
+        self.assertEqual(_class_names(tree), ["D"])
+        self.assertEqual([error.message for error in errors], ["unexpected '}'"])
+
+    def test_an_unterminated_string_gives_an_error_and_keeps_what_came_before(self):
+        tree, errors = P.parse_partial("<?php\nclass E {}\n$s = \"abc;\n")
+        self.assertEqual(_class_names(tree), ["E"])
+        self.assertTrue(errors)
+
+    def test_parse_still_raises_the_first_error(self):
+        with self.assertRaises(P.ParseError) as caught:
+            P.parse("<?php\nclass A {}\n$x = ;\n")
+        self.assertEqual((caught.exception.line, caught.exception.column), (3, 6))
+
+    def test_a_group_use_gives_each_item_the_prefix_of_its_group(self):
+        tree, _errors = P.parse_partial("<?php\nuse App\\Util\\{Helper, Money as M};\n")
+        items = [node for node in tree.walk() if node.kind == "UseItem"]
+        self.assertEqual([item.text for item in items], ["App\\Util", "App\\Util"])
+
+
 if __name__ == "__main__":
     unittest.main()
