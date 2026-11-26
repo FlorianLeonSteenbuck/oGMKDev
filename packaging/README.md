@@ -28,7 +28,8 @@ The layout is the same for both packages (`packaging/install-tree.sh`):
 
 - `/usr/bin/ogmkdev`: the starter. It sets `OGMKDEV_HOWL_LIBRARY` and `OGMKDEV_HOWL_ROOT` and runs the
   frame with the first Python 3 that has GTK 4 (`python3 -m ogmkdev.frame`).
-- `/usr/lib/ogmkdev/libhowl.so`: Howl as a library.
+- `/usr/lib/ogmkdev/libhowl.so` (the Debian package), or `/usr/lib64/ogmkdev/libhowl.so` (the RPM on 64-bit
+  systems, where `install-tree.sh` gets the library directory `%{_libdir}`): Howl as a library.
 - `/usr/share/ogmkdev/ogmkdev`: the Python package; `/usr/share/ogmkdev/howl`: Howl's `lib`, `bundles`,
   `share` and `fonts`.
 - The desktop entry, the logo and the documentation.
@@ -36,4 +37,6 @@ The layout is the same for both packages (`packaging/install-tree.sh`):
 Build dependencies: `dpkg-dev` for the `.deb`; `rpm-build` (openSUSE) for the `.rpm`.
 The `.deb` build is tested here: the installed layout was checked by running the starter from an
 unpacked package on Xvfb.
-The `.rpm` spec is written for openSUSE and has not been built in CI.
+The `.rpm` is built by `build-rpm.sh` with rpmbuild: checked on Ubuntu 24.04 (rpmbuild 4.18), where the package
+builds and the frame starts from the extracted tree. It has not been installed on openSUSE, and CI does not
+build it.

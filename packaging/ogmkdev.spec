@@ -28,7 +28,7 @@ debugging. The editor windows are Howl (libhowl.so, with its Lua files).
 test -f howl/src/libhowl.so || sh packaging/build-howl.sh
 
 %install
-sh packaging/install-tree.sh %{buildroot}
+sh packaging/install-tree.sh %{buildroot} %{_libdir}
 
 %files
 %license LICENSE
@@ -38,7 +38,7 @@ sh packaging/install-tree.sh %{buildroot}
 %{_datadir}/ogmkdev
 %{_datadir}/applications/ogmkdev.desktop
 %{_datadir}/icons/hicolor/scalable/apps/ogmkdev.svg
-%{_docdir}/ogmkdev/HOWL-LICENSE.md
+%{_docdir}/ogmkdev
 
 %changelog
 * Wed Nov 25 2026 ogmkdev maintainers <ogmkdev@localhost> - 0.1.0-1

@@ -273,7 +273,7 @@ ogmkdev_dialect = 8.6                     # PHP version of the files
 ## Packaging
 
 `packaging/build-deb.sh` builds `dist/ogmkdev_<version>_all.deb` (tested), and `packaging/build-rpm.sh`
-builds the openSUSE `.rpm` from `packaging/ogmkdev.spec` (written, not yet built here). Both use
+builds the openSUSE `.rpm` from `packaging/ogmkdev.spec` (built with rpmbuild on Ubuntu 24.04, where the extracted package starts the frame; not yet installed on openSUSE). Both use
 `packaging/install-tree.sh`. See `packaging/README.md`.
 
 ## Panes, local history and autosave
@@ -363,4 +363,5 @@ System packages: `python3-gi`, `python3-gi-cairo` (`python3-gobject-cairo` on op
 - Python and JavaScript references are identifier occurrences (comments and strings are skipped); the other
   languages have no references yet.
 - The PHP analysis is token based: it recognises each construct, but it is not a full PHP parser.
-- The `.rpm` package is written but has not been built on openSUSE.
+- The `.rpm` package is built with rpmbuild and its frame starts from the extracted tree; it has not been
+  installed on openSUSE yet.

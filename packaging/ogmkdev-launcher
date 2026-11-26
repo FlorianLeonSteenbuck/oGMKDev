@@ -1,8 +1,17 @@
 #!/bin/sh
 # Starts the ogmkdev frame (GTK 4 with Howl) with the first Python 3 that has PyGObject and GTK 4.
 PYTHONPATH=/usr/share/ogmkdev${PYTHONPATH:+:$PYTHONPATH}
-OGMKDEV_HOWL_LIBRARY=/usr/lib/ogmkdev/libhowl.so
 OGMKDEV_HOWL_ROOT=/usr/share/ogmkdev/howl
+# libhowl.so: lib64 on 64-bit RPM systems, lib on Debian and Ubuntu; an environment setting wins
+if [ -z "${OGMKDEV_HOWL_LIBRARY:-}" ]; then
+    OGMKDEV_HOWL_LIBRARY=/usr/lib/ogmkdev/libhowl.so
+    for LIB in /usr/lib64/ogmkdev/libhowl.so /usr/lib/ogmkdev/libhowl.so; do
+        if [ -f "$LIB" ]; then
+            OGMKDEV_HOWL_LIBRARY=$LIB
+            break
+        fi
+    done
+fi
 export PYTHONPATH OGMKDEV_HOWL_LIBRARY OGMKDEV_HOWL_ROOT
 for PY in python3 python3.13 python3.12 python3.11 python3.10; do
     if command -v "$PY" >/dev/null 2>&1 && \
