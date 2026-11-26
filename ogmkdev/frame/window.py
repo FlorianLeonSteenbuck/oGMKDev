@@ -19,6 +19,8 @@ from ogmkdev.outcome import Failure  # noqa: E402
 from ogmkdev.progress import Progress  # noqa: E402
 from ogmkdev.workspace import Workspace  # noqa: E402
 from ogmkdev.bridges import kdevelop as kdevelop_bridge  # noqa: E402
+from ogmkdev.bridges import kdevelop_sessions  # noqa: E402
+from ogmkdev import projects as projects_file  # noqa: E402
 from ogmkdev import jetbrains as jetbrains_import  # noqa: E402
 from ogmkdev import php_paths  # noqa: E402
 from ogmkdev.preview import kind_of as preview_kind  # noqa: E402
@@ -880,6 +882,18 @@ class Frame(AnalysisMixin, DebugMixin, ToolsMixin, StructureMixin, PreviewMixin,
     def add_folder_to_workspace(self) -> None:
         """File > Add Folder to Workspace: another folder joins the tree and the index of the project."""
         self._choose_folder("Add Folder to Workspace", "Add", self._add_workspace_folder)
+
+    def import_kdevelop_sessions(self) -> None:
+        """File > Import KDevelop Sessions: the projects open in KDevelop's sessions become recent projects. The projects
+        already known keep their folders; nothing is opened."""
+        found = kdevelop_sessions.read_sessions(kdevelop_sessions.session_base())
+        folders = [folder for session in found for folder in session.folders]
+        result = projects_file.import_recent(projects_file.projects_path(), folders)
+        if isinstance(result, Failure):
+            self.set_status(f"sessions not imported: {result}")
+            return
+        self._refresh_recent_menu()
+        self.set_status(f"{result} project(s) from {len(found)} KDevelop session(s) added to Recent Projects")
 
     def import_kdevelop_project(self) -> None:
         """File > Import KDevelop Project...: the launch configurations of a KDevelop project (its .kdev4 file) become run

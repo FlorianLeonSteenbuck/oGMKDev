@@ -100,6 +100,22 @@ def remember(folder: str, attached: Sequence[str]) -> Union[str, Failure]:
     return write_projects(path, [record] + others[:KEEP - 1])
 
 
+def import_recent(path: str, folders: Sequence[str]) -> Union[int, Failure]:
+    """Adds the folders of the projects of another IDE's sessions (KDevelop) to the recent projects: the folders that are
+    not known yet and exist. They come after the projects saved before, without an opening time, and with no attached
+    folders. Returns how many were added, or the reason the file could not be read or written."""
+    existing = read_projects(path)
+    if isinstance(existing, Failure):
+        return existing
+    known = {project.folder for project in existing}
+    added = [Project(folder, (), "", ()) for folder in dict.fromkeys(folders)
+             if folder not in known and os.path.isdir(folder)]
+    if not added:
+        return 0
+    written = write_projects(path, (existing + added)[:KEEP])
+    return written if isinstance(written, Failure) else len(added)
+
+
 def attached_folders(folder: str) -> Union[List[str], Failure]:
     """The folders attached to the project the last time it was open, without those that no longer exist."""
     projects = read_projects(projects_path())

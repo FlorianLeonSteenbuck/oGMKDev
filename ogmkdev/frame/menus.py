@@ -10,6 +10,7 @@ MENUS = (
         ("Open Folder...", "open-folder", "<Control><Shift>o", "open_folder"),
         ("Add Folder to Workspace...", "add-folder", "", "add_folder_to_workspace"),
         ("Import KDevelop Project...", "import-kdevelop", "", "import_kdevelop_project"),
+        ("Import KDevelop Sessions", "import-kdevelop-sessions", "", "import_kdevelop_sessions"),
         ("Linked Projects...", "linked-projects", "", "show_linked_projects"),
         ("Import JetBrains Project...", "import-jetbrains", "", "import_jetbrains_project"),
         ("Quick Open...", "quick-open", "<Control>p", "quick_open"),
